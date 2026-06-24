@@ -48,6 +48,8 @@ const currencyRatesToRub = {
   USD: 92,
   GEL: 34,
   TRY: 3,
+  RSD: 0.85,
+  BAM: 51,
 };
 
 const seedState = {
@@ -196,7 +198,7 @@ function formatMoney(value = 0) {
 }
 
 function currencySymbol(currency) {
-  return { RUB: "₽", EUR: "€", SEK: "kr", USD: "$", GEL: "₾", TRY: "₺" }[currency] || currency;
+  return { RUB: "₽", EUR: "€", SEK: "kr", USD: "$", GEL: "₾", TRY: "₺", RSD: "дин", BAM: "KM" }[currency] || currency;
 }
 
 function convertMoney(value, fromCurrency, toCurrency) {
@@ -217,7 +219,7 @@ function convertTripCurrency(fromCurrency, toCurrency) {
 }
 
 function getSupportedCurrencies() {
-  return ["RUB", "EUR", "SEK"];
+  return ["RUB", "EUR", "SEK", "RSD", "BAM"];
 }
 
 function formatCurrencyAmount(value, currency) {
@@ -253,7 +255,7 @@ function renderRatesStatus(message = null) {
   }
   const source = ratesSource === "live" ? "реальный курс" : "демо-курс";
   const updated = ratesUpdatedAt ? ` · обновлено ${ratesUpdatedAt.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}` : "";
-  status.textContent = `Используется ${source}${updated}. RUB / EUR / SEK.`;
+  status.textContent = `Используется ${source}${updated}. RUB / EUR / SEK / RSD / BAM.`;
 }
 
 async function refreshExchangeRates() {
@@ -268,7 +270,7 @@ async function refreshExchangeRates() {
       if (currency === "RUB") nextRates.RUB = 1;
       else if (Number(rates[currency])) nextRates[currency] = 1 / Number(rates[currency]);
     });
-    if (!nextRates.EUR || !nextRates.SEK) throw new Error("missing rates");
+    if (!nextRates.EUR || !nextRates.SEK || !nextRates.RSD || !nextRates.BAM) throw new Error("missing rates");
     Object.assign(currencyRatesToRub, nextRates);
     ratesSource = "live";
     ratesUpdatedAt = new Date();
@@ -316,13 +318,13 @@ function getStatusLabel(status) {
 
 function getStatusIcon(status) {
   return {
-    paid: "₽",
-    fixed: "🔒",
-    want: "🤔",
+    paid: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="M9 9.8h5.2M9 12h4.3M9 14.2h3.5"></path></svg>`,
+    fixed: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="10" width="12" height="9" rx="2"></rect><path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10"></path></svg>`,
+    want: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19s-7-4.4-7-9.1A3.9 3.9 0 0 1 12 7.6 3.9 3.9 0 0 1 19 9.9C19 14.6 12 19 12 19z"></path></svg>`,
     maybe: "?",
-    backup: "↺",
-    skipped: "×",
-  }[status] || "•";
+    backup: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M8.2 14.2a6 6 0 1 1 7.6 0c-.8.6-1.3 1.4-1.5 2.3H9.7c-.2-.9-.7-1.7-1.5-2.3z"></path></svg>`,
+    skipped: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"></path></svg>`,
+  }[status] || `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle></svg>`;
 }
 
 function getPriorityLabel(priority) {
@@ -397,6 +399,15 @@ function renderPlan() {
     ? `<div class="mini-list">${unscheduled.slice(0, 8).map(renderItemCard).join("")}</div>`
     : `<p class="empty-state">Все идеи уже пристроены по дням.</p>`;
   $("#unscheduledPreview").querySelector(".mini-list, .empty-state")?.setAttribute("data-drop-date", "");
+  resetDayScrollPositions();
+}
+
+function resetDayScrollPositions() {
+  requestAnimationFrame(() => {
+    $$(".day-items").forEach((list) => {
+      list.scrollLeft = 0;
+    });
+  });
 }
 
 function renderBasket() {
@@ -454,7 +465,7 @@ function renderBudget() {
       <div class="metric-card"><span>Уже оплачено</span><strong>${formatMoney(totals.paid)}</strong></div>
       <div class="metric-card"><span>Забронировано</span><strong>${formatMoney(totals.fixed)}</strong></div>
       <div class="metric-card"><span>Опционально</span><strong>${formatMoney(totals.optional)}</strong></div>
-      <div class="metric-card"><span>Возможный итог</span><strong>${formatMoney(totals.possible)}</strong></div>
+      <div class="metric-card service-total"><span>Возможный итог</span><strong>${formatMoney(totals.possible)}</strong></div>
       <div class="metric-card"><span>Остаток</span><strong style="color:${totals.remaining < 0 ? "var(--danger)" : "var(--green)"}">${formatMoney(totals.remaining)}</strong></div>
     </section>
     <section class="card" style="padding: 12px; display: grid; gap: 8px;">

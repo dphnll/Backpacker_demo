@@ -11,7 +11,7 @@
       <header class="trip-header">
         <div class="brand-row">
           <div>
-            <p class="eyebrow">Backpacker</p>
+            <p class="eyebrow brand-badge">Backpacker</p>
             <h1 id="tripTitle">Казань соло</h1>
           </div>
           <div class="header-actions">
@@ -40,26 +40,27 @@
         <section class="view active" id="planView" aria-label="План поездки">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">План</p>
-              <h2>По дням</h2>
+              <h2>План</h2>
             </div>
             <button class="primary-button compact" data-action="add" type="button">+ Добавить</button>
           </div>
           <div class="days-list" id="daysList"></div>
-          <section class="card unscheduled-card">
-            <div class="card-title-row">
-              <h3>Без даты</h3>
-              <span id="unscheduledCount">0</span>
-            </div>
-            <div id="unscheduledPreview"></div>
+          <section class="day-card unscheduled-card">
+            <header class="day-header">
+              <div class="card-title-row">
+                <h3>Без даты</h3>
+                <span id="unscheduledCount">0</span>
+              </div>
+              <p>Хотелки и запасные варианты</p>
+            </header>
+            <div class="day-items" id="unscheduledPreview"></div>
           </section>
         </section>
 
         <section class="view" id="basketView" aria-label="Корзина поездки">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">Корзина</p>
-              <h2>Все элементы</h2>
+              <h2>Корзина</h2>
             </div>
             <button class="primary-button compact" data-action="add" type="button">+ Добавить</button>
           </div>
@@ -70,7 +71,6 @@
         <section class="view" id="budgetView" aria-label="Бюджет">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">Деньги</p>
               <h2>Бюджет</h2>
             </div>
           </div>
@@ -78,8 +78,7 @@
           <section class="card estimate-card">
             <div class="card-title-row">
               <div>
-                <p class="eyebrow">Смета</p>
-                <h3>Таблица поездки</h3>
+                <h3>Смета поездки</h3>
               </div>
               <button class="ghost-button compact" id="copyEstimateButton" type="button">Скопировать</button>
             </div>
@@ -92,8 +91,7 @@
         <section class="view" id="currencyView" aria-label="Курс валют">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">Валюты</p>
-              <h2>Калькулятор</h2>
+              <h2>Калькулятор валют</h2>
             </div>
             <button class="ghost-button compact" id="refreshRatesButton" type="button">Обновить</button>
           </div>
@@ -108,6 +106,8 @@
                 <option value="RUB">RUB</option>
                 <option value="EUR">EUR</option>
                 <option value="SEK">SEK</option>
+                <option value="RSD">RSD</option>
+                <option value="BAM">BAM / KM</option>
               </select>
             </label>
             <label class="field">
@@ -115,6 +115,8 @@
               <select id="currencyTo">
                 <option value="EUR">EUR</option>
                 <option value="SEK">SEK</option>
+                <option value="RSD">RSD</option>
+                <option value="BAM">BAM / KM</option>
                 <option value="RUB">RUB</option>
               </select>
             </label>
@@ -124,14 +126,18 @@
         </section>
       </main>
 
-      <button class="fab" data-action="add" type="button" aria-label="Добавить элемент">+</button>
+      <button class="fab" data-action="add" type="button" aria-label="Добавить элемент">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 5v14M5 12h14"></path>
+        </svg>
+      </button>
 
       <nav class="bottom-nav" aria-label="Основная навигация">
         <button class="nav-button active" data-view="plan" type="button" aria-label="План">
           <span aria-hidden="true">
             <svg viewBox="0 0 24 24" role="img">
-              <rect x="3" y="5" width="18" height="16" rx="2"></rect>
-              <path d="M16 3v4M8 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"></path>
+              <rect x="4" y="5" width="16" height="15" rx="3"></rect>
+              <path d="M16 3v4M8 3v4M4 10h16M8 14h2M12 14h2M16 14h2M8 17h2M12 17h2"></path>
             </svg>
           </span>
         </button>
@@ -258,6 +264,8 @@
               <option value="USD">USD</option>
               <option value="GEL">GEL</option>
               <option value="TRY">TRY</option>
+              <option value="RSD">RSD</option>
+              <option value="BAM">BAM / KM</option>
             </select>
             <small class="field-hint">При смене валюты суммы пересчитываются по демо-курсу.</small>
           </label>
