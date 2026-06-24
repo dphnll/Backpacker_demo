@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Backpacker</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="trip-header">
+        <div class="brand-row">
+          <div>
+            <p class="eyebrow">Backpacker</p>
+            <h1 id="tripTitle">Казань соло</h1>
+          </div>
+          <div class="header-actions">
+            <button class="icon-button" id="editTripButton" type="button" title="Настройки поездки" aria-label="Настройки поездки">⚙</button>
+            <button class="ghost-button" id="shareButton" type="button">Поделиться</button>
+          </div>
+        </div>
+        <button class="trip-meta" id="tripMeta" type="button">12-15 июля · 4 дня · бюджет 45 000 ₽</button>
+        <section class="budget-strip" aria-label="Бюджет поездки">
+          <div>
+            <span>Оплачено</span>
+            <strong id="paidTotal">0 ₽</strong>
+          </div>
+          <div>
+            <span>План</span>
+            <strong id="plannedTotal">0 ₽</strong>
+          </div>
+          <div>
+            <span>Остаток</span>
+            <strong id="remainingTotal">0 ₽</strong>
+          </div>
+        </section>
+      </header>
+
+      <main class="main-content">
+        <section class="view active" id="planView" aria-label="План поездки">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">План</p>
+              <h2>По дням</h2>
+            </div>
+            <button class="primary-button compact" data-action="add" type="button">+ Добавить</button>
+          </div>
+          <div class="days-list" id="daysList"></div>
+          <section class="card unscheduled-card">
+            <div class="card-title-row">
+              <h3>Без даты</h3>
+              <span id="unscheduledCount">0</span>
+            </div>
+            <div id="unscheduledPreview"></div>
+          </section>
+        </section>
+
+        <section class="view" id="basketView" aria-label="Корзина поездки">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Корзина</p>
+              <h2>Все элементы</h2>
+            </div>
+            <button class="primary-button compact" data-action="add" type="button">+ Добавить</button>
+          </div>
+          <div class="filter-row" id="filterRow"></div>
+          <div class="basket-list" id="basketList"></div>
+        </section>
+
+        <section class="view" id="budgetView" aria-label="Бюджет">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Деньги</p>
+              <h2>Бюджет</h2>
+            </div>
+          </div>
+          <div class="budget-page" id="budgetPage"></div>
+          <section class="card estimate-card">
+            <div class="card-title-row">
+              <div>
+                <p class="eyebrow">Смета</p>
+                <h3>Таблица поездки</h3>
+              </div>
+              <button class="ghost-button compact" id="copyEstimateButton" type="button">Скопировать</button>
+            </div>
+            <div class="estimate-table-wrap">
+              <table class="estimate-table" id="estimateTable"></table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="currencyView" aria-label="Курс валют">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Валюты</p>
+              <h2>Калькулятор</h2>
+            </div>
+            <button class="ghost-button compact" id="refreshRatesButton" type="button">Обновить</button>
+          </div>
+          <section class="card currency-card">
+            <label class="field wide">
+              Сумма
+              <input id="currencyAmount" inputmode="decimal" value="1000" />
+            </label>
+            <label class="field">
+              Из
+              <select id="currencyFrom">
+                <option value="RUB">RUB</option>
+                <option value="EUR">EUR</option>
+                <option value="SEK">SEK</option>
+              </select>
+            </label>
+            <label class="field">
+              В
+              <select id="currencyTo">
+                <option value="EUR">EUR</option>
+                <option value="SEK">SEK</option>
+                <option value="RUB">RUB</option>
+              </select>
+            </label>
+            <div class="currency-result" id="currencyResult">—</div>
+            <p class="field-hint wide" id="ratesStatus">Курс загрузится автоматически, если доступен внешний API.</p>
+          </section>
+        </section>
+      </main>
+
+      <button class="fab" data-action="add" type="button" aria-label="Добавить элемент">+</button>
+
+      <nav class="bottom-nav" aria-label="Основная навигация">
+        <button class="nav-button active" data-view="plan" type="button" aria-label="План">
+          <span aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img">
+              <rect x="3" y="5" width="18" height="16" rx="2"></rect>
+              <path d="M16 3v4M8 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"></path>
+            </svg>
+          </span>
+        </button>
+        <button class="nav-button" data-view="basket" type="button" aria-label="Корзина">
+          <span aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img">
+              <path d="M7 10 10 4M17 10l-3-6M4 10h16l-2 10H6L4 10Z"></path>
+              <path d="M8 14v3M12 14v3M16 14v3"></path>
+            </svg>
+          </span>
+        </button>
+        <button class="nav-button" data-view="budget" type="button" aria-label="Бюджет">
+          <span aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img">
+              <path d="M8 4h6a5 5 0 0 1 0 10H8M8 4v16M6 14h9M6 18h8"></path>
+            </svg>
+          </span>
+        </button>
+        <button class="nav-button" data-view="currency" type="button" aria-label="Курс валют">
+          <span aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img">
+              <path d="M7 7h10M14 4l3 3-3 3M17 17H7M10 14l-3 3 3 3"></path>
+            </svg>
+          </span>
+        </button>
+      </nav>
+    </div>
+
+    <div class="sheet" id="itemSheet" aria-hidden="true">
+      <div class="sheet-backdrop" data-close="item"></div>
+      <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="itemSheetTitle">
+        <header class="sheet-header">
+          <h2 id="itemSheetTitle">Добавить в поездку</h2>
+          <button class="icon-button" data-close="item" type="button" aria-label="Закрыть">×</button>
+        </header>
+        <form id="itemForm" class="sheet-form">
+          <input type="hidden" name="id" />
+          <label class="field wide">
+            Название
+            <input name="title" placeholder="Баня, экскурсия, билет..." required />
+          </label>
+          <label class="field">
+            Тип
+            <select name="type"></select>
+          </label>
+          <label class="field">
+            Статус
+            <select name="status"></select>
+          </label>
+          <label class="field">
+            День
+            <select name="date"></select>
+          </label>
+          <label class="field">
+            Время
+            <input name="startTime" type="time" />
+          </label>
+          <label class="field">
+            Длительность, мин
+            <input name="durationMinutes" inputmode="numeric" placeholder="90" />
+          </label>
+          <label class="field">
+            Цена
+            <input name="price" inputmode="numeric" placeholder="0" />
+          </label>
+          <label class="field">
+            Оплачено
+            <input name="paidAmount" inputmode="numeric" placeholder="0" />
+          </label>
+          <label class="field">
+            Приоритет
+            <select name="priority"></select>
+          </label>
+          <label class="field">
+            Ссылка
+            <input name="link" inputmode="url" placeholder="Aviasales, Tripster, кафе, отель..." />
+          </label>
+          <label class="field wide">
+            Локация
+            <input name="locationText" placeholder="Адрес или район" />
+          </label>
+          <label class="field wide">
+            Заметка
+            <textarea name="notes" rows="3" placeholder="Почему хочу, что важно, запасной план..."></textarea>
+          </label>
+          <div class="form-actions">
+            <button class="danger-button" id="deleteItemButton" type="button">Удалить</button>
+            <button class="primary-button" type="submit">Сохранить</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="sheet" id="tripSheet" aria-hidden="true">
+      <div class="sheet-backdrop" data-close="trip"></div>
+      <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="tripSheetTitle">
+        <header class="sheet-header">
+          <h2 id="tripSheetTitle">Настройки поездки</h2>
+          <button class="icon-button" data-close="trip" type="button" aria-label="Закрыть">×</button>
+        </header>
+        <form id="tripForm" class="sheet-form">
+          <label class="field wide">
+            Название поездки
+            <input name="title" required />
+          </label>
+          <label class="field wide">
+            Направление
+            <input name="destination" required />
+          </label>
+          <label class="field">
+            Дата начала
+            <input name="startDate" type="date" required />
+          </label>
+          <label class="field">
+            Дата окончания
+            <input name="endDate" type="date" required />
+          </label>
+          <label class="field">
+            Валюта
+            <select name="currency">
+              <option value="RUB">RUB</option>
+              <option value="EUR">EUR</option>
+              <option value="SEK">SEK</option>
+              <option value="USD">USD</option>
+              <option value="GEL">GEL</option>
+              <option value="TRY">TRY</option>
+            </select>
+            <small class="field-hint">При смене валюты суммы пересчитываются по демо-курсу.</small>
+          </label>
+          <label class="field">
+            Бюджет
+            <input name="budgetLimit" inputmode="numeric" />
+          </label>
+          <label class="field wide">
+            Предпочтения
+            <textarea name="preferencesText" rows="4"></textarea>
+          </label>
+          <div class="form-actions">
+            <button class="ghost-button" type="button" id="resetDemoButton">Сбросить демо</button>
+            <button class="primary-button" type="submit">Сохранить поездку</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="sheet" id="shareSheet" aria-hidden="true">
+      <div class="sheet-backdrop" data-close="share"></div>
+      <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="shareSheetTitle">
+        <header class="sheet-header">
+          <h2 id="shareSheetTitle">Поделиться поездкой</h2>
+          <button class="icon-button" data-close="share" type="button" aria-label="Закрыть">×</button>
+        </header>
+        <div class="share-actions">
+          <button class="primary-button" id="copySummaryButton" type="button">Скопировать сводку</button>
+          <button class="ghost-button" id="copyPlanButton" type="button">Скопировать план по дням</button>
+        </div>
+        <pre class="share-preview" id="sharePreview"></pre>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>
