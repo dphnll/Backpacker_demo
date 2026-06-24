@@ -292,14 +292,12 @@ h3 {
 }
 
 .day-items::-webkit-scrollbar,
-.mini-list::-webkit-scrollbar,
 .basket-grid-list::-webkit-scrollbar,
 .filter-row::-webkit-scrollbar {
   height: 12px;
 }
 
 .day-items::-webkit-scrollbar-track,
-.mini-list::-webkit-scrollbar-track,
 .basket-grid-list::-webkit-scrollbar-track,
 .filter-row::-webkit-scrollbar-track {
   border-radius: 999px;
@@ -308,7 +306,6 @@ h3 {
 }
 
 .day-items::-webkit-scrollbar-thumb,
-.mini-list::-webkit-scrollbar-thumb,
 .basket-grid-list::-webkit-scrollbar-thumb,
 .filter-row::-webkit-scrollbar-thumb {
   border: 2px solid rgba(244, 241, 235, 0.9);
@@ -389,7 +386,6 @@ h3 {
 }
 
 .day-items .item-card,
-.mini-list .item-card,
 .basket-grid-list .item-card {
   flex: 0 0 172px;
   min-height: 166px;
@@ -778,13 +774,13 @@ h3 {
   margin-top: 12px;
 }
 
-.mini-list {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  scrollbar-width: auto;
-  scrollbar-color: #6f7877 rgba(18, 54, 61, 0.08);
+#unscheduledPreview {
+  padding: 14px 16px 12px;
+  scroll-padding-inline: 16px;
+}
+
+#unscheduledPreview .item-card {
+  margin: 0;
 }
 
 .drop-target-active {

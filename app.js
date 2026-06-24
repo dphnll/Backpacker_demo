@@ -392,7 +392,7 @@ function renderPlan() {
     card.innerHTML = `
       <header class="day-header">
         <div class="card-title-row">
-          <h3>${index === 0 ? "Сегодня / " : ""}День ${index + 1}</h3>
+          <h3>День ${index + 1}</h3>
           <span class="day-total">${formatMoney(total)}</span>
         </div>
         <p>${formatDate(date, { weekday: "short" })}</p>
@@ -406,10 +406,11 @@ function renderPlan() {
 
   const unscheduled = getItemsForDate("");
   $("#unscheduledCount").textContent = unscheduled.length;
-  $("#unscheduledPreview").innerHTML = unscheduled.length
-    ? `<div class="mini-list">${unscheduled.slice(0, 8).map(renderItemCard).join("")}</div>`
+  const unscheduledPreview = $("#unscheduledPreview");
+  unscheduledPreview.dataset.dropDate = "";
+  unscheduledPreview.innerHTML = unscheduled.length
+    ? unscheduled.slice(0, 8).map(renderItemCard).join("")
     : `<p class="empty-state">Все идеи уже пристроены по дням.</p>`;
-  $("#unscheduledPreview").querySelector(".mini-list, .empty-state")?.setAttribute("data-drop-date", "");
   resetDayScrollPositions();
 }
 
@@ -1012,7 +1013,7 @@ function bindPointerDrag() {
       else if (lastY > innerHeight - edge) scrollY = Math.ceil(((lastY - (innerHeight - edge)) / edge) * maxSpeed);
       if (scrollY) window.scrollBy(0, scrollY);
 
-      const horizontalZone = document.elementFromPoint(lastX, lastY)?.closest?.(".day-items, .mini-list, .basket-grid-list");
+      const horizontalZone = document.elementFromPoint(lastX, lastY)?.closest?.(".day-items, .basket-grid-list");
       if (horizontalZone) {
         let scrollX = 0;
         const rect = horizontalZone.getBoundingClientRect();
