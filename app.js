@@ -230,7 +230,7 @@ function convertTripCurrency(fromCurrency, toCurrency) {
 }
 
 function getSupportedCurrencies() {
-  return ["RUB", "EUR", "SEK", "RSD", "BAM"];
+  return ["RUB", "EUR", "SEK", "USD", "GEL", "TRY", "RSD", "BAM"];
 }
 
 function formatCurrencyAmount(value, currency) {
@@ -266,7 +266,7 @@ function renderRatesStatus(message = null) {
   }
   const source = ratesSource === "live" ? "реальный курс" : "демо-курс";
   const updated = ratesUpdatedAt ? ` · обновлено ${ratesUpdatedAt.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}` : "";
-  status.textContent = `Используется ${source}${updated}. RUB / EUR / SEK / RSD / BAM.`;
+  status.textContent = `Используется ${source}${updated}. RUB / EUR / SEK / USD / GEL / TRY / RSD / BAM.`;
 }
 
 async function refreshExchangeRates() {
@@ -281,7 +281,7 @@ async function refreshExchangeRates() {
       if (currency === "RUB") nextRates.RUB = 1;
       else if (Number(rates[currency])) nextRates[currency] = 1 / Number(rates[currency]);
     });
-    if (!nextRates.EUR || !nextRates.SEK || !nextRates.RSD || !nextRates.BAM) throw new Error("missing rates");
+    if (!getSupportedCurrencies().every((currency) => nextRates[currency])) throw new Error("missing rates");
     Object.assign(currencyRatesToRub, nextRates);
     ratesSource = "live";
     ratesUpdatedAt = new Date();
