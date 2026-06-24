@@ -26,12 +26,12 @@
   --app-gradient:
     linear-gradient(145deg, rgba(255, 255, 255, 0.92) 0%, rgba(224, 231, 228, 0.96) 42%, rgba(198, 207, 203, 0.96) 66%, rgba(247, 249, 245, 0.94) 100%);
   --active-button-gradient:
-    linear-gradient(145deg, #5f6767 0%, #3f494b 42%, #747d7a 68%, #2f383a 100%);
+    linear-gradient(145deg, #8d9693 0%, #66716f 42%, #9ba39f 68%, #56615f 100%);
   --active-button-shadow:
-    inset 1px 1px 0 rgba(255, 255, 255, 0.16),
-    inset -8px -8px 14px rgba(0, 0, 0, 0.18),
-    5px 5px 0 rgba(18, 54, 61, 0.16),
-    0 14px 28px rgba(18, 54, 61, 0.16);
+    inset 1px 1px 0 rgba(255, 255, 255, 0.24),
+    inset -8px -8px 14px rgba(0, 0, 0, 0.12),
+    5px 5px 0 rgba(18, 54, 61, 0.12),
+    0 14px 28px rgba(18, 54, 61, 0.12);
   font-family: Roboto, "Segoe UI", Arial, sans-serif;
 }
 
@@ -439,6 +439,16 @@ h3 {
   font-weight: 700;
   text-shadow: 0 2px 0 rgba(18, 54, 61, 0.18);
   box-shadow: inset -14px -14px 0 rgba(18, 54, 61, 0.08);
+}
+
+.tile-icon svg {
+  width: 31px;
+  height: 31px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .tile-icon small {

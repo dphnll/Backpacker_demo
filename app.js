@@ -15,16 +15,16 @@ const itemTypes = [
 ];
 
 const typeIcons = {
-  ticket: "✈",
-  stay: "⌂",
-  transport: "↔",
-  excursion: "◎",
-  food: "☕",
-  place: "⌖",
-  spa: "♨",
-  shopping: "▣",
-  idea: "★",
-  other: "•",
+  ticket: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h18M4 12l6-6M4 12l6 6M14 6l6 6-6 6"></path></svg>`,
+  stay: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5"></path><path d="M6.5 10.5V20h11V10.5"></path><path d="M10 20v-5h4v5"></path></svg>`,
+  transport: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h11l3 4v7H5V7z"></path><path d="M7 18v1.5M17 18v1.5M8 11h8M9 15h1M14 15h1"></path></svg>`,
+  excursion: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="13" cy="4.5" r="2"></circle><path d="M12 7.5 9.5 12l3 2.2"></path><path d="M10 12l-3 2M12.5 14.2 10 20M13.5 14.2 18 20M14 9.5l3 2.5"></path></svg>`,
+  food: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="5"></circle><path d="M4 4v7M6 4v7M8 4v7M6 11v9"></path><path d="M19 4v16M16.5 4c0 4 2.5 4 2.5 7"></path></svg>`,
+  place: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.4 6-11a6 6 0 1 0-12 0c0 5.6 6 11 6 11z"></path><circle cx="12" cy="10" r="2"></circle></svg>`,
+  spa: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14c-1.5-1.4-1.5-3.1 0-4.5M12 14c-1.5-1.4-1.5-3.1 0-4.5M17 14c-1.5-1.4-1.5-3.1 0-4.5"></path><path d="M5 17h14l-1.4 3H6.4L5 17z"></path></svg>`,
+  shopping: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8h12l-1 12H7L6 8z"></path><path d="M9 8a3 3 0 0 1 6 0"></path></svg>`,
+  idea: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M8.2 14.2a6 6 0 1 1 7.6 0c-.8.6-1.3 1.4-1.5 2.3H9.7c-.2-.9-.7-1.7-1.5-2.3z"></path></svg>`,
+  other: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6"></circle><path d="M12 8v4l3 2"></path></svg>`,
 };
 
 const statuses = [
