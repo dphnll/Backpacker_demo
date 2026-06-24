@@ -1,4 +1,5 @@
 const STORAGE_KEY = "backpacker.mvp.v1";
+const VIEW_STORAGE_KEY = "backpacker.currentView.v1";
 
 const itemTypes = [
   ["ticket", "Билет"],
@@ -159,11 +160,12 @@ const seedState = {
 };
 
 let state = loadState();
-let currentView = "plan";
+let currentView = loadInitialView();
 let currentFilter = "all";
 let draggedItemId = null;
 let dragJustHappened = false;
 let pointerDrag = null;
+let autoScrollFrame = null;
 let ratesUpdatedAt = null;
 let ratesSource = "demo";
 
@@ -176,6 +178,15 @@ function loadState() {
     return normalizeState(raw ? JSON.parse(raw) : structuredClone(seedState));
   } catch {
     return normalizeState(structuredClone(seedState));
+  }
+}
+
+function loadInitialView() {
+  try {
+    const savedView = localStorage.getItem(VIEW_STORAGE_KEY);
+    return ["plan", "basket", "budget", "currency"].includes(savedView) ? savedView : "plan";
+  } catch {
+    return "plan";
   }
 }
 
@@ -756,6 +767,81 @@ function buildEstimateText() {
   return [header, ...rows].join("\n");
 }
 
+function escapeCsvValue(value = "") {
+  const text = String(value ?? "");
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function buildEstimateCsv() {
+  const header = ["Событие", "Тип", "Статус", "День", "Время", "Цена", "Оплачено", "Ссылка"];
+  const rows = [...state.items]
+    .sort((a, b) => (a.date || "9999-99-99").localeCompare(b.date || "9999-99-99") || sortItems(a, b))
+    .map((item) => [
+      item.title,
+      getTypeLabel(item.type),
+      getStatusLabel(item.status),
+      item.date ? formatDate(item.date) : "без даты",
+      item.startTime || "",
+      parseMoney(item.price),
+      parseMoney(item.paidAmount),
+      item.link || "",
+    ]);
+  return [header, ...rows].map((row) => row.map(escapeCsvValue).join(";")).join("\n");
+}
+
+function slugifyFileName(value = "backpacker") {
+  const slug = String(value)
+    .trim()
+    .toLowerCase()
+    .replaceAll("ё", "е")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "backpacker";
+}
+
+function downloadTextFile(fileName, content, mimeType = "text/plain;charset=utf-8") {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function downloadEstimate() {
+  const name = `${slugifyFileName(state.trip.title)}-estimate.csv`;
+  downloadTextFile(name, `\uFEFF${buildEstimateCsv()}`, "text/csv;charset=utf-8");
+  showToast("Смета скачана");
+}
+
+function downloadPlan() {
+  const name = `${slugifyFileName(state.trip.title)}-plan.txt`;
+  downloadTextFile(name, buildShareText(false), "text/plain;charset=utf-8");
+  showToast("План скачан");
+}
+
+async function shareTrip() {
+  const text = buildShareText(true);
+  const shareData = {
+    title: `Backpacker: ${state.trip.title}`,
+    text,
+    url: window.location.href,
+  };
+  if (navigator.share) {
+    try {
+      await navigator.share(shareData);
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+    }
+  }
+  await copyText(`${text}\n\n${window.location.href}`);
+  showToast("Ссылка и сводка скопированы");
+}
+
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
@@ -791,6 +877,11 @@ function showToast(message) {
 
 function switchView(view) {
   currentView = view;
+  try {
+    localStorage.setItem(VIEW_STORAGE_KEY, view);
+  } catch {
+    // View persistence is a comfort feature; the app should work without it.
+  }
   $$(".view").forEach((element) => element.classList.toggle("active", element.id === `${view}View`));
   $$(".nav-button").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
 }
@@ -859,63 +950,143 @@ function bindDesktopDrag() {
 }
 
 function bindPointerDrag() {
+  const longPressDelay = 420;
+  const cancelDistance = 10;
+
+  function startPointerDrag(event) {
+    if (!pointerDrag || pointerDrag.active) return;
+    const rect = pointerDrag.card.getBoundingClientRect();
+    draggedItemId = pointerDrag.id;
+    pointerDrag.active = true;
+    pointerDrag.lastX = pointerDrag.startX;
+    pointerDrag.lastY = pointerDrag.startY;
+    pointerDrag.ghost = pointerDrag.card.cloneNode(true);
+    pointerDrag.ghost.classList.add("drag-ghost");
+    pointerDrag.ghost.style.width = `${rect.width}px`;
+    pointerDrag.ghost.style.left = `${rect.left}px`;
+    pointerDrag.ghost.style.top = `${rect.top}px`;
+    document.body.appendChild(pointerDrag.ghost);
+    document.body.classList.add("mobile-dragging");
+    pointerDrag.card.classList.add("dragging-source");
+    pointerDrag.card.setPointerCapture?.(event.pointerId);
+    updateAutoScroll();
+  }
+
+  function stopAutoScroll() {
+    if (autoScrollFrame) window.cancelAnimationFrame(autoScrollFrame);
+    autoScrollFrame = null;
+  }
+
+  function updateAutoScroll() {
+    stopAutoScroll();
+    const tick = () => {
+      if (!pointerDrag?.active) {
+        stopAutoScroll();
+        return;
+      }
+
+      const edge = 72;
+      const maxSpeed = 18;
+      const { innerHeight, innerWidth } = window;
+      const { lastX, lastY } = pointerDrag;
+      let scrollY = 0;
+
+      if (lastY < edge) scrollY = -Math.ceil(((edge - lastY) / edge) * maxSpeed);
+      else if (lastY > innerHeight - edge) scrollY = Math.ceil(((lastY - (innerHeight - edge)) / edge) * maxSpeed);
+      if (scrollY) window.scrollBy(0, scrollY);
+
+      const horizontalZone = document.elementFromPoint(lastX, lastY)?.closest?.(".day-items, .mini-list, .basket-grid-list");
+      if (horizontalZone) {
+        let scrollX = 0;
+        const rect = horizontalZone.getBoundingClientRect();
+        if (lastX < rect.left + edge) scrollX = -Math.ceil(((rect.left + edge - lastX) / edge) * maxSpeed);
+        else if (lastX > rect.right - edge) scrollX = Math.ceil(((lastX - (rect.right - edge)) / edge) * maxSpeed);
+        if (scrollX) horizontalZone.scrollBy(scrollX, 0);
+      } else if (lastX < edge) {
+        window.scrollBy(-8, 0);
+      } else if (lastX > innerWidth - edge) {
+        window.scrollBy(8, 0);
+      }
+
+      autoScrollFrame = window.requestAnimationFrame(tick);
+    };
+    autoScrollFrame = window.requestAnimationFrame(tick);
+  }
+
+  function cleanupPointerDrag({ drop = false, event = null } = {}) {
+    if (!pointerDrag) return;
+    const drag = pointerDrag;
+    pointerDrag = null;
+    window.clearTimeout(drag.timer);
+
+    if (drop && drag.active && event) {
+      const data = getDropDataFromPoint(event.clientX, event.clientY);
+      if (data) moveItem(drag.id, data.date, data.beforeItemId);
+      finishDragClickGuard();
+    }
+
+    stopAutoScroll();
+    drag.ghost?.remove();
+    drag.card.classList.remove("dragging-source");
+    if (drag.restoreDraggable) drag.card.setAttribute("draggable", "true");
+    drag.card.releasePointerCapture?.(drag.pointerId);
+    document.body.classList.remove("mobile-dragging");
+    draggedItemId = null;
+    clearDropHighlights();
+  }
+
   document.addEventListener("pointerdown", (event) => {
     if (event.pointerType === "mouse") return;
     const card = event.target.closest("[data-drag-id]");
     if (!card || event.target.closest("a, input, textarea, select, button:not(.item-card)")) return;
+    cleanupPointerDrag();
+    card.setAttribute("draggable", "false");
     pointerDrag = {
       id: card.dataset.dragId,
       card,
+      restoreDraggable: true,
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
       active: false,
       ghost: null,
-      timer: window.setTimeout(() => {
-        const rect = card.getBoundingClientRect();
-        draggedItemId = card.dataset.dragId;
-        pointerDrag.active = true;
-        pointerDrag.ghost = card.cloneNode(true);
-        pointerDrag.ghost.classList.add("drag-ghost");
-        pointerDrag.ghost.style.width = `${rect.width}px`;
-        pointerDrag.ghost.style.left = `${rect.left}px`;
-        pointerDrag.ghost.style.top = `${rect.top}px`;
-        document.body.appendChild(pointerDrag.ghost);
-        card.classList.add("dragging-source");
-        card.setPointerCapture?.(event.pointerId);
-      }, 220),
+      timer: window.setTimeout(() => startPointerDrag(event), longPressDelay),
     };
   });
 
   document.addEventListener("pointermove", (event) => {
     if (!pointerDrag) return;
     const distance = Math.hypot(event.clientX - pointerDrag.startX, event.clientY - pointerDrag.startY);
-    if (!pointerDrag.active && distance > 12) {
-      window.clearTimeout(pointerDrag.timer);
-      pointerDrag = null;
+    if (!pointerDrag.active && distance > cancelDistance) {
+      cleanupPointerDrag();
       return;
     }
     if (!pointerDrag.active) return;
     event.preventDefault();
+    pointerDrag.lastX = event.clientX;
+    pointerDrag.lastY = event.clientY;
     pointerDrag.ghost.style.transform = `translate(${event.clientX - pointerDrag.startX}px, ${event.clientY - pointerDrag.startY}px)`;
     const data = getDropDataFromPoint(event.clientX, event.clientY);
     if (data) markDropZone(data.zone);
   }, { passive: false });
 
   document.addEventListener("pointerup", (event) => {
-    if (!pointerDrag) return;
-    window.clearTimeout(pointerDrag.timer);
-    if (pointerDrag.active) {
-      const data = getDropDataFromPoint(event.clientX, event.clientY);
-      if (data) moveItem(pointerDrag.id, data.date, data.beforeItemId);
-      finishDragClickGuard();
-    }
-    pointerDrag.ghost?.remove();
-    pointerDrag.card.classList.remove("dragging-source");
-    pointerDrag.card.releasePointerCapture?.(pointerDrag.pointerId);
-    pointerDrag = null;
-    draggedItemId = null;
-    clearDropHighlights();
+    cleanupPointerDrag({ drop: true, event });
+  });
+
+  document.addEventListener("pointercancel", () => {
+    cleanupPointerDrag();
+  });
+
+  document.addEventListener("contextmenu", (event) => {
+    if (!pointerDrag?.active) return;
+    event.preventDefault();
+  });
+
+  document.addEventListener("lostpointercapture", () => {
+    if (pointerDrag?.active) cleanupPointerDrag();
   });
 }
 
@@ -964,8 +1135,9 @@ function bindEvents() {
   $("#tripForm").addEventListener("submit", saveTrip);
   $("#resetDemoButton").addEventListener("click", resetDemo);
   $("#shareButton").addEventListener("click", openShareSheet);
-  $("#copySummaryButton").addEventListener("click", () => copyText(buildShareText(true)));
-  $("#copyPlanButton").addEventListener("click", () => copyText(buildShareText(false)));
+  $("#downloadEstimateButton").addEventListener("click", downloadEstimate);
+  $("#downloadPlanButton").addEventListener("click", downloadPlan);
+  $("#shareTripButton").addEventListener("click", shareTrip);
   $("#copyEstimateButton").addEventListener("click", () => copyText(buildEstimateText()));
   $("#refreshRatesButton").addEventListener("click", refreshExchangeRates);
   ["currencyAmount", "currencyFrom", "currencyTo"].forEach((id) => {
@@ -977,5 +1149,10 @@ function bindEvents() {
 }
 
 bindEvents();
+switchView(currentView);
 render();
 refreshExchangeRates();
+
+if ("serviceWorker" in navigator && ["http:", "https:"].includes(window.location.protocol)) {
+  navigator.serviceWorker.register("./service-worker.js").catch(() => {});
+}

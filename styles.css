@@ -335,6 +335,16 @@ h3 {
   overflow: hidden;
   cursor: grab;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.mobile-dragging,
+.mobile-dragging * {
+  cursor: grabbing;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .type-ticket {
@@ -1043,6 +1053,21 @@ textarea:focus {
   display: grid;
   gap: 10px;
   margin-bottom: 12px;
+}
+
+.share-actions .primary-button,
+.share-actions .ghost-button,
+.feedback-button {
+  min-height: 44px;
+  border-color: rgba(18, 54, 61, 0.34);
+  background: var(--active-button-gradient);
+  color: #fff;
+  box-shadow: var(--active-button-shadow);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  text-decoration: none;
 }
 
 .share-preview {

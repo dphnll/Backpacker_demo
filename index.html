@@ -3,7 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#3f494b" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Backpacker" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>Backpacker</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icons/backpacker-icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icons/backpacker-192.png" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -42,7 +49,6 @@
             <div>
               <h2>План</h2>
             </div>
-            <button class="primary-button compact" data-action="add" type="button">+ Добавить</button>
           </div>
           <div class="days-list" id="daysList"></div>
           <section class="day-card unscheduled-card">
@@ -62,7 +68,6 @@
             <div>
               <h2>Корзина</h2>
             </div>
-            <button class="primary-button compact" data-action="add" type="button">+ Добавить</button>
           </div>
           <div class="filter-row" id="filterRow"></div>
           <div class="basket-list" id="basketList"></div>
@@ -293,8 +298,10 @@
           <button class="icon-button" data-close="share" type="button" aria-label="Закрыть">×</button>
         </header>
         <div class="share-actions">
-          <button class="primary-button" id="copySummaryButton" type="button">Скопировать сводку</button>
-          <button class="ghost-button" id="copyPlanButton" type="button">Скопировать план по дням</button>
+          <button class="primary-button" id="downloadEstimateButton" type="button">Скачать смету</button>
+          <button class="ghost-button" id="downloadPlanButton" type="button">Скачать план по дням</button>
+          <button class="ghost-button" id="shareTripButton" type="button">Поделиться</button>
+          <a class="ghost-button feedback-button" id="feedbackButton" href="https://t.me/dphnll" target="_blank" rel="noreferrer">Написать нам</a>
         </div>
         <pre class="share-preview" id="sharePreview"></pre>
       </section>
