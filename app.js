@@ -479,11 +479,18 @@ function renderBudget() {
       <div class="metric-card service-total"><span>Возможный итог</span><strong>${formatMoney(totals.possible)}</strong></div>
       <div class="metric-card"><span>Остаток</span><strong style="color:${totals.remaining < 0 ? "var(--danger)" : "var(--green)"}">${formatMoney(totals.remaining)}</strong></div>
     </section>
-    <section class="card" style="padding: 12px; display: grid; gap: 8px;">
-      <div class="card-title-row"><h3>По дням</h3><span class="muted">${dates.length}</span></div>
+    <section class="card budget-days-card">
+      <div class="card-title-row">
+        <h3>По дням</h3>
+        <div class="title-actions">
+          <span class="muted">${dates.length}</span>
+          <button class="ghost-button compact" id="copyDaysButton" type="button">Скопировать</button>
+        </div>
+      </div>
       ${byDay}
     </section>
   `;
+  $("#copyDaysButton")?.addEventListener("click", () => copyText(buildDaysText()));
 }
 
 function renderEstimateTable() {
@@ -765,6 +772,16 @@ function buildEstimateText() {
       ].join("\t"),
     );
   return [header, ...rows].join("\n");
+}
+
+function buildDaysText() {
+  const rows = getTripDates().map((date, index) => {
+    const total = state.items
+      .filter((item) => item.date === date && isActiveCost(item))
+      .reduce((sum, item) => sum + parseMoney(item.price), 0);
+    return `День ${index + 1}\t${formatDate(date)}\t${formatMoney(total)}`;
+  });
+  return ["День\tДата\tСумма", ...rows].join("\n");
 }
 
 function escapeCsvValue(value = "") {

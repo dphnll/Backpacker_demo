@@ -636,7 +636,9 @@ h3 {
 .header-actions .icon-button,
 .section-heading .primary-button[data-action="add"],
 #copyEstimateButton,
-#refreshRatesButton {
+#copyDaysButton,
+#refreshRatesButton,
+#tripForm .primary-button[type="submit"] {
   border-color: rgba(18, 54, 61, 0.34);
   background: var(--active-button-gradient);
   color: #fff;
@@ -654,7 +656,9 @@ h3 {
 }
 
 #copyEstimateButton,
-#refreshRatesButton {
+#copyDaysButton,
+#refreshRatesButton,
+#tripForm .primary-button[type="submit"] {
   min-height: 40px;
   border-color: rgba(18, 54, 61, 0.34);
   background: var(--active-button-gradient);
@@ -894,6 +898,18 @@ h3 {
   grid-column: 1 / -1;
 }
 
+.budget-days-card {
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.title-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .metric-card.service-total {
   border-color: rgba(18, 54, 61, 0.42);
   background: var(--active-button-gradient);
@@ -993,6 +1009,7 @@ h3 {
 .sheet-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 10px;
 }
 
