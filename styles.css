@@ -101,6 +101,27 @@ a {
   gap: 12px;
 }
 
+.brand-lockup {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-logo {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  border: 1px solid rgba(18, 54, 61, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+  object-fit: contain;
+  padding: 4px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    3px 3px 0 rgba(18, 54, 61, 0.1);
+}
+
 .eyebrow {
   margin: 0 0 3px;
   color: rgba(18, 54, 61, 0.78);
