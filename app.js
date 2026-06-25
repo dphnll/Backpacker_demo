@@ -511,7 +511,12 @@ function renderHome() {
     .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
 
   if (!trips.length) {
-    list.innerHTML = `<p class="empty-trips">Пока здесь будут появляться ваши поездки. Начните с тренажера или создайте новую.</p>`;
+    list.innerHTML = `
+      <p class="empty-trips">
+        <span>Здесь будут ваши поездки</span>
+        <span>Начните с тренажера 👆🏻 или создайте новую поездку</span>
+      </p>
+    `;
     return;
   }
 

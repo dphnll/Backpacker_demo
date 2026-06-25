@@ -603,6 +603,8 @@ a {
 }
 
 .empty-trips {
+  display: grid;
+  gap: 4px;
   margin: 0;
   padding: 14px;
   border: 1px dashed rgba(18, 54, 61, 0.22);
@@ -611,6 +613,10 @@ a {
   font-size: 14px;
   font-weight: 700;
   line-height: 1.35;
+}
+
+.empty-trips span {
+  display: block;
 }
 
 .app-shell {
