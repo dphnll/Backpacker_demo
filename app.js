@@ -1,5 +1,8 @@
 const STORAGE_KEY = "backpacker.mvp.v1";
+const TRIPS_STORAGE_KEY = "backpacker.trips.v1";
+const ACTIVE_TRIP_STORAGE_KEY = "backpacker.activeTrip.v1";
 const VIEW_STORAGE_KEY = "backpacker.currentView.v1";
+const ONBOARDING_STORAGE_KEY = "backpacker.onboarding.v1";
 let deferredInstallPrompt = null;
 
 const itemTypes = [
@@ -160,8 +163,10 @@ const seedState = {
   ],
 };
 
+let tripStore = loadTripStore();
 let state = loadState();
 let currentView = loadInitialView();
+let currentScreen = "home";
 let currentFilter = "all";
 let draggedItemId = null;
 let dragJustHappened = false;
@@ -169,16 +174,116 @@ let pointerDrag = null;
 let autoScrollFrame = null;
 let ratesUpdatedAt = null;
 let ratesSource = "demo";
+let coverTargetTripId = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
 function loadState() {
+  const activeTripId = loadActiveTripId();
+  const activeEntry = tripStore.trips.find((entry) => entry.id === activeTripId) || tripStore.trips[0];
+  return normalizeState(structuredClone(activeEntry?.state || seedState));
+}
+
+function createTripEntry(nextState, overrides = {}) {
+  const normalized = normalizeState(structuredClone(nextState));
+  const now = new Date().toISOString();
+  const id = overrides.id || normalized.trip.id || `trip-${Date.now()}`;
+  normalized.trip = {
+    ...normalized.trip,
+    id,
+  };
+  return {
+    id,
+    isDemo: Boolean(overrides.isDemo),
+    createdAt: overrides.createdAt || now,
+    updatedAt: overrides.updatedAt || now,
+    coverDataUrl: overrides.coverDataUrl || "",
+    state: normalized,
+  };
+}
+
+function createDemoEntry() {
+  const demoState = normalizeState(structuredClone(seedState));
+  demoState.trip.id = "trainer-kazan";
+  demoState.trip.title = "Казань соло";
+  return createTripEntry(demoState, {
+    id: "trainer-kazan",
+    isDemo: true,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+}
+
+function createBlankTripEntry() {
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const toDateInput = (date) => date.toISOString().slice(0, 10);
+  const id = `trip-${Date.now()}`;
+  const blankState = {
+    trip: {
+      id,
+      title: "Новая поездка",
+      destination: "",
+      startDate: toDateInput(today),
+      endDate: toDateInput(tomorrow),
+      currency: "RUB",
+      budgetLimit: 0,
+      preferencesText: "",
+    },
+    items: [],
+  };
+  return createTripEntry(blankState, { id });
+}
+
+function loadTripStore() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return normalizeState(raw ? JSON.parse(raw) : structuredClone(seedState));
+    const raw = localStorage.getItem(TRIPS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed?.trips) && parsed.trips.length) {
+        return {
+          trips: parsed.trips.map((entry) => {
+            const normalizedState = normalizeState(entry.state);
+            if (entry.id === "trainer-kazan") {
+              normalizedState.trip.title = "Казань соло";
+            }
+            return {
+              ...entry,
+              state: normalizedState,
+            };
+          }),
+        };
+      }
+    }
   } catch {
-    return normalizeState(structuredClone(seedState));
+    // Fall through to migration.
+  }
+
+  const trips = [createDemoEntry()];
+  try {
+    const legacyRaw = localStorage.getItem(STORAGE_KEY);
+    if (legacyRaw) {
+      const legacyState = normalizeState(JSON.parse(legacyRaw));
+      const legacyEntry = createTripEntry(legacyState, {
+        id: legacyState.trip.id && legacyState.trip.id !== "trip-1" ? legacyState.trip.id : `trip-${Date.now()}`,
+      });
+      if (legacyEntry.id !== "trainer-kazan") trips.push(legacyEntry);
+    }
+  } catch {
+    // Legacy migration is best-effort.
+  }
+  const store = { trips };
+  persistTripStore(store);
+  return store;
+}
+
+function loadActiveTripId() {
+  try {
+    return localStorage.getItem(ACTIVE_TRIP_STORAGE_KEY) || tripStore.trips[0]?.id;
+  } catch {
+    return tripStore.trips[0]?.id;
   }
 }
 
@@ -201,7 +306,25 @@ function normalizeState(nextState) {
 }
 
 function saveState() {
+  const currentId = state.trip.id;
+  const now = new Date().toISOString();
+  const entryIndex = tripStore.trips.findIndex((entry) => entry.id === currentId);
+  const nextEntry = createTripEntry(state, {
+    id: currentId,
+    isDemo: tripStore.trips[entryIndex]?.isDemo,
+    createdAt: tripStore.trips[entryIndex]?.createdAt,
+    updatedAt: now,
+    coverDataUrl: tripStore.trips[entryIndex]?.coverDataUrl,
+  });
+  if (entryIndex >= 0) tripStore.trips[entryIndex] = nextEntry;
+  else tripStore.trips.push(nextEntry);
+  persistTripStore(tripStore);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  localStorage.setItem(ACTIVE_TRIP_STORAGE_KEY, currentId);
+}
+
+function persistTripStore(store = tripStore) {
+  localStorage.setItem(TRIPS_STORAGE_KEY, JSON.stringify(store));
 }
 
 function formatMoney(value = 0) {
@@ -361,6 +484,7 @@ function getTotals() {
 }
 
 function render() {
+  renderHome();
   renderHeader();
   renderPlan();
   renderBasket();
@@ -368,6 +492,55 @@ function render() {
   renderEstimateTable();
   renderCurrencyCalculator();
   renderSharePreview();
+}
+
+function getEntryTotals(entry) {
+  const entryState = normalizeState(entry.state);
+  const paid = entryState.items.reduce((sum, item) => sum + parseMoney(item.paidAmount), 0);
+  const possible = entryState.items
+    .filter((item) => item.status !== "skipped" && item.status !== "backup")
+    .reduce((sum, item) => sum + parseMoney(item.price), 0);
+  return { paid, possible };
+}
+
+function renderHome() {
+  const list = $("#tripList");
+  if (!list) return;
+  const trips = tripStore.trips
+    .filter((entry) => !entry.isDemo)
+    .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
+
+  if (!trips.length) {
+    list.innerHTML = `<p class="empty-trips">Пока здесь будут появляться ваши поездки. Начните с тренажера или создайте новую.</p>`;
+    return;
+  }
+
+  list.innerHTML = trips.map((entry) => {
+    const trip = entry.state.trip;
+    const totals = getEntryTotals(entry);
+    const style = entry.coverDataUrl ? ` style="background-image: linear-gradient(145deg, rgba(18,54,61,.66), rgba(18,54,61,.12)), url('${escapeAttr(entry.coverDataUrl)}')"` : "";
+    return `
+      <article class="home-card trip-list-card"${style}>
+        <button class="trip-card-open" data-open-trip="${escapeAttr(entry.id)}" type="button">
+          <span class="home-card-kicker">${formatDate(trip.startDate)}-${formatDate(trip.endDate)}</span>
+          <strong>${escapeHtml(trip.title || "Новая поездка")}</strong>
+          <span>${escapeHtml(trip.destination || "Направление не задано")}</span>
+          <div class="home-card-meta">
+            <span>${formatCurrencyAmount(trip.budgetLimit, trip.currency)}</span>
+            <span>план ${formatCurrencyAmount(totals.possible, trip.currency)}</span>
+          </div>
+        </button>
+        <button class="cover-trip-button" data-cover-trip="${escapeAttr(entry.id)}" type="button" aria-label="Добавить обложку">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 8h4l1.8-2h4.4L16 8h4v11H4V8z"></path>
+            <circle cx="12" cy="13.5" r="3"></circle>
+            <path d="M18 5v4M16 7h4"></path>
+          </svg>
+        </button>
+        <button class="delete-trip-button" data-delete-trip="${escapeAttr(entry.id)}" type="button">Удалить</button>
+      </article>
+    `;
+  }).join("");
 }
 
 function renderHeader() {
@@ -400,7 +573,7 @@ function renderPlan() {
         </div>
       </header>
       <div class="day-items" data-drop-date="${date}">
-        ${items.length ? items.map(renderItemCard).join("") : `<p class="empty-state">Пока пусто. Можно добавить идею или перенести сюда элемент из корзины.</p>`}
+        ${items.length ? items.map(renderItemCard).join("") : `<p class="empty-state">Пока пусто. Можно добавить идею или перетащить сюда карточку из раздела хотелок "Без даты".</p>`}
       </div>
     `;
     daysList.appendChild(card);
@@ -713,7 +886,11 @@ function saveTrip(event) {
 }
 
 function resetDemo() {
+  const currentId = state.trip.id;
+  const currentTitle = state.trip.title;
   state = normalizeState(structuredClone(seedState));
+  state.trip.id = currentId;
+  state.trip.title = currentTitle || state.trip.title;
   saveState();
   closeSheet("tripSheet");
   render();
@@ -1064,6 +1241,27 @@ async function shareTrip() {
   showToast("Ссылка и сводка скопированы");
 }
 
+async function shareApp() {
+  const url = window.location.origin && window.location.protocol !== "file:"
+    ? `${window.location.origin}${window.location.pathname}`
+    : "https://dphnll.github.io/Backpacker_demo/";
+  const shareData = {
+    title: "Backpacker",
+    text: "Backpacker — план поездки, корзина идей, бюджет и ссылки в одном месте.",
+    url,
+  };
+  if (navigator.share) {
+    try {
+      await navigator.share(shareData);
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+    }
+  }
+  await copyText(`${shareData.text}\n${url}`);
+  showToast("Ссылка на Backpacker скопирована");
+}
+
 function getItemFormLink() {
   return $("#itemForm").elements.link.value.trim();
 }
@@ -1131,6 +1329,163 @@ function showToast(message) {
   toast.classList.add("visible");
   window.clearTimeout(showToast.timeout);
   showToast.timeout = window.setTimeout(() => toast.classList.remove("visible"), 1800);
+}
+
+function showIntroSlide(index) {
+  $$("[data-intro-slide]").forEach((slide) => {
+    slide.classList.toggle("hidden", slide.dataset.introSlide !== String(index));
+  });
+}
+
+function showIntroScreen() {
+  currentScreen = "intro";
+  $("#introScreen").classList.remove("hidden");
+  $("#homeScreen").classList.add("hidden");
+  $(".app-shell").classList.add("hidden");
+  showIntroSlide(0);
+}
+
+function finishIntro() {
+  try {
+    localStorage.setItem(ONBOARDING_STORAGE_KEY, "seen");
+  } catch {
+    // The app should still open when storage is unavailable.
+  }
+  showHomeScreen();
+}
+
+function startApp() {
+  const forceIntro = new URLSearchParams(window.location.search).get("intro") === "1";
+  let onboardingSeen = false;
+  try {
+    onboardingSeen = localStorage.getItem(ONBOARDING_STORAGE_KEY) === "seen";
+  } catch {
+    onboardingSeen = false;
+  }
+
+  if (forceIntro || !onboardingSeen) {
+    showIntroScreen();
+    return;
+  }
+
+  showHomeScreen();
+}
+
+function showHomeScreen() {
+  currentScreen = "home";
+  $("#introScreen").classList.add("hidden");
+  $("#homeScreen").classList.remove("hidden");
+  $(".app-shell").classList.add("hidden");
+  renderHome();
+}
+
+function showTripScreen() {
+  currentScreen = "trip";
+  $("#introScreen").classList.add("hidden");
+  $("#homeScreen").classList.add("hidden");
+  $(".app-shell").classList.remove("hidden");
+  render();
+}
+
+function openTrip(tripId) {
+  const entry = tripStore.trips.find((trip) => trip.id === tripId);
+  if (!entry) return;
+  state = normalizeState(structuredClone(entry.state));
+  try {
+    localStorage.setItem(ACTIVE_TRIP_STORAGE_KEY, tripId);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Opening still works even without persistence.
+  }
+  switchView(currentView);
+  showTripScreen();
+}
+
+function createNewTrip() {
+  const entry = createBlankTripEntry();
+  tripStore.trips.push(entry);
+  persistTripStore(tripStore);
+  openTrip(entry.id);
+  openTripSheet();
+}
+
+function selectTripCover(tripId) {
+  coverTargetTripId = tripId;
+  const input = $("#coverInput");
+  input.value = "";
+  input.click();
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = src;
+  });
+}
+
+async function makeCoverDataUrl(file) {
+  const source = await readFileAsDataUrl(file);
+  const image = await loadImage(source);
+  const size = 900;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = Math.round(size * 0.62);
+  const context = canvas.getContext("2d");
+  const ratio = Math.max(canvas.width / image.width, canvas.height / image.height);
+  const width = image.width * ratio;
+  const height = image.height * ratio;
+  const x = (canvas.width - width) / 2;
+  const y = (canvas.height - height) / 2;
+  context.drawImage(image, x, y, width, height);
+  return canvas.toDataURL("image/jpeg", 0.78);
+}
+
+async function saveSelectedCover(event) {
+  const file = event.target.files?.[0];
+  const entry = tripStore.trips.find((trip) => trip.id === coverTargetTripId);
+  if (!file || !entry) return;
+  try {
+    entry.coverDataUrl = await makeCoverDataUrl(file);
+    entry.updatedAt = new Date().toISOString();
+    persistTripStore(tripStore);
+    renderHome();
+    showToast("Обложка обновлена");
+  } catch {
+    showToast("Не удалось загрузить обложку");
+  }
+}
+
+function deleteTrip(tripId) {
+  const entry = tripStore.trips.find((trip) => trip.id === tripId);
+  if (!entry || entry.isDemo) return;
+  const title = entry.state.trip.title || "поездку";
+  if (!window.confirm(`Удалить «${title}»? Это действие нельзя отменить.`)) return;
+
+  tripStore.trips = tripStore.trips.filter((trip) => trip.id !== tripId);
+  persistTripStore(tripStore);
+  if (state.trip.id === tripId) {
+    const fallback = tripStore.trips.find((trip) => trip.isDemo) || tripStore.trips[0] || createDemoEntry();
+    if (!tripStore.trips.some((trip) => trip.id === fallback.id)) {
+      tripStore.trips.unshift(fallback);
+      persistTripStore(tripStore);
+    }
+    state = normalizeState(structuredClone(fallback.state));
+    localStorage.setItem(ACTIVE_TRIP_STORAGE_KEY, fallback.id);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+  renderHome();
+  showToast("Поездка удалена");
 }
 
 function switchView(view) {
@@ -1384,8 +1739,31 @@ function bindEvents() {
 
     const closeTarget = event.target.closest("[data-close]");
     if (closeTarget) closeSheet(`${closeTarget.dataset.close}Sheet`);
+
+    const openTripButton = event.target.closest("[data-open-trip]");
+    if (openTripButton) openTrip(openTripButton.dataset.openTrip);
+
+    const deleteTripButton = event.target.closest("[data-delete-trip]");
+    if (deleteTripButton) deleteTrip(deleteTripButton.dataset.deleteTrip);
+
+    const coverTripButton = event.target.closest("[data-cover-trip]");
+    if (coverTripButton) selectTripCover(coverTripButton.dataset.coverTrip);
   });
 
+  $("#trainerTripCard").addEventListener("click", () => openTrip("trainer-kazan"));
+  $("#trainerTripCard").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openTrip("trainer-kazan");
+    }
+  });
+  $("#createTripButton").addEventListener("click", createNewTrip);
+  $("#introNextButton").addEventListener("click", () => showIntroSlide(1));
+  $("#introSecondNextButton").addEventListener("click", () => showIntroSlide(2));
+  $("#introStartButton").addEventListener("click", finishIntro);
+  $("#coverInput").addEventListener("change", saveSelectedCover);
+  $("#homeShareButton").addEventListener("click", shareApp);
+  $("#homeButton").addEventListener("click", showHomeScreen);
   $("#itemForm").addEventListener("submit", saveItem);
   $("#deleteItemButton").addEventListener("click", deleteCurrentItem);
   $("#itemForm").elements.link.addEventListener("input", updateOpenLinkButton);
@@ -1413,6 +1791,7 @@ function bindEvents() {
 bindEvents();
 switchView(currentView);
 render();
+startApp();
 refreshExchangeRates();
 
 window.addEventListener("beforeinstallprompt", (event) => {

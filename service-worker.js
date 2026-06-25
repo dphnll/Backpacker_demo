@@ -1,4 +1,4 @@
-const CACHE_NAME = "backpacker-pwa-v7";
+const CACHE_NAME = "backpacker-pwa-v8";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -6,6 +6,7 @@ const APP_SHELL = [
   "./app.js",
   "./vendor/pdf-lib.min.js",
   "./manifest.webmanifest",
+  "./assets/kazan-cover.jpg",
   "./icons/backpacker-192.png",
   "./icons/backpacker-512.png",
   "./icons/backpacker-logo-transparent.png",

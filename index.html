@@ -11,14 +11,137 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icons/backpacker-192.png" type="image/png" />
     <link rel="apple-touch-icon" href="./icons/backpacker-192.png" />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=onboard-20260625-8" />
   </head>
   <body>
-    <div class="app-shell">
+    <section class="intro-screen" id="introScreen" aria-label="Добро пожаловать в Backpacker">
+      <div class="intro-floaters" aria-hidden="true">
+        <span class="intro-floater floater-ticket">
+          <svg viewBox="0 0 24 24"><path d="M3 12h18M4 12l6-6M4 12l6 6M14 6l6 6-6 6"></path></svg>
+        </span>
+        <span class="intro-floater floater-food">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="5"></circle><path d="M4 4v7M6 4v7M8 4v7M6 11v9"></path><path d="M19 4v16M16.5 4c0 4 2.5 4 2.5 7"></path></svg>
+        </span>
+        <span class="intro-floater floater-place">
+          <svg viewBox="0 0 24 24"><path d="M12 21s6-5.4 6-11a6 6 0 1 0-12 0c0 5.6 6 11 6 11z"></path><circle cx="12" cy="10" r="2"></circle></svg>
+        </span>
+        <span class="intro-floater floater-spa">
+          <svg viewBox="0 0 24 24"><path d="M7 14c-1.5-1.4-1.5-3.1 0-4.5M12 14c-1.5-1.4-1.5-3.1 0-4.5M17 14c-1.5-1.4-1.5-3.1 0-4.5"></path><path d="M5 17h14l-1.4 3H6.4L5 17z"></path></svg>
+        </span>
+        <span class="intro-floater floater-excursion">
+          <svg viewBox="0 0 24 24"><circle cx="13" cy="4.5" r="2"></circle><path d="M12 7.5 9.5 12l3 2.2"></path><path d="M10 12l-3 2M12.5 14.2 10 20M13.5 14.2 18 20M14 9.5l3 2.5"></path></svg>
+        </span>
+        <span class="intro-floater floater-stay">
+          <svg viewBox="0 0 24 24"><path d="M4 11.5 12 5l8 6.5"></path><path d="M6.5 10.5V20h11V10.5"></path><path d="M10 20v-5h4v5"></path></svg>
+        </span>
+        <span class="intro-floater floater-idea">
+          <svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M8.2 14.2a6 6 0 1 1 7.6 0c-.8.6-1.3 1.4-1.5 2.3H9.7c-.2-.9-.7-1.7-1.5-2.3z"></path></svg>
+        </span>
+        <span class="intro-floater floater-shopping">
+          <svg viewBox="0 0 24 24"><path d="M6 8h12l-1 12H7L6 8z"></path><path d="M9 8a3 3 0 0 1 6 0"></path></svg>
+        </span>
+      </div>
+      <div class="intro-card" data-intro-slide="0">
+        <h1 class="intro-title-brand">HEY, BACKPACKER!</h1>
+        <img class="intro-logo" src="./icons/backpacker-logo-transparent.png" alt="" aria-hidden="true" />
+        <p>
+          <span>Билеты, жилье, заметки,</span>
+          <span>ссылки и бюджет -</span>
+          <span>в одной корзинке!</span>
+          <span class="intro-copy-break">Добавляйте варианты,</span>
+          <span>двигайте карточки по дням,</span>
+          <span>вбрасывайте новые идеи.</span>
+        </p>
+        <button class="intro-button" id="introNextButton" type="button">Дальше</button>
+      </div>
+
+      <div class="intro-card hidden" data-intro-slide="1">
+        <h1 class="intro-title-brand">HEY, BACKPACKER!</h1>
+        <img class="intro-logo" src="./icons/backpacker-logo-transparent.png" alt="" aria-hidden="true" />
+        <p>
+          <span>Тренажер - готовый пример,</span>
+          <span>который пояснит, что к чему.</span>
+          <span class="intro-copy-break">Разобрались?</span>
+          <span>Скорее создавайте свою поездку!</span>
+        </p>
+        <button class="intro-button" id="introSecondNextButton" type="button">Дальше</button>
+      </div>
+
+      <div class="intro-card intro-card-wide hidden" data-intro-slide="2">
+        <h1 class="intro-title-brand">HEY, BACKPACKER!</h1>
+        <img class="intro-logo" src="./icons/backpacker-logo-transparent.png" alt="" aria-hidden="true" />
+        <p>
+          <span>Настройте даты, валюту, бюджет,</span>
+          <span>добавляйте в карточки</span>
+          <span>ссылки на билеты, экскурсии и локации,</span>
+          <span>пишите заметки, делитесь с попутчиками</span>
+          <span>планом или сметой.</span>
+        </p>
+        <button class="intro-button" id="introStartButton" type="button">Погнали!</button>
+      </div>
+    </section>
+
+    <section class="home-screen hidden" id="homeScreen" aria-label="Мои поездки">
+      <header class="home-header">
+        <div class="home-brand">
+          <img src="./icons/backpacker-logo-transparent.png" alt="" aria-hidden="true" />
+          <div>
+            <h1>BACKPACKER</h1>
+          </div>
+        </div>
+        <button class="icon-button share-icon-button home-share-button" id="homeShareButton" type="button" title="Поделиться Backpacker" aria-label="Поделиться Backpacker">
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M8.4 10.4 15.6 6.5" />
+            <path d="M8.4 13.6 15.6 17.5" />
+            <circle cx="6" cy="12" r="3.4" />
+            <circle cx="18" cy="5.3" r="3.4" />
+            <circle cx="18" cy="18.7" r="3.4" />
+          </svg>
+        </button>
+      </header>
+
+      <main class="home-content">
+        <section class="home-card trainer-card" id="trainerTripCard" role="button" tabindex="0">
+          <span class="home-card-kicker">Тренажер</span>
+          <h2>Казань соло</h2>
+          <p>Покрутите готовый пример: дни, корзину, бюджет, ссылки и статусы.</p>
+          <div class="home-card-meta">
+            <span>4 дня</span>
+            <span>45 000 ₽</span>
+          </div>
+        </section>
+
+        <button class="home-card create-trip-card" id="createTripButton" type="button">
+          <span class="cover-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M4 8h4l1.8-2h4.4L16 8h4v11H4V8z"></path>
+              <circle cx="12" cy="13.5" r="3"></circle>
+              <path d="M18 5v4M16 7h4"></path>
+            </svg>
+          </span>
+          <span>
+            <strong>Создать новую поездку</strong>
+            <small>Добавить обложку поездки</small>
+          </span>
+        </button>
+
+        <section class="trip-list-section">
+          <div class="section-heading home-list-heading">
+            <h2>Лента поездок</h2>
+          </div>
+          <div class="trip-list" id="tripList"></div>
+        </section>
+      </main>
+      <input id="coverInput" type="file" accept="image/*" hidden />
+    </section>
+
+    <div class="app-shell hidden">
       <header class="trip-header">
         <div class="brand-row">
           <div class="brand-lockup">
-            <img class="brand-logo" src="./icons/backpacker-logo-transparent.png" alt="" aria-hidden="true" />
+            <button class="brand-home-button" id="homeButton" type="button" aria-label="Мои поездки">
+              <img class="brand-logo" src="./icons/backpacker-logo-transparent.png" alt="" aria-hidden="true" />
+            </button>
             <div>
               <h1 id="tripTitle">Казань соло</h1>
             </div>
