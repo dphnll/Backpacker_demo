@@ -1342,6 +1342,10 @@ function showIntroSlide(index) {
   });
 }
 
+function hideAppSplash() {
+  $("#appSplash")?.classList.add("hidden");
+}
+
 function showIntroScreen() {
   currentScreen = "intro";
   $("#introScreen").classList.remove("hidden");
@@ -1360,6 +1364,7 @@ function finishIntro() {
 }
 
 function startApp() {
+  hideAppSplash();
   const forceIntro = new URLSearchParams(window.location.search).get("intro") === "1";
   let onboardingSeen = false;
   try {
@@ -1796,7 +1801,7 @@ function bindEvents() {
 bindEvents();
 switchView(currentView);
 render();
-startApp();
+window.setTimeout(startApp, 520);
 refreshExchangeRates();
 
 window.addEventListener("beforeinstallprompt", (event) => {
