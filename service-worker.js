@@ -1,12 +1,14 @@
-const CACHE_NAME = "backpacker-pwa-v3";
+const CACHE_NAME = "backpacker-pwa-v6";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./vendor/pdf-lib.min.js",
   "./manifest.webmanifest",
   "./icons/backpacker-192.png",
-  "./icons/backpacker-512.png"
+  "./icons/backpacker-512.png",
+  "./icons/backpacker-logo.svg"
 ];
 
 self.addEventListener("install", (event) => {

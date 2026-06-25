@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>Backpacker</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="icon" href="./icons/backpacker-192.png" type="image/png" />
+    <link rel="icon" href="./icons/backpacker-logo.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./icons/backpacker-192.png" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -18,7 +18,7 @@
       <header class="trip-header">
         <div class="brand-row">
           <div class="brand-lockup">
-            <img class="brand-logo" src="./icons/backpacker-192.png" alt="" aria-hidden="true" />
+            <img class="brand-logo" src="./icons/backpacker-logo.svg" alt="" aria-hidden="true" />
             <div>
               <p class="eyebrow brand-badge">Backpacker</p>
               <h1 id="tripTitle">Казань соло</h1>
@@ -58,6 +58,7 @@
             <header class="day-header">
               <div class="card-title-row">
                 <h3>Без даты</h3>
+                <span class="day-date">Хотелки и запасные варианты</span>
                 <span id="unscheduledCount">0</span>
               </div>
               <p>Хотелки и запасные варианты</p>
@@ -88,7 +89,7 @@
               <div>
                 <h3>Смета поездки</h3>
               </div>
-              <button class="ghost-button compact" id="copyEstimateButton" type="button">Скопировать</button>
+              <button class="ghost-button compact" id="copyEstimateButton" type="button">Скачать</button>
             </div>
             <div class="estimate-table-wrap">
               <table class="estimate-table" id="estimateTable"></table>
@@ -317,6 +318,7 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./vendor/pdf-lib.min.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

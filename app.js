@@ -393,9 +393,9 @@ function renderPlan() {
       <header class="day-header">
         <div class="card-title-row">
           <h3>День ${index + 1}</h3>
+          <span class="day-date">${formatDate(date, { weekday: "short" })}</span>
           <span class="day-total">${formatMoney(total)}</span>
         </div>
-        <p>${formatDate(date, { weekday: "short" })}</p>
       </header>
       <div class="day-items" data-drop-date="${date}">
         ${items.length ? items.map(renderItemCard).join("") : `<p class="empty-state">Пока пусто. Можно добавить идею или перенести сюда элемент из корзины.</p>`}
@@ -485,13 +485,13 @@ function renderBudget() {
         <h3>По дням</h3>
         <div class="title-actions">
           <span class="muted">${dates.length}</span>
-          <button class="ghost-button compact" id="copyDaysButton" type="button">Скопировать</button>
+          <button class="ghost-button compact" id="copyDaysButton" type="button">Скачать</button>
         </div>
       </div>
       ${byDay}
     </section>
   `;
-  $("#copyDaysButton")?.addEventListener("click", () => copyText(buildDaysText()));
+  $("#copyDaysButton")?.addEventListener("click", chooseAndDownloadPlan);
 }
 
 function renderEstimateTable() {
@@ -807,6 +807,44 @@ function buildEstimateCsv() {
   return [header, ...rows].map((row) => row.map(escapeCsvValue).join(";")).join("\n");
 }
 
+function buildPlanCsv() {
+  const header = ["День", "Дата", "Время", "Событие", "Тип", "Статус", "Цена", "Ссылка"];
+  const rows = [];
+  getTripDates().forEach((date, index) => {
+    state.items
+      .filter((item) => item.date === date && item.status !== "skipped")
+      .sort(sortItems)
+      .forEach((item) => {
+        rows.push([
+          `День ${index + 1}`,
+          formatDate(date),
+          item.startTime || "",
+          item.title,
+          getTypeLabel(item.type),
+          getStatusLabel(item.status),
+          parseMoney(item.price),
+          item.link || "",
+        ]);
+      });
+  });
+  state.items
+    .filter((item) => !item.date && item.status !== "skipped")
+    .sort(sortItems)
+    .forEach((item) => {
+      rows.push([
+        "Без даты",
+        "",
+        item.startTime || "",
+        item.title,
+        getTypeLabel(item.type),
+        getStatusLabel(item.status),
+        parseMoney(item.price),
+        item.link || "",
+      ]);
+    });
+  return [header, ...rows].map((row) => row.map(escapeCsvValue).join(";")).join("\n");
+}
+
 function slugifyFileName(value = "backpacker") {
   const slug = String(value)
     .trim()
@@ -836,9 +874,172 @@ function downloadEstimate() {
 }
 
 function downloadPlan() {
-  const name = `${slugifyFileName(state.trip.title)}-plan.txt`;
-  downloadTextFile(name, buildShareText(false), "text/plain;charset=utf-8");
+  const name = `${slugifyFileName(state.trip.title)}-plan.csv`;
+  downloadTextFile(name, `\uFEFF${buildPlanCsv()}`, "text/csv;charset=utf-8");
   showToast("План скачан");
+}
+
+function chooseExportFormat() {
+  return window.confirm("Выберите формат:\nОК — CSV для Excel/Google Sheets\nОтмена — PDF") ? "csv" : "pdf";
+}
+
+function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
+  const words = String(text || "").split(/\s+/);
+  const lines = [];
+  let line = "";
+  words.forEach((word) => {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  });
+  if (line) lines.push(line);
+  lines.forEach((item, index) => ctx.fillText(item, x, y + index * lineHeight));
+  return lines.length * lineHeight;
+}
+
+function buildEstimatePdfLines() {
+  const lines = [
+    { type: "title", text: "Смета поездки" },
+    { type: "meta", text: `${state.trip.title} · ${formatDate(state.trip.startDate)}-${formatDate(state.trip.endDate)}` },
+    { type: "gap" },
+  ];
+  [...state.items]
+    .sort((a, b) => (a.date || "9999-99-99").localeCompare(b.date || "9999-99-99") || sortItems(a, b))
+    .forEach((item) => {
+      lines.push({ type: "strong", text: item.title });
+      lines.push({
+        type: "text",
+        text: `${getTypeLabel(item.type)} · ${getStatusLabel(item.status)} · ${item.date ? formatDate(item.date) : "без даты"} ${item.startTime || ""}`,
+      });
+      lines.push({ type: "text", text: `Цена: ${formatMoney(item.price)} · Оплачено: ${formatMoney(item.paidAmount)}` });
+      if (item.link) lines.push({ type: "muted", text: item.link });
+      lines.push({ type: "gap" });
+    });
+  return lines;
+}
+
+function buildPlanPdfLines() {
+  const lines = [
+    { type: "title", text: "План по дням" },
+    { type: "meta", text: `${state.trip.title} · ${formatDate(state.trip.startDate)}-${formatDate(state.trip.endDate)}` },
+    { type: "gap" },
+  ];
+  getTripDates().forEach((date, index) => {
+    const items = state.items.filter((item) => item.date === date && item.status !== "skipped").sort(sortItems);
+    lines.push({ type: "section", text: `День ${index + 1} · ${formatDate(date)}` });
+    if (!items.length) lines.push({ type: "muted", text: "Пока пусто" });
+    items.forEach((item) => {
+      lines.push({ type: "strong", text: `${item.startTime ? `${item.startTime} · ` : ""}${item.title}` });
+      lines.push({ type: "text", text: `${getTypeLabel(item.type)} · ${getStatusLabel(item.status)} · ${formatMoney(item.price)}` });
+      if (item.link) lines.push({ type: "muted", text: item.link });
+    });
+    lines.push({ type: "gap" });
+  });
+  return lines;
+}
+
+async function downloadPdfFile(fileName, lines, previewWindow = null) {
+  if (!window.PDFLib?.PDFDocument) {
+    previewWindow?.close();
+    showToast("PDF-модуль не загрузился");
+    return;
+  }
+
+  const { PDFDocument } = window.PDFLib;
+  const pdfDoc = await PDFDocument.create();
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const scale = 2;
+  const canvas = document.createElement("canvas");
+  canvas.width = pageWidth * scale;
+  canvas.height = pageHeight * scale;
+  const ctx = canvas.getContext("2d");
+  const pages = [];
+
+  function startPage() {
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    ctx.clearRect(0, 0, pageWidth, pageHeight);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, pageWidth, pageHeight);
+    return 42;
+  }
+
+  async function commitPage() {
+    const pngBytes = await new Promise((resolve) => canvas.toBlob((blob) => blob.arrayBuffer().then(resolve), "image/png"));
+    pages.push(pngBytes);
+  }
+
+  let y = startPage();
+  const x = 42;
+  const maxWidth = pageWidth - x * 2;
+
+  for (const line of lines) {
+    if (line.type === "gap") {
+      y += 10;
+      continue;
+    }
+    const isTitle = line.type === "title";
+    const isSection = line.type === "section";
+    const isStrong = line.type === "strong";
+    const isMuted = line.type === "muted";
+    const fontSize = isTitle ? 22 : isSection ? 17 : 12;
+    const lineHeight = isTitle ? 28 : isSection ? 23 : 17;
+    ctx.font = `${isTitle || isSection || isStrong ? 700 : 400} ${fontSize}px Arial, sans-serif`;
+    ctx.fillStyle = isMuted ? "#66716f" : "#1f2423";
+    const height = Math.max(lineHeight, drawWrappedText(ctx, line.text, x, y, maxWidth, lineHeight));
+    y += height + (isTitle || isSection ? 8 : 3);
+    if (y > pageHeight - 56) {
+      await commitPage();
+      y = startPage();
+    }
+  }
+  await commitPage();
+
+  for (const pngBytes of pages) {
+    const page = pdfDoc.addPage([pageWidth, pageHeight]);
+    const image = await pdfDoc.embedPng(pngBytes);
+    page.drawImage(image, { x: 0, y: 0, width: pageWidth, height: pageHeight });
+  }
+  const pdfBytes = await pdfDoc.save();
+  const blob = new Blob([pdfBytes], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  if (previewWindow) {
+    previewWindow.location.href = url;
+  } else {
+    window.open(url, "_blank");
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+  showToast("PDF скачан");
+}
+
+async function chooseAndDownloadEstimate() {
+  if (chooseExportFormat() === "csv") {
+    downloadEstimate();
+  } else {
+    const previewWindow = window.open("", "_blank");
+    previewWindow?.document.write("<p>Готовим PDF...</p>");
+    await downloadPdfFile(`${slugifyFileName(state.trip.title)}-estimate.pdf`, buildEstimatePdfLines(), previewWindow);
+  }
+}
+
+async function chooseAndDownloadPlan() {
+  if (chooseExportFormat() === "csv") {
+    downloadPlan();
+  } else {
+    const previewWindow = window.open("", "_blank");
+    previewWindow?.document.write("<p>Готовим PDF...</p>");
+    await downloadPdfFile(`${slugifyFileName(state.trip.title)}-plan.pdf`, buildPlanPdfLines(), previewWindow);
+  }
 }
 
 async function shareTrip() {
@@ -1156,7 +1357,7 @@ function bindEvents() {
   $("#downloadEstimateButton").addEventListener("click", downloadEstimate);
   $("#downloadPlanButton").addEventListener("click", downloadPlan);
   $("#shareTripButton").addEventListener("click", shareTrip);
-  $("#copyEstimateButton").addEventListener("click", () => copyText(buildEstimateText()));
+  $("#copyEstimateButton").addEventListener("click", chooseAndDownloadEstimate);
   $("#refreshRatesButton").addEventListener("click", refreshExchangeRates);
   ["currencyAmount", "currencyFrom", "currencyTo"].forEach((id) => {
     $(`#${id}`).addEventListener("input", renderCurrencyCalculator);
