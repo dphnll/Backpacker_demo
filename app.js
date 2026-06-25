@@ -3,6 +3,9 @@ const TRIPS_STORAGE_KEY = "backpacker.trips.v1";
 const ACTIVE_TRIP_STORAGE_KEY = "backpacker.activeTrip.v1";
 const VIEW_STORAGE_KEY = "backpacker.currentView.v1";
 const ONBOARDING_STORAGE_KEY = "backpacker.onboarding.v1";
+const ANALYTICS_USER_KEY = "backpacker.analytics.user.v1";
+const ANALYTICS_LAST_OPEN_KEY = "backpacker.analytics.lastOpen.v1";
+const ANALYTICS_CONFIG = window.BACKPACKER_ANALYTICS || {};
 let deferredInstallPrompt = null;
 
 const itemTypes = [
@@ -175,9 +178,112 @@ let autoScrollFrame = null;
 let ratesUpdatedAt = null;
 let ratesSource = "demo";
 let coverTargetTripId = null;
+const analyticsSessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+
+function getOrCreateAnalyticsUserId() {
+  try {
+    const existing = localStorage.getItem(ANALYTICS_USER_KEY);
+    if (existing) return existing;
+    const next = `anon-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem(ANALYTICS_USER_KEY, next);
+    return next;
+  } catch {
+    return "anon-storage-unavailable";
+  }
+}
+
+function getDisplayMode() {
+  if (window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone) return "pwa";
+  return "browser";
+}
+
+function getTripPeriodStatus(trip = state?.trip, todayValue = new Date()) {
+  if (!trip?.startDate || !trip?.endDate) return "no_dates";
+  const today = new Date(todayValue);
+  const start = new Date(`${trip.startDate}T00:00:00`);
+  const end = new Date(`${trip.endDate}T23:59:59`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "invalid_dates";
+  if (today < start) return "before_trip";
+  if (today > end) return "after_trip";
+  return "during_trip";
+}
+
+function getAnalyticsContext(extra = {}) {
+  const activeTrip = state?.trip || {};
+  const trips = Array.isArray(tripStore?.trips) ? tripStore.trips : [];
+  const userTrips = trips.filter((entry) => !entry.isDemo);
+  const items = Array.isArray(state?.items) ? state.items : [];
+  const dates = activeTrip.startDate && activeTrip.endDate ? getTripDates() : [];
+  return {
+    user_id: getOrCreateAnalyticsUserId(),
+    session_id: analyticsSessionId,
+    screen: currentScreen,
+    view: currentView,
+    display_mode: getDisplayMode(),
+    trip_count: userTrips.length,
+    item_count: items.length,
+    days_count: dates.length,
+    currency: activeTrip.currency || "RUB",
+    has_budget: Boolean(parseMoney(activeTrip.budgetLimit)),
+    has_dates: Boolean(activeTrip.startDate && activeTrip.endDate),
+    trip_period: getTripPeriodStatus(activeTrip),
+    is_demo_trip: activeTrip.id === "trainer-kazan",
+    ...extra,
+  };
+}
+
+function trackEvent(name, props = {}) {
+  const payload = getAnalyticsContext(props);
+  if (ANALYTICS_CONFIG.debug) {
+    console.info("[Backpacker analytics]", name, payload);
+  }
+  if (window.posthog?.capture) {
+    window.posthog.capture(name, payload);
+  } else if (ANALYTICS_CONFIG.posthogKey) {
+    sendPostHogEvent(name, payload);
+  }
+}
+
+function sendPostHogEvent(name, payload) {
+  const host = (ANALYTICS_CONFIG.posthogHost || "https://eu.i.posthog.com").replace(/\/$/, "");
+  const body = JSON.stringify({
+    api_key: ANALYTICS_CONFIG.posthogKey,
+    event: name,
+    distinct_id: payload.user_id,
+    properties: payload,
+  });
+  const url = `${host}/capture/`;
+  if (navigator.sendBeacon) {
+    const sent = navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
+    if (sent) return;
+  }
+  fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    keepalive: true,
+    credentials: "omit",
+  }).catch(() => {});
+}
+
+function trackAppOpen() {
+  const today = new Date().toISOString().slice(0, 10);
+  let lastOpen = "";
+  try {
+    lastOpen = localStorage.getItem(ANALYTICS_LAST_OPEN_KEY) || "";
+    localStorage.setItem(ANALYTICS_LAST_OPEN_KEY, today);
+  } catch {
+    lastOpen = "";
+  }
+  trackEvent("app_open", {
+    is_returning_user: Boolean(lastOpen),
+    last_open_days_ago: lastOpen ? Math.round((new Date(today) - new Date(lastOpen)) / 86400000) : null,
+  });
+  if (lastOpen && lastOpen !== today) trackEvent("return_next_day");
+}
 
 function loadState() {
   const activeTripId = loadActiveTripId();
@@ -410,11 +516,13 @@ async function refreshExchangeRates() {
     ratesSource = "live";
     ratesUpdatedAt = new Date();
     renderCurrencyCalculator();
+    trackEvent("currency_rates_refresh", { source: "live" });
   } catch {
     ratesSource = "demo";
     ratesUpdatedAt = null;
     renderCurrencyCalculator();
     renderRatesStatus("Не удалось подтянуть реальный курс, пока использую демо-курс.");
+    trackEvent("currency_rates_refresh", { source: "demo", failed: true });
   }
 }
 
@@ -779,6 +887,12 @@ function openItemSheet(itemId = null) {
   }
   updateOpenLinkButton();
   openSheet("itemSheet");
+  const trackedItem = itemId ? state.items.find((entry) => entry.id === itemId) : null;
+  trackEvent("item_sheet_open", {
+    mode: itemId ? "edit" : "create",
+    item_type: trackedItem?.type || null,
+    item_status: trackedItem?.status || null,
+  });
 }
 
 function fillSelects() {
@@ -796,6 +910,7 @@ function saveItem(event) {
   const form = event.currentTarget;
   const data = Object.fromEntries(new FormData(form).entries());
   const existing = state.items.find((entry) => entry.id === data.id);
+  const isNew = !existing;
   const item = {
     id: data.id || `item-${Date.now()}`,
     title: data.title.trim(),
@@ -820,6 +935,18 @@ function saveItem(event) {
   closeSheet("itemSheet");
   render();
   showToast("Сохранено");
+  trackEvent(isNew ? "item_create" : "item_update", {
+    item_type: item.type,
+    item_status: item.status,
+    item_priority: item.priority,
+    has_date: Boolean(item.date),
+    has_time: Boolean(item.startTime),
+    has_price: Boolean(item.price),
+    has_paid_amount: Boolean(item.paidAmount),
+    has_link: Boolean(item.link),
+    has_location: Boolean(item.locationText),
+    has_note: Boolean(item.notes),
+  });
 }
 
 function getNextOrder(date) {
@@ -833,6 +960,7 @@ function getNextOrder(date) {
 function moveItem(itemId, targetDate, beforeItemId = null) {
   const moving = state.items.find((item) => item.id === itemId);
   if (!moving) return;
+  const previousDate = moving.date || "";
   moving.date = targetDate || "";
 
   const siblings = state.items
@@ -847,16 +975,29 @@ function moveItem(itemId, targetDate, beforeItemId = null) {
   });
   saveState();
   render();
+  trackEvent("item_drag", {
+    item_type: moving.type,
+    item_status: moving.status,
+    from_bucket: previousDate ? "day" : "undated",
+    to_bucket: moving.date ? "day" : "undated",
+    reordered_inside_bucket: previousDate === moving.date,
+    dropped_before_item: Boolean(beforeItemId),
+  });
 }
 
 function deleteCurrentItem() {
   const id = $("#itemForm").elements.id.value;
   if (!id) return;
+  const item = state.items.find((entry) => entry.id === id);
   state.items = state.items.filter((item) => item.id !== id);
   saveState();
   closeSheet("itemSheet");
   render();
   showToast("Удалено");
+  trackEvent("item_delete", {
+    item_type: item?.type || null,
+    item_status: item?.status || null,
+  });
 }
 
 function openTripSheet() {
@@ -865,6 +1006,7 @@ function openTripSheet() {
     if (form.elements[key]) form.elements[key].value = value ?? "";
   });
   openSheet("tripSheet");
+  trackEvent("trip_sheet_open");
 }
 
 function saveTrip(event) {
@@ -888,6 +1030,12 @@ function saveTrip(event) {
   closeSheet("tripSheet");
   render();
   showToast("Поездка сохранена");
+  trackEvent("trip_save", {
+    currency_changed: previousCurrency !== data.currency,
+    has_title: Boolean(state.trip.title),
+    has_destination: Boolean(state.trip.destination),
+    has_preferences: Boolean(state.trip.preferencesText),
+  });
 }
 
 function resetDemo() {
@@ -900,11 +1048,13 @@ function resetDemo() {
   closeSheet("tripSheet");
   render();
   showToast("Демо сброшено");
+  trackEvent("trainer_reset");
 }
 
 function openShareSheet() {
   renderSharePreview();
   openSheet("shareSheet");
+  trackEvent("share_sheet_open");
 }
 
 function renderSharePreview() {
@@ -1056,12 +1206,14 @@ function downloadEstimate() {
   const name = `${slugifyFileName(state.trip.title)}-estimate.csv`;
   downloadTextFile(name, `\uFEFF${buildEstimateCsv()}`, "text/csv;charset=utf-8");
   showToast("Смета скачана");
+  trackEvent("download_estimate", { format: "csv" });
 }
 
 function downloadPlan() {
   const name = `${slugifyFileName(state.trip.title)}-plan.csv`;
   downloadTextFile(name, `\uFEFF${buildPlanCsv()}`, "text/csv;charset=utf-8");
   showToast("План скачан");
+  trackEvent("download_plan", { format: "csv" });
 }
 
 function chooseExportFormat() {
@@ -1214,6 +1366,7 @@ async function chooseAndDownloadEstimate() {
     const previewWindow = window.open("", "_blank");
     previewWindow?.document.write("<p>Готовим PDF...</p>");
     await downloadPdfFile(`${slugifyFileName(state.trip.title)}-estimate.pdf`, buildEstimatePdfLines(), previewWindow);
+    trackEvent("download_estimate", { format: "pdf" });
   }
 }
 
@@ -1224,6 +1377,7 @@ async function chooseAndDownloadPlan() {
     const previewWindow = window.open("", "_blank");
     previewWindow?.document.write("<p>Готовим PDF...</p>");
     await downloadPdfFile(`${slugifyFileName(state.trip.title)}-plan.pdf`, buildPlanPdfLines(), previewWindow);
+    trackEvent("download_plan", { format: "pdf" });
   }
 }
 
@@ -1237,6 +1391,7 @@ async function shareTrip() {
   if (navigator.share) {
     try {
       await navigator.share(shareData);
+      trackEvent("share_trip", { method: "web_share" });
       return;
     } catch (error) {
       if (error?.name === "AbortError") return;
@@ -1244,6 +1399,7 @@ async function shareTrip() {
   }
   await copyText(`${text}\n\n${window.location.href}`);
   showToast("Ссылка и сводка скопированы");
+  trackEvent("share_trip", { method: "copy_fallback" });
 }
 
 async function shareApp() {
@@ -1258,6 +1414,7 @@ async function shareApp() {
   if (navigator.share) {
     try {
       await navigator.share(shareData);
+      trackEvent("share_app", { method: "web_share" });
       return;
     } catch (error) {
       if (error?.name === "AbortError") return;
@@ -1265,6 +1422,7 @@ async function shareApp() {
   }
   await copyText(`${shareData.text}\n${url}`);
   showToast("Ссылка на Backpacker скопирована");
+  trackEvent("share_app", { method: "copy_fallback" });
 }
 
 function getItemFormLink() {
@@ -1285,22 +1443,27 @@ function openItemLink() {
   const url = normalizeExternalUrl(getItemFormLink());
   if (!url) return;
   window.open(url, "_blank", "noopener,noreferrer");
+  trackEvent("external_link_open");
 }
 
 async function installPwa() {
   if (window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone) {
     showToast("Приложение уже установлено");
+    trackEvent("pwa_install_click", { already_installed: true });
     return;
   }
 
   if (deferredInstallPrompt) {
+    trackEvent("pwa_install_click", { prompt_available: true });
     deferredInstallPrompt.prompt();
-    await deferredInstallPrompt.userChoice.catch(() => null);
+    const choice = await deferredInstallPrompt.userChoice.catch(() => null);
+    trackEvent("pwa_install_choice", { outcome: choice?.outcome || "unknown" });
     deferredInstallPrompt = null;
     return;
   }
 
   showToast("Откройте меню браузера и выберите «Добавить на главный экран»");
+  trackEvent("pwa_install_click", { prompt_available: false });
 }
 
 async function copyText(text) {
@@ -1340,6 +1503,7 @@ function showIntroSlide(index) {
   $$("[data-intro-slide]").forEach((slide) => {
     slide.classList.toggle("hidden", slide.dataset.introSlide !== String(index));
   });
+  trackEvent("onboarding_slide", { slide_index: index });
 }
 
 function hideAppSplash() {
@@ -1351,6 +1515,7 @@ function showIntroScreen() {
   $("#introScreen").classList.remove("hidden");
   $("#homeScreen").classList.add("hidden");
   $(".app-shell").classList.add("hidden");
+  trackEvent("onboarding_start");
   showIntroSlide(0);
 }
 
@@ -1360,11 +1525,13 @@ function finishIntro() {
   } catch {
     // The app should still open when storage is unavailable.
   }
+  trackEvent("onboarding_done");
   showHomeScreen();
 }
 
 function startApp() {
   hideAppSplash();
+  trackAppOpen();
   const forceIntro = new URLSearchParams(window.location.search).get("intro") === "1";
   let onboardingSeen = false;
   try {
@@ -1387,6 +1554,7 @@ function showHomeScreen() {
   $("#homeScreen").classList.remove("hidden");
   $(".app-shell").classList.add("hidden");
   renderHome();
+  trackEvent("home_open");
 }
 
 function showTripScreen() {
@@ -1409,6 +1577,14 @@ function openTrip(tripId) {
   }
   switchView(currentView);
   showTripScreen();
+  const period = getTripPeriodStatus(state.trip);
+  trackEvent(entry.isDemo ? "trainer_open" : "trip_open", {
+    trip_period: period,
+    has_custom_cover: Boolean(entry.coverDataUrl),
+  });
+  if (!entry.isDemo && period !== "no_dates" && period !== "invalid_dates") {
+    trackEvent(`trip_open_${period}`);
+  }
 }
 
 function createNewTrip() {
@@ -1417,6 +1593,10 @@ function createNewTrip() {
   persistTripStore(tripStore);
   openTrip(entry.id);
   openTripSheet();
+  trackEvent("trip_create", {
+    trip_count_after_create: tripStore.trips.filter((trip) => !trip.isDemo).length,
+  });
+  if (tripStore.trips.filter((trip) => !trip.isDemo).length >= 2) trackEvent("second_trip_create");
 }
 
 function selectTripCover(tripId) {
@@ -1471,6 +1651,7 @@ async function saveSelectedCover(event) {
     persistTripStore(tripStore);
     renderHome();
     showToast("Обложка обновлена");
+    trackEvent("trip_cover_update");
   } catch {
     showToast("Не удалось загрузить обложку");
   }
@@ -1496,9 +1677,11 @@ function deleteTrip(tripId) {
   }
   renderHome();
   showToast("Поездка удалена");
+  trackEvent("trip_delete");
 }
 
 function switchView(view) {
+  const previousView = currentView;
   currentView = view;
   try {
     localStorage.setItem(VIEW_STORAGE_KEY, view);
@@ -1507,6 +1690,7 @@ function switchView(view) {
   }
   $$(".view").forEach((element) => element.classList.toggle("active", element.id === `${view}View`));
   $$(".nav-button").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
+  if (previousView !== view) trackEvent("view_change", { from_view: previousView, to_view: view });
 }
 
 function getDropDataFromPoint(x, y, fallbackTarget = null) {
@@ -1773,6 +1957,7 @@ function bindEvents() {
   $("#introStartButton").addEventListener("click", finishIntro);
   $("#coverInput").addEventListener("change", saveSelectedCover);
   $("#homeShareButton").addEventListener("click", shareApp);
+  $("#feedbackButton").addEventListener("click", () => trackEvent("telegram_click"));
   $("#homeButton").addEventListener("click", showHomeScreen);
   $("#itemForm").addEventListener("submit", saveItem);
   $("#deleteItemButton").addEventListener("click", deleteCurrentItem);
@@ -1807,6 +1992,11 @@ refreshExchangeRates();
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();
   deferredInstallPrompt = event;
+});
+
+window.addEventListener("appinstalled", () => {
+  trackEvent("pwa_installed");
+  deferredInstallPrompt = null;
 });
 
 if ("serviceWorker" in navigator && ["http:", "https:"].includes(window.location.protocol)) {
