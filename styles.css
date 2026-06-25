@@ -690,9 +690,22 @@ h3 {
 }
 
 .danger-button {
-  border-color: var(--danger-soft);
-  background: var(--danger-soft);
-  color: var(--danger);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 141px;
+  border-color: #e00000;
+  background: #e00000;
+  color: #fff;
+  box-shadow: 4px 4px 0 rgba(224, 0, 0, 0.14);
+}
+
+#itemForm .form-actions .primary-button {
+  min-width: 141px;
+  border-color: rgba(18, 54, 61, 0.34);
+  background: var(--active-button-gradient);
+  color: #fff;
+  box-shadow: var(--active-button-shadow);
 }
 
 .compact {
