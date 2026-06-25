@@ -234,6 +234,10 @@ a {
   max-width: calc(100vw - 36px);
 }
 
+.intro-card-wide p span {
+  white-space: normal;
+}
+
 .intro-copy-break {
   margin-top: 14px;
 }
