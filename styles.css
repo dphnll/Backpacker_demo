@@ -681,6 +681,7 @@ h3 {
 
 .header-actions .ghost-button,
 .header-actions .icon-button,
+.header-actions .telegram-icon-button,
 .section-heading .primary-button[data-action="add"],
 #copyEstimateButton,
 #copyDaysButton,
@@ -766,6 +767,28 @@ h3 {
 .share-icon-button circle {
   fill: #fff;
   stroke: none;
+}
+
+.telegram-icon-button {
+  text-decoration: none;
+}
+
+.telegram-icon-button svg {
+  width: 27px;
+  height: 27px;
+}
+
+.telegram-icon-button path:first-child {
+  fill: #fff;
+  stroke: none;
+}
+
+.telegram-icon-button path:last-child {
+  fill: none;
+  stroke: rgba(18, 54, 61, 0.54);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .fab {
@@ -1167,8 +1190,7 @@ textarea:focus {
 }
 
 .share-actions .primary-button,
-.share-actions .ghost-button,
-.feedback-button {
+.share-actions .ghost-button {
   min-height: 44px;
   border-color: rgba(18, 54, 61, 0.34);
   background: var(--active-button-gradient);
