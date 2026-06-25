@@ -1,5 +1,6 @@
 const STORAGE_KEY = "backpacker.mvp.v1";
 const VIEW_STORAGE_KEY = "backpacker.currentView.v1";
+let deferredInstallPrompt = null;
 
 const itemTypes = [
   ["ticket", "Билет"],
@@ -373,7 +374,8 @@ function renderHeader() {
   const dates = getTripDates();
   const totals = getTotals();
   $("#tripTitle").textContent = state.trip.title || "Новая поездка";
-  $("#tripMeta").textContent = `${state.trip.destination || "Направление"} · ${formatDate(state.trip.startDate)}-${formatDate(state.trip.endDate)} · ${dates.length || 1} дня · бюджет ${formatMoney(state.trip.budgetLimit)}`;
+  $("#tripMeta").textContent = `${state.trip.destination || "Направление"} · ${formatDate(state.trip.startDate)}-${formatDate(state.trip.endDate)} · ${dates.length || 1} дня`;
+  $("#tripBudgetMeta").textContent = `Бюджет ${formatMoney(state.trip.budgetLimit)}`;
   $("#paidTotal").textContent = formatMoney(totals.paid);
   $("#plannedTotal").textContent = formatMoney(totals.possible);
   $("#remainingTotal").textContent = formatMoney(totals.remaining);
@@ -597,6 +599,7 @@ function openItemSheet(itemId = null) {
     form.elements.priority.value = "nice";
     form.elements.date.value = "";
   }
+  updateOpenLinkButton();
   openSheet("itemSheet");
 }
 
@@ -1061,6 +1064,42 @@ async function shareTrip() {
   showToast("Ссылка и сводка скопированы");
 }
 
+function getItemFormLink() {
+  return $("#itemForm").elements.link.value.trim();
+}
+
+function normalizeExternalUrl(value) {
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  return `https://${value}`;
+}
+
+function updateOpenLinkButton() {
+  $("#openLinkButton").disabled = !getItemFormLink();
+}
+
+function openItemLink() {
+  const url = normalizeExternalUrl(getItemFormLink());
+  if (!url) return;
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+async function installPwa() {
+  if (window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone) {
+    showToast("Приложение уже установлено");
+    return;
+  }
+
+  if (deferredInstallPrompt) {
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice.catch(() => null);
+    deferredInstallPrompt = null;
+    return;
+  }
+
+  showToast("Откройте меню браузера и выберите «Добавить на главный экран»");
+}
+
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
@@ -1349,11 +1388,15 @@ function bindEvents() {
 
   $("#itemForm").addEventListener("submit", saveItem);
   $("#deleteItemButton").addEventListener("click", deleteCurrentItem);
+  $("#itemForm").elements.link.addEventListener("input", updateOpenLinkButton);
+  $("#openLinkButton").addEventListener("click", openItemLink);
   $("#editTripButton").addEventListener("click", openTripSheet);
   $("#tripMeta").addEventListener("click", openTripSheet);
+  $("#tripBudgetMeta").addEventListener("click", openTripSheet);
   $("#tripForm").addEventListener("submit", saveTrip);
   $("#resetDemoButton").addEventListener("click", resetDemo);
   $("#shareButton").addEventListener("click", openShareSheet);
+  $("#installAppButton").addEventListener("click", installPwa);
   $("#downloadEstimateButton").addEventListener("click", downloadEstimate);
   $("#downloadPlanButton").addEventListener("click", downloadPlan);
   $("#shareTripButton").addEventListener("click", shareTrip);
@@ -1371,6 +1414,11 @@ bindEvents();
 switchView(currentView);
 render();
 refreshExchangeRates();
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+});
 
 if ("serviceWorker" in navigator && ["http:", "https:"].includes(window.location.protocol)) {
   navigator.serviceWorker.register("./service-worker.js").catch(() => {});

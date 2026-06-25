@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>Backpacker</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="icon" href="./icons/backpacker-logo.svg" type="image/svg+xml" />
+    <link rel="icon" href="./icons/backpacker-192.png" type="image/png" />
     <link rel="apple-touch-icon" href="./icons/backpacker-192.png" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -18,7 +18,7 @@
       <header class="trip-header">
         <div class="brand-row">
           <div class="brand-lockup">
-            <img class="brand-logo" src="./icons/backpacker-logo.svg" alt="" aria-hidden="true" />
+            <img class="brand-logo" src="./icons/backpacker-logo-transparent.png" alt="" aria-hidden="true" />
             <div>
               <h1 id="tripTitle">Казань соло</h1>
             </div>
@@ -42,7 +42,8 @@
             </a>
           </div>
         </div>
-        <button class="trip-meta" id="tripMeta" type="button">12-15 июля · 4 дня · бюджет 45 000 ₽</button>
+        <button class="trip-meta" id="tripMeta" type="button">Казань · 12 июля-15 июля · 4 дня</button>
+        <button class="trip-budget-meta" id="tripBudgetMeta" type="button">Бюджет 45 000 ₽</button>
         <section class="budget-strip" aria-label="Бюджет поездки">
           <div>
             <span>Оплачено</span>
@@ -243,6 +244,7 @@
             Ссылка
             <input name="link" inputmode="url" placeholder="Aviasales, Tripster, кафе, отель..." />
           </label>
+          <button class="ghost-button link-open-button" id="openLinkButton" type="button" disabled>Перейти</button>
           <label class="field wide">
             Локация
             <input name="locationText" placeholder="Адрес или район" />
@@ -321,6 +323,7 @@
           <button class="icon-button" data-close="share" type="button" aria-label="Закрыть">×</button>
         </header>
         <div class="share-actions">
+          <button class="ghost-button" id="installAppButton" type="button">Скачать PWA</button>
           <button class="primary-button" id="downloadEstimateButton" type="button">Скачать смету</button>
           <button class="ghost-button" id="downloadPlanButton" type="button">Скачать план по дням</button>
           <button class="ghost-button" id="shareTripButton" type="button">Поделиться</button>
