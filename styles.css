@@ -108,31 +108,35 @@ a {
   gap: 10px;
 }
 
+.brand-row {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.brand-lockup {
+  display: contents;
+}
+
+.brand-lockup > div {
+  min-width: 0;
+  justify-self: start;
+  text-align: left;
+}
+
 .brand-logo {
   width: 46px;
   height: 46px;
   flex: 0 0 46px;
+  justify-self: start;
   object-fit: contain;
   filter: drop-shadow(3px 3px 0 rgba(18, 54, 61, 0.1));
 }
 
-.eyebrow {
-  margin: 0 0 3px;
-  color: rgba(18, 54, 61, 0.78);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.brand-badge {
-  width: fit-content;
-  margin-bottom: 5px;
-  padding: 3px 7px;
-  border: 1px solid rgba(18, 54, 61, 0.12);
-  border-radius: 5px;
-  background: rgba(18, 54, 61, 0.08);
-  color: var(--brand);
+#tripTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 h1,
@@ -179,13 +183,12 @@ h3 {
 }
 
 .trip-meta::after {
-  content: "  · изменить";
-  color: rgba(18, 54, 61, 0.72);
-  font-weight: 700;
+  content: "";
 }
 
 .header-actions {
   display: flex;
+  justify-self: end;
   flex-shrink: 0;
   gap: 8px;
 }
@@ -729,6 +732,40 @@ h3 {
   display: grid;
   place-items: center;
   font-size: 18px;
+}
+
+#editTripButton {
+  position: relative;
+  color: transparent;
+  font-size: 0;
+}
+
+#editTripButton::before {
+  content: "⚙";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  color: #fff;
+  font-size: 34px;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+}
+
+.share-icon-button svg {
+  width: 26px;
+  height: 26px;
+}
+
+.share-icon-button path {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2.7;
+  stroke-linecap: round;
+}
+
+.share-icon-button circle {
+  fill: #fff;
+  stroke: none;
 }
 
 .fab {
