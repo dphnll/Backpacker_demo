@@ -193,16 +193,16 @@
         <button class="trip-meta" id="tripMeta" type="button">Казань · 12 июля-15 июля · 4 дня</button>
         <button class="trip-budget-meta" id="tripBudgetMeta" type="button">Бюджет 45 000 ₽</button>
         <section class="budget-strip" aria-label="Бюджет поездки">
-          <div>
+          <div class="paid-card">
             <span>Оплачено</span>
             <strong id="paidTotal">0 ₽</strong>
           </div>
-          <div>
-            <span>План</span>
+          <div class="budget-allocation-card">
+            <span>Уже распределено</span>
             <strong id="plannedTotal">0 ₽</strong>
           </div>
-          <div>
-            <span>Остаток</span>
+          <div class="budget-allocation-card">
+            <span>Осталось распределить</span>
             <strong id="remainingTotal">0 ₽</strong>
           </div>
         </section>
@@ -460,6 +460,24 @@
             <button class="primary-button" type="submit">Сохранить поездку</button>
           </div>
         </form>
+      </section>
+    </div>
+
+    <div class="sheet" id="homeShareSheet" aria-hidden="true">
+      <div class="sheet-backdrop" data-close="homeShare"></div>
+      <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="homeShareSheetTitle">
+        <header class="sheet-header">
+          <h2 id="homeShareSheetTitle">Поделиться Backpacker</h2>
+          <button class="icon-button" data-close="homeShare" type="button" aria-label="Закрыть">×</button>
+        </header>
+        <div class="share-actions">
+          <button class="ghost-button" id="homeInstallAppButton" type="button">Скачать PWA</button>
+          <button class="primary-button" id="shareAppButton" type="button">Поделиться Backpacker</button>
+        </div>
+        <p class="home-share-hint">
+          <span>💡 Чтобы скачать мини-приложение на мобильный - загрузите PWA</span>
+          <span>💡 Чтобы пригласить друга в приложение - поделитесь ссылкой</span>
+        </p>
       </section>
     </div>
 

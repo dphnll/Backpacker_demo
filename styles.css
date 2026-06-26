@@ -876,12 +876,13 @@ h3 {
 }
 
 .trip-budget-meta {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-height: 28px;
-  max-width: 100%;
-  margin: 0 0 12px;
+  width: calc((100% - 16px) / 3 * 2 + 8px);
+  max-width: none;
+  margin: 4px 0 8px auto;
   padding: 5px 10px;
   border: 1px solid rgba(18, 54, 61, 0.18);
   border-radius: 6px;
@@ -919,6 +920,12 @@ h3 {
   box-shadow: 6px 6px 0 rgba(18, 54, 61, 0.12);
 }
 
+.budget-strip .paid-card {
+  border-color: rgba(45, 123, 82, 0.3);
+  background: #eff8f1;
+  box-shadow: 6px 6px 0 rgba(45, 123, 82, 0.14);
+}
+
 .budget-strip span,
 .metric-card span,
 .muted {
@@ -926,6 +933,26 @@ h3 {
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
+  line-height: 1.15;
+}
+
+.budget-strip .paid-card span {
+  color: #2d7b52;
+}
+
+.budget-strip .paid-card span::before {
+  content: "✓";
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  margin-right: 5px;
+  border-radius: 999px;
+  color: #fff;
+  background: #2d7b52;
+  font-size: 10px;
+  line-height: 1;
+  vertical-align: 1px;
 }
 
 .budget-strip strong,
@@ -1916,6 +1943,26 @@ textarea:focus {
   display: grid;
   gap: 10px;
   margin-bottom: 12px;
+}
+
+#homeShareSheet .sheet-panel {
+  min-height: min(50vh, 360px);
+  padding-bottom: calc(34px + env(safe-area-inset-bottom));
+}
+
+#homeShareSheet .share-actions {
+  margin-bottom: 0;
+}
+
+.home-share-hint {
+  display: grid;
+  gap: 8px;
+  max-width: 430px;
+  margin: 16px 2px 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 .share-actions .primary-button,

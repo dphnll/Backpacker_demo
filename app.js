@@ -1277,6 +1277,11 @@ function resetDemo() {
   showToast("Демо сброшено");
 }
 
+function openHomeShareSheet() {
+  openSheet("homeShareSheet");
+  trackEvent("share_opened", { share_target: "app" });
+}
+
 function openShareSheet() {
   renderSharePreview();
   openSheet("shareSheet");
@@ -2265,7 +2270,9 @@ function bindEvents() {
   $("#introSecondNextButton").addEventListener("click", () => showIntroSlide(2));
   $("#introStartButton").addEventListener("click", finishIntro);
   $("#coverInput").addEventListener("change", saveSelectedCover);
-  $("#homeShareButton").addEventListener("click", shareApp);
+  $("#homeShareButton").addEventListener("click", openHomeShareSheet);
+  $("#homeInstallAppButton").addEventListener("click", installPwa);
+  $("#shareAppButton").addEventListener("click", shareApp);
   $("#feedbackButton").addEventListener("click", () => trackEvent("feedback_channel_opened", { channel: "telegram" }));
   $("#homeButton").addEventListener("click", showHomeScreen);
   $("#itemForm").addEventListener("submit", saveItem);
