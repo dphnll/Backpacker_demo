@@ -1944,11 +1944,38 @@ function switchView(view) {
   }
 }
 
+function getDropZoneFromPoint(x, y, fallbackTarget = null) {
+  const target = document.elementFromPoint(x, y) || fallbackTarget;
+  const directZone = target?.closest?.("[data-drop-date]");
+  if (directZone) return directZone;
+
+  const candidates = [...$$("[data-drop-date]")]
+    .map((candidate) => {
+    const rect = candidate.getBoundingClientRect();
+      const insideExpanded =
+        y >= rect.top - 72 &&
+        y <= rect.bottom + 72 &&
+        x >= rect.left - 80 &&
+        x <= rect.right + 80;
+      if (!insideExpanded) return null;
+      const clampedX = Math.max(rect.left, Math.min(x, rect.right));
+      const clampedY = Math.max(rect.top, Math.min(y, rect.bottom));
+      return {
+        candidate,
+        distance: Math.hypot(x - clampedX, y - clampedY),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.distance - b.distance);
+
+  return candidates[0]?.candidate || null;
+}
+
 function getDropDataFromPoint(x, y, fallbackTarget = null) {
   const target = document.elementFromPoint(x, y) || fallbackTarget;
-  const zone = target?.closest?.("[data-drop-date]");
+  const zone = getDropZoneFromPoint(x, y, fallbackTarget);
   if (!zone) return null;
-  const targetCard = target.closest?.("[data-drag-id]");
+  const targetCard = zone.contains(target) ? target.closest?.("[data-drag-id]") : null;
   const beforeItemId = targetCard && targetCard.dataset.dragId !== draggedItemId ? targetCard.dataset.dragId : null;
   return {
     date: zone.dataset.dropDate || "",
@@ -1966,6 +1993,53 @@ function markDropZone(zone) {
   zone?.classList.add("drop-target-active");
 }
 
+function stopAutoScroll() {
+  if (autoScrollFrame) window.cancelAnimationFrame(autoScrollFrame);
+  autoScrollFrame = null;
+}
+
+function getHorizontalScrollZone(x, y) {
+  const directZone = document.elementFromPoint(x, y)?.closest?.(".day-items, .basket-grid-list");
+  if (directZone) return directZone;
+  return [...$$(".day-items, .basket-grid-list")].find((zone) => {
+    const rect = zone.getBoundingClientRect();
+    return y >= rect.top - 24 && y <= rect.bottom + 24 && x >= rect.left - 96 && x <= rect.right + 96;
+  });
+}
+
+function updateAutoScroll(getPoint) {
+  stopAutoScroll();
+  const tick = () => {
+    const point = getPoint();
+    if (!point) {
+      stopAutoScroll();
+      return;
+    }
+
+    const edge = 96;
+    const maxSpeed = 22;
+    const { innerHeight } = window;
+    const { x, y } = point;
+    let scrollY = 0;
+
+    if (y < edge) scrollY = -Math.ceil(((edge - y) / edge) * maxSpeed);
+    else if (y > innerHeight - edge) scrollY = Math.ceil(((y - (innerHeight - edge)) / edge) * maxSpeed);
+    if (scrollY) window.scrollBy(0, scrollY);
+
+    const horizontalZone = getHorizontalScrollZone(x, y);
+    if (horizontalZone) {
+      let scrollX = 0;
+      const rect = horizontalZone.getBoundingClientRect();
+      if (x < rect.left + edge) scrollX = -Math.ceil(((rect.left + edge - x) / edge) * maxSpeed);
+      else if (x > rect.right - edge) scrollX = Math.ceil(((x - (rect.right - edge)) / edge) * maxSpeed);
+      if (scrollX) horizontalZone.scrollBy(scrollX, 0);
+    }
+
+    autoScrollFrame = window.requestAnimationFrame(tick);
+  };
+  autoScrollFrame = window.requestAnimationFrame(tick);
+}
+
 function finishDragClickGuard() {
   dragJustHappened = true;
   window.setTimeout(() => {
@@ -1974,21 +2048,40 @@ function finishDragClickGuard() {
 }
 
 function bindDesktopDrag() {
+  let desktopDragPoint = null;
+
+  function cleanupDesktopDrag() {
+    $$(".dragging-source").forEach((element) => element.classList.remove("dragging-source"));
+    clearDropHighlights();
+    stopAutoScroll();
+    desktopDragPoint = null;
+    draggedItemId = null;
+  }
+
   document.addEventListener("dragstart", (event) => {
     const card = event.target.closest("[data-drag-id]");
     if (!card) return;
     draggedItemId = card.dataset.dragId;
+    desktopDragPoint = { x: event.clientX, y: event.clientY };
     card.classList.add("dragging-source");
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", draggedItemId);
+    updateAutoScroll(() => (draggedItemId ? desktopDragPoint : null));
   });
 
   document.addEventListener("dragover", (event) => {
     if (!draggedItemId) return;
-    const data = getDropDataFromPoint(event.clientX, event.clientY, event.target);
-    if (!data) return;
+    desktopDragPoint = { x: event.clientX, y: event.clientY };
     event.preventDefault();
-    markDropZone(data.zone);
+    const data = getDropDataFromPoint(event.clientX, event.clientY, event.target);
+    if (data) markDropZone(data.zone);
+  });
+
+  document.addEventListener("dragenter", (event) => {
+    if (!draggedItemId) return;
+    event.preventDefault();
+    const data = getDropDataFromPoint(event.clientX, event.clientY, event.target);
+    if (data) markDropZone(data.zone);
   });
 
   document.addEventListener("drop", (event) => {
@@ -1998,18 +2091,18 @@ function bindDesktopDrag() {
     event.preventDefault();
     moveItem(draggedItemId, data.date, data.beforeItemId, "drag_desktop");
     finishDragClickGuard();
+    cleanupDesktopDrag();
   });
 
   document.addEventListener("dragend", () => {
-    $$(".dragging-source").forEach((element) => element.classList.remove("dragging-source"));
-    clearDropHighlights();
-    draggedItemId = null;
+    cleanupDesktopDrag();
   });
 }
 
 function bindPointerDrag() {
   const longPressDelay = 420;
   const cancelDistance = 10;
+  const mouseDragDistance = 4;
 
   function startPointerDrag(event) {
     if (!pointerDrag || pointerDrag.active) return;
@@ -2027,48 +2120,7 @@ function bindPointerDrag() {
     document.body.classList.add("mobile-dragging");
     pointerDrag.card.classList.add("dragging-source");
     pointerDrag.card.setPointerCapture?.(event.pointerId);
-    updateAutoScroll();
-  }
-
-  function stopAutoScroll() {
-    if (autoScrollFrame) window.cancelAnimationFrame(autoScrollFrame);
-    autoScrollFrame = null;
-  }
-
-  function updateAutoScroll() {
-    stopAutoScroll();
-    const tick = () => {
-      if (!pointerDrag?.active) {
-        stopAutoScroll();
-        return;
-      }
-
-      const edge = 72;
-      const maxSpeed = 18;
-      const { innerHeight, innerWidth } = window;
-      const { lastX, lastY } = pointerDrag;
-      let scrollY = 0;
-
-      if (lastY < edge) scrollY = -Math.ceil(((edge - lastY) / edge) * maxSpeed);
-      else if (lastY > innerHeight - edge) scrollY = Math.ceil(((lastY - (innerHeight - edge)) / edge) * maxSpeed);
-      if (scrollY) window.scrollBy(0, scrollY);
-
-      const horizontalZone = document.elementFromPoint(lastX, lastY)?.closest?.(".day-items, .basket-grid-list");
-      if (horizontalZone) {
-        let scrollX = 0;
-        const rect = horizontalZone.getBoundingClientRect();
-        if (lastX < rect.left + edge) scrollX = -Math.ceil(((rect.left + edge - lastX) / edge) * maxSpeed);
-        else if (lastX > rect.right - edge) scrollX = Math.ceil(((lastX - (rect.right - edge)) / edge) * maxSpeed);
-        if (scrollX) horizontalZone.scrollBy(scrollX, 0);
-      } else if (lastX < edge) {
-        window.scrollBy(-8, 0);
-      } else if (lastX > innerWidth - edge) {
-        window.scrollBy(8, 0);
-      }
-
-      autoScrollFrame = window.requestAnimationFrame(tick);
-    };
-    autoScrollFrame = window.requestAnimationFrame(tick);
+    updateAutoScroll(() => (pointerDrag?.active ? { x: pointerDrag.lastX, y: pointerDrag.lastY } : null));
   }
 
   function cleanupPointerDrag({ drop = false, event = null } = {}) {
@@ -2094,11 +2146,12 @@ function bindPointerDrag() {
   }
 
   document.addEventListener("pointerdown", (event) => {
-    if (event.pointerType === "mouse") return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
     const card = event.target.closest("[data-drag-id]");
     if (!card || event.target.closest("a, input, textarea, select, button:not(.item-card)")) return;
     cleanupPointerDrag();
     card.setAttribute("draggable", "false");
+    card.setPointerCapture?.(event.pointerId);
     pointerDrag = {
       id: card.dataset.dragId,
       card,
@@ -2110,14 +2163,18 @@ function bindPointerDrag() {
       lastY: event.clientY,
       active: false,
       ghost: null,
-      timer: window.setTimeout(() => startPointerDrag(event), longPressDelay),
+      pointerType: event.pointerType,
+      timer: event.pointerType === "mouse" ? null : window.setTimeout(() => startPointerDrag(event), longPressDelay),
     };
   });
 
   document.addEventListener("pointermove", (event) => {
     if (!pointerDrag) return;
     const distance = Math.hypot(event.clientX - pointerDrag.startX, event.clientY - pointerDrag.startY);
-    if (!pointerDrag.active && distance > cancelDistance) {
+    if (!pointerDrag.active && pointerDrag.pointerType === "mouse" && distance > mouseDragDistance) {
+      startPointerDrag(event);
+    }
+    if (!pointerDrag.active && pointerDrag.pointerType !== "mouse" && distance > cancelDistance) {
       cleanupPointerDrag();
       return;
     }
