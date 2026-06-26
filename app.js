@@ -2101,7 +2101,6 @@ function bindDesktopDrag() {
 
 function bindPointerDrag() {
   const longPressDelay = 420;
-  const cancelDistance = 10;
   const mouseDragDistance = 4;
 
   function startPointerDrag(event) {
@@ -2109,13 +2108,14 @@ function bindPointerDrag() {
     const rect = pointerDrag.card.getBoundingClientRect();
     draggedItemId = pointerDrag.id;
     pointerDrag.active = true;
-    pointerDrag.lastX = pointerDrag.startX;
-    pointerDrag.lastY = pointerDrag.startY;
+    pointerDrag.lastX = pointerDrag.currentX;
+    pointerDrag.lastY = pointerDrag.currentY;
     pointerDrag.ghost = pointerDrag.card.cloneNode(true);
     pointerDrag.ghost.classList.add("drag-ghost");
     pointerDrag.ghost.style.width = `${rect.width}px`;
     pointerDrag.ghost.style.left = `${rect.left}px`;
     pointerDrag.ghost.style.top = `${rect.top}px`;
+    pointerDrag.ghost.style.transform = `translate(${pointerDrag.currentX - pointerDrag.startX}px, ${pointerDrag.currentY - pointerDrag.startY}px)`;
     document.body.appendChild(pointerDrag.ghost);
     document.body.classList.add("mobile-dragging");
     pointerDrag.card.classList.add("dragging-source");
@@ -2149,6 +2149,7 @@ function bindPointerDrag() {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     const card = event.target.closest("[data-drag-id]");
     if (!card || event.target.closest("a, input, textarea, select, button:not(.item-card)")) return;
+    if (event.pointerType !== "mouse") event.preventDefault();
     cleanupPointerDrag();
     card.setAttribute("draggable", "false");
     card.setPointerCapture?.(event.pointerId);
@@ -2159,6 +2160,8 @@ function bindPointerDrag() {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
+      currentX: event.clientX,
+      currentY: event.clientY,
       lastX: event.clientX,
       lastY: event.clientY,
       active: false,
@@ -2170,16 +2173,14 @@ function bindPointerDrag() {
 
   document.addEventListener("pointermove", (event) => {
     if (!pointerDrag) return;
+    if (pointerDrag.pointerType !== "mouse") event.preventDefault();
+    pointerDrag.currentX = event.clientX;
+    pointerDrag.currentY = event.clientY;
     const distance = Math.hypot(event.clientX - pointerDrag.startX, event.clientY - pointerDrag.startY);
     if (!pointerDrag.active && pointerDrag.pointerType === "mouse" && distance > mouseDragDistance) {
       startPointerDrag(event);
     }
-    if (!pointerDrag.active && pointerDrag.pointerType !== "mouse" && distance > cancelDistance) {
-      cleanupPointerDrag();
-      return;
-    }
     if (!pointerDrag.active) return;
-    event.preventDefault();
     pointerDrag.lastX = event.clientX;
     pointerDrag.lastY = event.clientY;
     pointerDrag.ghost.style.transform = `translate(${event.clientX - pointerDrag.startX}px, ${event.clientY - pointerDrag.startY}px)`;
