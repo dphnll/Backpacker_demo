@@ -936,6 +936,10 @@ h3 {
   line-height: 1.15;
 }
 
+.budget-strip span {
+  min-height: 28px;
+}
+
 .budget-strip .paid-card span {
   color: #2d7b52;
 }
