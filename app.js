@@ -14,6 +14,7 @@ const TRAINER_VERSION = "2026-06-25.1";
 const APP_VERSION = "analytics-first-layer-2026-06-25";
 const DEFAULT_ITEM_STATUS = "want";
 const DEFAULT_ITEM_PRIORITY = "nice";
+const TRIP_DATE_RANGE_ERROR = "Дата окончания не может быть раньше даты начала";
 const ANALYTICS_MILESTONE_CONFIG = {
   definitionVersion: ANALYTICS_DEFINITION_VERSION,
   firstValue: {
@@ -1227,13 +1228,59 @@ function openTripSheet() {
   Object.entries(state.trip).forEach(([key, value]) => {
     if (form.elements[key]) form.elements[key].value = value ?? "";
   });
+  syncTripDateInputs();
   openSheet("tripSheet");
   trackEvent("trip_settings_opened", getTripAnalyticsContext());
+}
+
+function getTripDateInputs() {
+  const form = $("#tripForm");
+  return {
+    startInput: form.elements.startDate,
+    endInput: form.elements.endDate,
+  };
+}
+
+function syncTripDateInputs({ focusEnd = false } = {}) {
+  const { startInput, endInput } = getTripDateInputs();
+  const previousEndDate = endInput.value;
+  endInput.min = startInput.value || "";
+  endInput.disabled = !startInput.value;
+  if (startInput.value && endInput.value && endInput.value < startInput.value) {
+    endInput.value = "";
+  }
+  validateTripDateInputs();
+  if (focusEnd && startInput.value && (!previousEndDate || previousEndDate !== endInput.value)) {
+    window.setTimeout(() => endInput.focus(), 0);
+  }
+}
+
+function validateTripDateInputs() {
+  const { startInput, endInput } = getTripDateInputs();
+  endInput.setCustomValidity("");
+  if (startInput.value && endInput.value && endInput.value < startInput.value) {
+    endInput.setCustomValidity(TRIP_DATE_RANGE_ERROR);
+  }
+  return !endInput.validationMessage;
+}
+
+function handleTripStartDateChange() {
+  syncTripDateInputs({ focusEnd: true });
+}
+
+function handleTripEndDateChange() {
+  validateTripDateInputs();
 }
 
 function saveTrip(event) {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+  syncTripDateInputs();
+  if (!validateTripDateInputs()) {
+    event.currentTarget.reportValidity();
+    showToast(TRIP_DATE_RANGE_ERROR);
+    return;
+  }
   const previousTrip = { ...state.trip };
   const previousCurrency = state.trip.currency;
   if (previousCurrency !== data.currency) {
@@ -2283,6 +2330,10 @@ function bindEvents() {
   $("#tripMeta").addEventListener("click", openTripSheet);
   $("#tripBudgetMeta").addEventListener("click", openTripSheet);
   $("#tripForm").addEventListener("submit", saveTrip);
+  $("#tripForm").elements.startDate.addEventListener("change", handleTripStartDateChange);
+  $("#tripForm").elements.startDate.addEventListener("input", handleTripStartDateChange);
+  $("#tripForm").elements.endDate.addEventListener("change", handleTripEndDateChange);
+  $("#tripForm").elements.endDate.addEventListener("input", handleTripEndDateChange);
   $("#resetDemoButton").addEventListener("click", resetDemo);
   $("#shareButton").addEventListener("click", openShareSheet);
   $("#installAppButton").addEventListener("click", installPwa);
