@@ -5,7 +5,27 @@ const VIEW_STORAGE_KEY = "backpacker.currentView.v1";
 const ONBOARDING_STORAGE_KEY = "backpacker.onboarding.v1";
 const ANALYTICS_USER_KEY = "backpacker.analytics.user.v1";
 const ANALYTICS_LAST_OPEN_KEY = "backpacker.analytics.lastOpen.v1";
+const ANALYTICS_MILESTONES_KEY = "backpacker.analytics.milestones.v1";
 const ANALYTICS_CONFIG = window.BACKPACKER_ANALYTICS || {};
+const ANALYTICS_SCHEMA_VERSION = "2026-06-25.1";
+const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
+const ONBOARDING_VERSION = "2026-06-25.1";
+const TRAINER_VERSION = "2026-06-25.1";
+const APP_VERSION = "analytics-first-layer-2026-06-25";
+const DEFAULT_ITEM_STATUS = "want";
+const DEFAULT_ITEM_PRIORITY = "nice";
+const ANALYTICS_MILESTONE_CONFIG = {
+  definitionVersion: ANALYTICS_DEFINITION_VERSION,
+  firstValue: {
+    minItems: 3,
+    minScheduledItems: 1,
+  },
+  workingPlan: {
+    minItems: 8,
+    minScheduledShare: 0.5,
+    minTypes: 3,
+  },
+};
 let deferredInstallPrompt = null;
 
 const itemTypes = [
@@ -178,6 +198,7 @@ let autoScrollFrame = null;
 let ratesUpdatedAt = null;
 let ratesSource = "demo";
 let coverTargetTripId = null;
+let onboardingExitTracked = false;
 const analyticsSessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const $ = (selector) => document.querySelector(selector);
@@ -200,37 +221,83 @@ function getDisplayMode() {
   return "browser";
 }
 
-function getTripPeriodStatus(trip = state?.trip, todayValue = new Date()) {
+function getActiveTripEntry(tripId = state?.trip?.id) {
+  return tripStore.trips.find((entry) => entry.id === tripId) || null;
+}
+
+function getTripOrigin(tripId = state?.trip?.id) {
+  return getActiveTripEntry(tripId)?.isDemo ? "demo" : "user_created";
+}
+
+function getTripPhase(trip = state?.trip, todayValue = new Date()) {
   if (!trip?.startDate || !trip?.endDate) return "no_dates";
   const today = new Date(todayValue);
   const start = new Date(`${trip.startDate}T00:00:00`);
   const end = new Date(`${trip.endDate}T23:59:59`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "invalid_dates";
-  if (today < start) return "before_trip";
-  if (today > end) return "after_trip";
-  return "during_trip";
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "no_dates";
+  if (today < start) return "before";
+  if (today > end) return "after";
+  return "during";
+}
+
+function getDaysUntilTripBucket(trip = state?.trip, todayValue = new Date()) {
+  const phase = getTripPhase(trip, todayValue);
+  if (phase === "during") return "during";
+  if (phase === "after") return "past";
+  if (phase === "no_dates") return "unknown";
+  const today = new Date(todayValue);
+  const start = new Date(`${trip.startDate}T00:00:00`);
+  const days = Math.ceil((start - today) / 86400000);
+  if (!Number.isFinite(days)) return "unknown";
+  if (days <= 3) return "1_3";
+  if (days <= 7) return "4_7";
+  if (days <= 30) return "8_30";
+  return "31_plus";
+}
+
+function getAnalyticsEnvironment() {
+  if (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost" || window.location.protocol === "file:") return "local";
+  if (window.location.hostname.includes("github.io")) return "production";
+  return "preview";
+}
+
+function getAnalyticsFlag(name) {
+  const paramName = name === "internal" ? "internal" : "test_user";
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get(paramName) === "1") localStorage.setItem(`backpacker.analytics.${paramName}`, "1");
+    return localStorage.getItem(`backpacker.analytics.${paramName}`) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function getTripAnalyticsContext(trip = state?.trip) {
+  const activeTrip = trip || {};
+  return {
+    trip_id: activeTrip.id || null,
+    trip_origin: getTripOrigin(activeTrip.id),
+    trip_phase: getTripPhase(activeTrip),
+    days_until_trip_bucket: getDaysUntilTripBucket(activeTrip),
+  };
+}
+
+function getUserTripCount() {
+  const trips = Array.isArray(tripStore?.trips) ? tripStore.trips : [];
+  return trips.filter((entry) => !entry.isDemo).length;
 }
 
 function getAnalyticsContext(extra = {}) {
-  const activeTrip = state?.trip || {};
-  const trips = Array.isArray(tripStore?.trips) ? tripStore.trips : [];
-  const userTrips = trips.filter((entry) => !entry.isDemo);
-  const items = Array.isArray(state?.items) ? state.items : [];
-  const dates = activeTrip.startDate && activeTrip.endDate ? getTripDates() : [];
   return {
-    user_id: getOrCreateAnalyticsUserId(),
+    anon_user_id: getOrCreateAnalyticsUserId(),
     session_id: analyticsSessionId,
+    analytics_schema_version: ANALYTICS_SCHEMA_VERSION,
+    app_version: APP_VERSION,
+    environment: getAnalyticsEnvironment(),
+    is_internal_user: getAnalyticsFlag("internal"),
+    is_test_user: getAnalyticsFlag("test_user"),
     screen: currentScreen,
-    view: currentView,
     display_mode: getDisplayMode(),
-    trip_count: userTrips.length,
-    item_count: items.length,
-    days_count: dates.length,
-    currency: activeTrip.currency || "RUB",
-    has_budget: Boolean(parseMoney(activeTrip.budgetLimit)),
-    has_dates: Boolean(activeTrip.startDate && activeTrip.endDate),
-    trip_period: getTripPeriodStatus(activeTrip),
-    is_demo_trip: activeTrip.id === "trainer-kazan",
     ...extra,
   };
 }
@@ -252,7 +319,7 @@ function sendPostHogEvent(name, payload) {
   const body = JSON.stringify({
     api_key: ANALYTICS_CONFIG.posthogKey,
     event: name,
-    distinct_id: payload.user_id,
+    distinct_id: payload.anon_user_id,
     properties: payload,
   });
   const url = `${host}/capture/`;
@@ -278,11 +345,10 @@ function trackAppOpen() {
   } catch {
     lastOpen = "";
   }
-  trackEvent("app_open", {
+  trackEvent("app_opened", {
     is_returning_user: Boolean(lastOpen),
     last_open_days_ago: lastOpen ? Math.round((new Date(today) - new Date(lastOpen)) / 86400000) : null,
   });
-  if (lastOpen && lastOpen !== today) trackEvent("return_next_day");
 }
 
 function loadState() {
@@ -516,13 +582,13 @@ async function refreshExchangeRates() {
     ratesSource = "live";
     ratesUpdatedAt = new Date();
     renderCurrencyCalculator();
-    trackEvent("currency_rates_refresh", { source: "live" });
+    trackEvent("currency_rates_refreshed", { source: "live" });
   } catch {
     ratesSource = "demo";
     ratesUpdatedAt = null;
     renderCurrencyCalculator();
     renderRatesStatus("Не удалось подтянуть реальный курс, пока использую демо-курс.");
-    trackEvent("currency_rates_refresh", { source: "demo", failed: true });
+    trackEvent("currency_rates_refreshed", { source: "demo", failed: true });
   }
 }
 
@@ -589,6 +655,136 @@ function getTotals() {
   const possible = state.items.filter(isActiveCost).reduce((sum, item) => sum + parseMoney(item.price), 0);
   const remaining = parseMoney(state.trip.budgetLimit) - possible;
   return { paid, fixed, optional, possible, remaining };
+}
+
+function getAnalyticsMilestones() {
+  try {
+    return JSON.parse(localStorage.getItem(ANALYTICS_MILESTONES_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveAnalyticsMilestones(milestones) {
+  try {
+    localStorage.setItem(ANALYTICS_MILESTONES_KEY, JSON.stringify(milestones));
+  } catch {
+    // Milestones are best-effort analytics state.
+  }
+}
+
+function hasMeaningfulField(item) {
+  return Boolean(
+    parseMoney(item.price) ||
+    parseMoney(item.paidAmount) ||
+    item.link ||
+    item.startTime ||
+    item.notes ||
+    item.priority !== DEFAULT_ITEM_PRIORITY,
+  );
+}
+
+function hasPlanningSignal(item) {
+  return Boolean(
+    parseMoney(item.price) ||
+    parseMoney(item.paidAmount) ||
+    item.status !== DEFAULT_ITEM_STATUS ||
+    item.priority !== DEFAULT_ITEM_PRIORITY,
+  );
+}
+
+function getMilestoneStats() {
+  const activeItems = state.items.filter((item) => item.status !== "skipped");
+  const scheduledItems = activeItems.filter((item) => item.date);
+  const scheduledDays = new Set(scheduledItems.map((item) => item.date));
+  const typeCount = new Set(activeItems.map((item) => item.type)).size;
+  const meaningfulFieldCount = activeItems.filter(hasMeaningfulField).length;
+  const hasBudget = parseMoney(state.trip.budgetLimit) > 0;
+  const hasCosts = activeItems.some((item) => parseMoney(item.price) > 0);
+  const hasPaidAmounts = activeItems.some((item) => parseMoney(item.paidAmount) > 0);
+  const hasStatuses = activeItems.some((item) => item.status !== DEFAULT_ITEM_STATUS);
+  const hasPriorities = activeItems.some((item) => item.priority !== DEFAULT_ITEM_PRIORITY);
+  return {
+    itemCount: activeItems.length,
+    scheduledItemCount: scheduledItems.length,
+    scheduledDayCount: scheduledDays.size,
+    scheduledShare: activeItems.length ? scheduledItems.length / activeItems.length : 0,
+    typeCount,
+    meaningfulFieldCount,
+    hasBudget,
+    hasCosts,
+    hasPaidAmounts,
+    hasStatuses,
+    hasPriorities,
+    hasPlanningSignal: hasBudget || activeItems.some(hasPlanningSignal),
+    tripDaysCount: getTripDates().length || 1,
+  };
+}
+
+function scheduledShareBucket(value) {
+  if (value >= 0.75) return "75_100";
+  if (value >= 0.5) return "50_74";
+  if (value > 0) return "1_49";
+  return "0";
+}
+
+function trackMilestoneOnce(name, key, properties = {}) {
+  if (getTripOrigin() !== "user_created") return;
+  const tripId = state.trip.id;
+  if (!tripId) return;
+  const milestones = getAnalyticsMilestones();
+  const tripMilestones = milestones[tripId] || {};
+  if (tripMilestones[key] === ANALYTICS_DEFINITION_VERSION) return;
+  trackEvent(name, {
+    ...getTripAnalyticsContext(),
+    definition_version: ANALYTICS_DEFINITION_VERSION,
+    ...properties,
+  });
+  milestones[tripId] = {
+    ...tripMilestones,
+    [key]: ANALYTICS_DEFINITION_VERSION,
+  };
+  saveAnalyticsMilestones(milestones);
+}
+
+function checkTripMilestones() {
+  if (getTripOrigin() !== "user_created") return;
+  const stats = getMilestoneStats();
+  const firstValueReached =
+    stats.itemCount >= ANALYTICS_MILESTONE_CONFIG.firstValue.minItems &&
+    stats.scheduledItemCount >= ANALYTICS_MILESTONE_CONFIG.firstValue.minScheduledItems &&
+    stats.meaningfulFieldCount >= 1;
+
+  if (firstValueReached) {
+    trackMilestoneOnce("trip_first_value_reached", "firstValue", {
+      item_count: stats.itemCount,
+      scheduled_item_count: stats.scheduledItemCount,
+      meaningful_field_count: stats.meaningfulFieldCount,
+    });
+  }
+
+  const minScheduledDays = Math.min(2, stats.tripDaysCount);
+  const workingPlanReached =
+    stats.itemCount >= ANALYTICS_MILESTONE_CONFIG.workingPlan.minItems &&
+    stats.scheduledShare >= ANALYTICS_MILESTONE_CONFIG.workingPlan.minScheduledShare &&
+    stats.scheduledDayCount >= minScheduledDays &&
+    stats.typeCount >= ANALYTICS_MILESTONE_CONFIG.workingPlan.minTypes &&
+    stats.hasPlanningSignal;
+
+  if (workingPlanReached) {
+    trackMilestoneOnce("trip_working_plan_reached", "workingPlan", {
+      item_count: stats.itemCount,
+      scheduled_item_count: stats.scheduledItemCount,
+      scheduled_day_count: stats.scheduledDayCount,
+      scheduled_share_bucket: scheduledShareBucket(stats.scheduledShare),
+      type_count: stats.typeCount,
+      has_budget: stats.hasBudget,
+      has_costs: stats.hasCosts,
+      has_paid_amounts: stats.hasPaidAmounts,
+      has_statuses: stats.hasStatuses,
+      has_priorities: stats.hasPriorities,
+    });
+  }
 }
 
 function render() {
@@ -888,7 +1084,9 @@ function openItemSheet(itemId = null) {
   updateOpenLinkButton();
   openSheet("itemSheet");
   const trackedItem = itemId ? state.items.find((entry) => entry.id === itemId) : null;
-  trackEvent("item_sheet_open", {
+  trackEvent("item_form_opened", {
+    ...getTripAnalyticsContext(),
+    item_id: trackedItem?.id || null,
     mode: itemId ? "edit" : "create",
     item_type: trackedItem?.type || null,
     item_status: trackedItem?.status || null,
@@ -935,7 +1133,13 @@ function saveItem(event) {
   closeSheet("itemSheet");
   render();
   showToast("Сохранено");
-  trackEvent(isNew ? "item_create" : "item_update", {
+  const changedFields = existing
+    ? ["type", "status", "priority", "date", "startTime", "durationMinutes", "price", "paidAmount", "link", "locationText", "notes"]
+        .filter((field) => String(existing[field] ?? "") !== String(item[field] ?? ""))
+    : [];
+  trackEvent(isNew ? "item_created" : "item_updated", {
+    ...getTripAnalyticsContext(),
+    item_id: item.id,
     item_type: item.type,
     item_status: item.status,
     item_priority: item.priority,
@@ -946,7 +1150,16 @@ function saveItem(event) {
     has_link: Boolean(item.link),
     has_location: Boolean(item.locationText),
     has_note: Boolean(item.notes),
+    ...(isNew ? {} : { changed_fields: changedFields }),
   });
+  if (getTripOrigin() === "demo" && !isNew) {
+    trackEvent("trainer_action_completed", {
+      ...getTripAnalyticsContext(),
+      action_type: "item_updated",
+      trainer_version: TRAINER_VERSION,
+    });
+  }
+  checkTripMilestones();
 }
 
 function getNextOrder(date) {
@@ -957,7 +1170,7 @@ function getNextOrder(date) {
   return orders.length ? Math.max(...orders) + 1 : 0;
 }
 
-function moveItem(itemId, targetDate, beforeItemId = null) {
+function moveItem(itemId, targetDate, beforeItemId = null, method = "drag_desktop") {
   const moving = state.items.find((item) => item.id === itemId);
   if (!moving) return;
   const previousDate = moving.date || "";
@@ -975,14 +1188,21 @@ function moveItem(itemId, targetDate, beforeItemId = null) {
   });
   saveState();
   render();
-  trackEvent("item_drag", {
+  trackEvent("item_day_changed", {
+    ...getTripAnalyticsContext(),
+    item_id: moving.id,
     item_type: moving.type,
     item_status: moving.status,
-    from_bucket: previousDate ? "day" : "undated",
-    to_bucket: moving.date ? "day" : "undated",
+    from: previousDate ? "day" : "undated",
+    to: moving.date ? "day" : "undated",
+    method,
     reordered_inside_bucket: previousDate === moving.date,
     dropped_before_item: Boolean(beforeItemId),
   });
+  if (getTripOrigin() === "demo") {
+    trackEvent("trainer_action_completed", { ...getTripAnalyticsContext(), action_type: "item_day_changed", trainer_version: TRAINER_VERSION });
+  }
+  checkTripMilestones();
 }
 
 function deleteCurrentItem() {
@@ -994,7 +1214,9 @@ function deleteCurrentItem() {
   closeSheet("itemSheet");
   render();
   showToast("Удалено");
-  trackEvent("item_delete", {
+  trackEvent("item_deleted", {
+    ...getTripAnalyticsContext(),
+    item_id: id,
     item_type: item?.type || null,
     item_status: item?.status || null,
   });
@@ -1006,12 +1228,13 @@ function openTripSheet() {
     if (form.elements[key]) form.elements[key].value = value ?? "";
   });
   openSheet("tripSheet");
-  trackEvent("trip_sheet_open");
+  trackEvent("trip_settings_opened", getTripAnalyticsContext());
 }
 
 function saveTrip(event) {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const previousTrip = { ...state.trip };
   const previousCurrency = state.trip.currency;
   if (previousCurrency !== data.currency) {
     convertTripCurrency(previousCurrency, data.currency);
@@ -1030,12 +1253,16 @@ function saveTrip(event) {
   closeSheet("tripSheet");
   render();
   showToast("Поездка сохранена");
-  trackEvent("trip_save", {
+  const changedFields = ["title", "destination", "startDate", "endDate", "currency", "budgetLimit", "preferencesText"]
+    .filter((field) => String(previousTrip[field] ?? "") !== String(state.trip[field] ?? ""));
+  trackEvent("trip_settings_updated", {
+    ...getTripAnalyticsContext(),
+    changed_fields: changedFields,
     currency_changed: previousCurrency !== data.currency,
-    has_title: Boolean(state.trip.title),
-    has_destination: Boolean(state.trip.destination),
-    has_preferences: Boolean(state.trip.preferencesText),
+    has_budget: Boolean(parseMoney(state.trip.budgetLimit)),
+    has_dates: Boolean(state.trip.startDate && state.trip.endDate),
   });
+  checkTripMilestones();
 }
 
 function resetDemo() {
@@ -1048,13 +1275,12 @@ function resetDemo() {
   closeSheet("tripSheet");
   render();
   showToast("Демо сброшено");
-  trackEvent("trainer_reset");
 }
 
 function openShareSheet() {
   renderSharePreview();
   openSheet("shareSheet");
-  trackEvent("share_sheet_open");
+  trackEvent("share_opened", getTripAnalyticsContext());
 }
 
 function renderSharePreview() {
@@ -1206,14 +1432,14 @@ function downloadEstimate() {
   const name = `${slugifyFileName(state.trip.title)}-estimate.csv`;
   downloadTextFile(name, `\uFEFF${buildEstimateCsv()}`, "text/csv;charset=utf-8");
   showToast("Смета скачана");
-  trackEvent("download_estimate", { format: "csv" });
+  trackEvent("export_completed", { ...getTripAnalyticsContext(), export_type: "estimate", format: "csv" });
 }
 
 function downloadPlan() {
   const name = `${slugifyFileName(state.trip.title)}-plan.csv`;
   downloadTextFile(name, `\uFEFF${buildPlanCsv()}`, "text/csv;charset=utf-8");
   showToast("План скачан");
-  trackEvent("download_plan", { format: "csv" });
+  trackEvent("export_completed", { ...getTripAnalyticsContext(), export_type: "plan", format: "csv" });
 }
 
 function chooseExportFormat() {
@@ -1366,7 +1592,7 @@ async function chooseAndDownloadEstimate() {
     const previewWindow = window.open("", "_blank");
     previewWindow?.document.write("<p>Готовим PDF...</p>");
     await downloadPdfFile(`${slugifyFileName(state.trip.title)}-estimate.pdf`, buildEstimatePdfLines(), previewWindow);
-    trackEvent("download_estimate", { format: "pdf" });
+    trackEvent("export_completed", { ...getTripAnalyticsContext(), export_type: "estimate", format: "pdf" });
   }
 }
 
@@ -1377,7 +1603,7 @@ async function chooseAndDownloadPlan() {
     const previewWindow = window.open("", "_blank");
     previewWindow?.document.write("<p>Готовим PDF...</p>");
     await downloadPdfFile(`${slugifyFileName(state.trip.title)}-plan.pdf`, buildPlanPdfLines(), previewWindow);
-    trackEvent("download_plan", { format: "pdf" });
+    trackEvent("export_completed", { ...getTripAnalyticsContext(), export_type: "plan", format: "pdf" });
   }
 }
 
@@ -1391,7 +1617,7 @@ async function shareTrip() {
   if (navigator.share) {
     try {
       await navigator.share(shareData);
-      trackEvent("share_trip", { method: "web_share" });
+      trackEvent("share_completed", { ...getTripAnalyticsContext(), method: "web_share", result: "success" });
       return;
     } catch (error) {
       if (error?.name === "AbortError") return;
@@ -1399,7 +1625,7 @@ async function shareTrip() {
   }
   await copyText(`${text}\n\n${window.location.href}`);
   showToast("Ссылка и сводка скопированы");
-  trackEvent("share_trip", { method: "copy_fallback" });
+  trackEvent("share_completed", { ...getTripAnalyticsContext(), method: "copy_fallback", result: "fallback" });
 }
 
 async function shareApp() {
@@ -1414,7 +1640,7 @@ async function shareApp() {
   if (navigator.share) {
     try {
       await navigator.share(shareData);
-      trackEvent("share_app", { method: "web_share" });
+      trackEvent("share_completed", { method: "web_share", result: "success", share_target: "app" });
       return;
     } catch (error) {
       if (error?.name === "AbortError") return;
@@ -1422,7 +1648,7 @@ async function shareApp() {
   }
   await copyText(`${shareData.text}\n${url}`);
   showToast("Ссылка на Backpacker скопирована");
-  trackEvent("share_app", { method: "copy_fallback" });
+  trackEvent("share_completed", { method: "copy_fallback", result: "fallback", share_target: "app" });
 }
 
 function getItemFormLink() {
@@ -1443,27 +1669,27 @@ function openItemLink() {
   const url = normalizeExternalUrl(getItemFormLink());
   if (!url) return;
   window.open(url, "_blank", "noopener,noreferrer");
-  trackEvent("external_link_open");
+  trackEvent("external_link_opened", getTripAnalyticsContext());
 }
 
 async function installPwa() {
   if (window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone) {
     showToast("Приложение уже установлено");
-    trackEvent("pwa_install_click", { already_installed: true });
+    trackEvent("pwa_install_clicked", { already_installed: true });
     return;
   }
 
   if (deferredInstallPrompt) {
-    trackEvent("pwa_install_click", { prompt_available: true });
+    trackEvent("pwa_install_clicked", { prompt_available: true });
     deferredInstallPrompt.prompt();
     const choice = await deferredInstallPrompt.userChoice.catch(() => null);
-    trackEvent("pwa_install_choice", { outcome: choice?.outcome || "unknown" });
+    trackEvent("pwa_install_prompt_result", { outcome: choice?.outcome || "unknown" });
     deferredInstallPrompt = null;
     return;
   }
 
   showToast("Откройте меню браузера и выберите «Добавить на главный экран»");
-  trackEvent("pwa_install_click", { prompt_available: false });
+  trackEvent("pwa_install_clicked", { prompt_available: false });
 }
 
 async function copyText(text) {
@@ -1503,19 +1729,20 @@ function showIntroSlide(index) {
   $$("[data-intro-slide]").forEach((slide) => {
     slide.classList.toggle("hidden", slide.dataset.introSlide !== String(index));
   });
-  trackEvent("onboarding_slide", { slide_index: index });
+  trackEvent("onboarding_slide_viewed", { onboarding_version: ONBOARDING_VERSION, slide_index: index });
 }
 
 function hideAppSplash() {
   $("#appSplash")?.classList.add("hidden");
 }
 
-function showIntroScreen() {
+function showIntroScreen(trigger = "first_open") {
   currentScreen = "intro";
+  onboardingExitTracked = false;
   $("#introScreen").classList.remove("hidden");
   $("#homeScreen").classList.add("hidden");
   $(".app-shell").classList.add("hidden");
-  trackEvent("onboarding_start");
+  trackEvent("onboarding_started", { onboarding_version: ONBOARDING_VERSION, trigger });
   showIntroSlide(0);
 }
 
@@ -1525,8 +1752,15 @@ function finishIntro() {
   } catch {
     // The app should still open when storage is unavailable.
   }
-  trackEvent("onboarding_done");
+  onboardingExitTracked = true;
+  trackEvent("onboarding_finished", { onboarding_version: ONBOARDING_VERSION, outcome: "completed" });
   showHomeScreen();
+}
+
+function trackOnboardingExit() {
+  if (currentScreen !== "intro" || onboardingExitTracked) return;
+  onboardingExitTracked = true;
+  trackEvent("onboarding_finished", { onboarding_version: ONBOARDING_VERSION, outcome: "exited" });
 }
 
 function startApp() {
@@ -1541,7 +1775,7 @@ function startApp() {
   }
 
   if (forceIntro || !onboardingSeen) {
-    showIntroScreen();
+    showIntroScreen(forceIntro ? "forced" : "first_open");
     return;
   }
 
@@ -1554,7 +1788,7 @@ function showHomeScreen() {
   $("#homeScreen").classList.remove("hidden");
   $(".app-shell").classList.add("hidden");
   renderHome();
-  trackEvent("home_open");
+  trackEvent("home_opened", { trip_count: getUserTripCount() });
 }
 
 function showTripScreen() {
@@ -1577,26 +1811,34 @@ function openTrip(tripId) {
   }
   switchView(currentView);
   showTripScreen();
-  const period = getTripPeriodStatus(state.trip);
-  trackEvent(entry.isDemo ? "trainer_open" : "trip_open", {
-    trip_period: period,
-    has_custom_cover: Boolean(entry.coverDataUrl),
-  });
-  if (!entry.isDemo && period !== "no_dates" && period !== "invalid_dates") {
-    trackEvent(`trip_open_${period}`);
+  if (entry.isDemo) {
+    trackEvent("trainer_opened", {
+      ...getTripAnalyticsContext(),
+      trainer_version: TRAINER_VERSION,
+      has_custom_cover: Boolean(entry.coverDataUrl),
+    });
+  } else {
+    trackEvent("trip_opened", {
+      ...getTripAnalyticsContext(),
+      has_custom_cover: Boolean(entry.coverDataUrl),
+    });
   }
 }
 
-function createNewTrip() {
+function createNewTrip(creationSource = "home") {
   const entry = createBlankTripEntry();
   tripStore.trips.push(entry);
   persistTripStore(tripStore);
   openTrip(entry.id);
   openTripSheet();
-  trackEvent("trip_create", {
-    trip_count_after_create: tripStore.trips.filter((trip) => !trip.isDemo).length,
+  trackEvent("trip_created", {
+    ...getTripAnalyticsContext(entry.state.trip),
+    trip_id: entry.id,
+    trip_origin: "user_created",
+    creation_source: creationSource,
+    trip_count_after_create: getUserTripCount(),
+    is_second_user_trip: getUserTripCount() >= 2,
   });
-  if (tripStore.trips.filter((trip) => !trip.isDemo).length >= 2) trackEvent("second_trip_create");
 }
 
 function selectTripCover(tripId) {
@@ -1651,7 +1893,7 @@ async function saveSelectedCover(event) {
     persistTripStore(tripStore);
     renderHome();
     showToast("Обложка обновлена");
-    trackEvent("trip_cover_update");
+    trackEvent("trip_cover_updated", getTripAnalyticsContext(entry.state.trip));
   } catch {
     showToast("Не удалось загрузить обложку");
   }
@@ -1677,7 +1919,7 @@ function deleteTrip(tripId) {
   }
   renderHome();
   showToast("Поездка удалена");
-  trackEvent("trip_delete");
+  trackEvent("trip_deleted", { trip_id: tripId, trip_origin: "user_created" });
 }
 
 function switchView(view) {
@@ -1690,7 +1932,16 @@ function switchView(view) {
   }
   $$(".view").forEach((element) => element.classList.toggle("active", element.id === `${view}View`));
   $$(".nav-button").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
-  if (previousView !== view) trackEvent("view_change", { from_view: previousView, to_view: view });
+  if (previousView !== view) {
+    trackEvent("trip_section_opened", {
+      ...getTripAnalyticsContext(),
+      section: view,
+      from_section: previousView,
+    });
+    if (getTripOrigin() === "demo") {
+      trackEvent("trainer_action_completed", { ...getTripAnalyticsContext(), action_type: "section_opened", trainer_version: TRAINER_VERSION });
+    }
+  }
 }
 
 function getDropDataFromPoint(x, y, fallbackTarget = null) {
@@ -1745,7 +1996,7 @@ function bindDesktopDrag() {
     const data = getDropDataFromPoint(event.clientX, event.clientY, event.target);
     if (!data) return;
     event.preventDefault();
-    moveItem(draggedItemId, data.date, data.beforeItemId);
+    moveItem(draggedItemId, data.date, data.beforeItemId, "drag_desktop");
     finishDragClickGuard();
   });
 
@@ -1828,7 +2079,7 @@ function bindPointerDrag() {
 
     if (drop && drag.active && event) {
       const data = getDropDataFromPoint(event.clientX, event.clientY);
-      if (data) moveItem(drag.id, data.date, data.beforeItemId);
+      if (data) moveItem(drag.id, data.date, data.beforeItemId, "drag_touch");
       finishDragClickGuard();
     }
 
@@ -1957,7 +2208,7 @@ function bindEvents() {
   $("#introStartButton").addEventListener("click", finishIntro);
   $("#coverInput").addEventListener("change", saveSelectedCover);
   $("#homeShareButton").addEventListener("click", shareApp);
-  $("#feedbackButton").addEventListener("click", () => trackEvent("telegram_click"));
+  $("#feedbackButton").addEventListener("click", () => trackEvent("feedback_channel_opened", { channel: "telegram" }));
   $("#homeButton").addEventListener("click", showHomeScreen);
   $("#itemForm").addEventListener("submit", saveItem);
   $("#deleteItemButton").addEventListener("click", deleteCurrentItem);
@@ -1992,12 +2243,15 @@ refreshExchangeRates();
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();
   deferredInstallPrompt = event;
+  trackEvent("pwa_install_prompt_shown");
 });
 
 window.addEventListener("appinstalled", () => {
   trackEvent("pwa_installed");
   deferredInstallPrompt = null;
 });
+
+window.addEventListener("pagehide", trackOnboardingExit);
 
 if ("serviceWorker" in navigator && ["http:", "https:"].includes(window.location.protocol)) {
   navigator.serviceWorker.register("./service-worker.js").catch(() => {});
