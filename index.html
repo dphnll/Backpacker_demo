@@ -364,6 +364,10 @@
             Статус
             <select name="status"></select>
           </label>
+          <label class="field wide participant-owner-field" id="participantOwnerField" hidden>
+            Расход берет на себя
+            <select name="participantId"></select>
+          </label>
           <label class="field">
             День
             <select name="date"></select>
@@ -455,9 +459,18 @@
             Предпочтения
             <textarea name="preferencesText" rows="4"></textarea>
           </label>
+          <section class="field wide participants-field" aria-label="Участники поездки">
+            <span>Участники</span>
+            <div class="participants-section">
+              <div class="participants-list" id="participantsList"></div>
+              <div class="participants-actions">
+                <button class="ghost-button compact" id="addParticipantButton" type="button">Добавить участника</button>
+              </div>
+            </div>
+          </section>
           <div class="form-actions">
-            <button class="ghost-button" type="button" id="resetDemoButton">Сбросить изменения</button>
-            <button class="primary-button" type="submit">Сохранить поездку</button>
+            <button class="ghost-button" type="button" id="resetDemoButton">Сбросить</button>
+            <button class="primary-button" type="submit">Сохранить</button>
           </div>
         </form>
       </section>

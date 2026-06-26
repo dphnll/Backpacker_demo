@@ -15,6 +15,7 @@ const APP_VERSION = "analytics-first-layer-2026-06-25";
 const DEFAULT_ITEM_STATUS = "want";
 const DEFAULT_ITEM_PRIORITY = "nice";
 const TRIP_DATE_RANGE_ERROR = "Дата окончания не может быть раньше даты начала";
+const PARTICIPANT_COLORS = ["orange", "yellow", "blue", "teal", "purple", "pink"];
 const ANALYTICS_MILESTONE_CONFIG = {
   definitionVersion: ANALYTICS_DEFINITION_VERSION,
   firstValue: {
@@ -28,6 +29,7 @@ const ANALYTICS_MILESTONE_CONFIG = {
   },
 };
 let deferredInstallPrompt = null;
+let participantEditorState = { mode: "", participantId: "", value: "" };
 
 const itemTypes = [
   ["ticket", "Билет"],
@@ -469,11 +471,75 @@ function loadInitialView() {
   }
 }
 
+function normalizeParticipantName(name) {
+  return String(name || "").trim().replace(/\s+/g, " ");
+}
+
+function generateParticipantInitials(name) {
+  const normalized = normalizeParticipantName(name);
+  const letters = normalized.split(" ").filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
+  return letters || "Я";
+}
+
+function createParticipant({ tripId, name, isSelf = false, index = 0, id = "" }) {
+  const now = new Date().toISOString();
+  const normalizedName = normalizeParticipantName(name) || "Я";
+  return {
+    id: id || `participant-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    tripId,
+    name: normalizedName,
+    initials: generateParticipantInitials(normalizedName),
+    colorKey: PARTICIPANT_COLORS[index % PARTICIPANT_COLORS.length],
+    isSelf,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function createSelfParticipant(tripId) {
+  return createParticipant({ tripId, name: "Я", isSelf: true, index: 0, id: `participant-${tripId}-self` });
+}
+
+function getSelfParticipant(nextState = state) {
+  return nextState.trip.participants.find((participant) => participant.isSelf) || nextState.trip.participants[0];
+}
+
 function normalizeState(nextState) {
   const normalized = nextState?.trip && Array.isArray(nextState.items) ? nextState : structuredClone(seedState);
+  const tripId = normalized.trip.id || `trip-${Date.now()}`;
+  normalized.trip.id = tripId;
+  let participants = Array.isArray(normalized.trip.participants) ? normalized.trip.participants : [];
+  participants = participants.map((participant, index) => {
+    const name = normalizeParticipantName(participant.name) || "Я";
+    return {
+      ...participant,
+      id: participant.id || `participant-${tripId}-${index}`,
+      tripId,
+      name,
+      initials: generateParticipantInitials(name),
+      colorKey: participant.colorKey || PARTICIPANT_COLORS[index % PARTICIPANT_COLORS.length],
+      isSelf: Boolean(participant.isSelf),
+      createdAt: participant.createdAt || new Date().toISOString(),
+      updatedAt: participant.updatedAt || new Date().toISOString(),
+    };
+  });
+  if (!participants.some((participant) => participant.isSelf)) {
+    participants.unshift(createSelfParticipant(tripId));
+  }
+  let selfSeen = false;
+  participants = participants.map((participant) => {
+    if (!participant.isSelf) return participant;
+    if (selfSeen) return { ...participant, isSelf: false };
+    selfSeen = true;
+    return participant;
+  });
+  normalized.trip.participants = participants;
+  const selfParticipant = getSelfParticipant(normalized);
+  const participantIds = new Set(participants.map((participant) => participant.id));
   normalized.items = normalized.items.map((item, index) => ({
     order: index,
     ...item,
+    participantId: participantIds.has(item.participantId) ? item.participantId : selfParticipant.id,
   }));
   return normalized;
 }
@@ -624,6 +690,26 @@ function getTypeLabel(type) {
 
 function getStatusLabel(status) {
   return statuses.find(([key]) => key === status)?.[1] || "Хочу";
+}
+
+function getParticipantById(participantId) {
+  return state.trip.participants.find((participant) => participant.id === participantId) || getSelfParticipant();
+}
+
+function renderParticipantAvatar(participant) {
+  return `<span class="participant-avatar participant-${escapeAttr(participant.colorKey)}">${escapeHtml(participant.initials)}</span>`;
+}
+
+function getParticipantTotals() {
+  const totals = new Map(state.trip.participants.map((participant) => [participant.id, 0]));
+  state.items.filter(isActiveCost).forEach((item) => {
+    const participant = getParticipantById(item.participantId);
+    totals.set(participant.id, (totals.get(participant.id) || 0) + parseMoney(item.price));
+  });
+  return state.trip.participants.map((participant) => ({
+    participant,
+    total: totals.get(participant.id) || 0,
+  }));
 }
 
 function getStatusIcon(status) {
@@ -948,6 +1034,14 @@ function renderBasket() {
 function renderBudget() {
   const totals = getTotals();
   const dates = getTripDates();
+  const participantTotals = getParticipantTotals()
+    .map(({ participant, total }) => `
+      <div class="participant-total-row">
+        <span>${renderParticipantAvatar(participant)}<span>${escapeHtml(participant.name)}</span>${participant.isSelf ? `<em>Это я</em>` : ""}</span>
+        <strong>${formatMoney(total)}</strong>
+      </div>
+    `)
+    .join("");
   const byDay = dates
     .map((date, index) => {
       const total = state.items
@@ -974,6 +1068,13 @@ function renderBudget() {
         </div>
       </div>
       ${byDay}
+    </section>
+    <section class="card participant-totals-card">
+      <div class="card-title-row">
+        <h3>По участникам</h3>
+        <span class="muted">${state.trip.participants.length}</span>
+      </div>
+      ${participantTotals}
     </section>
   `;
   $("#copyDaysButton")?.addEventListener("click", chooseAndDownloadPlan);
@@ -1024,6 +1125,10 @@ function renderItemCard(item) {
   const duration = item.durationMinutes ? `${item.durationMinutes} мин` : "";
   const price = parseMoney(item.price) ? formatMoney(item.price) : "без цены";
   const date = item.date ? formatDate(item.date) : "без даты";
+  const participant = getParticipantById(item.participantId);
+  const participantBadge = state.trip.participants.length > 1
+    ? `<span class="participant-chip">${renderParticipantAvatar(participant)}<span>На ${escapeHtml(participant.name)}</span></span>`
+    : "";
   const note = item.notes ? `<p class="item-note">${escapeHtml(item.notes)}</p>` : "";
   const link = item.link
     ? `<a class="item-link" href="${escapeAttr(item.link)}" target="_blank" rel="noreferrer" onclick="event.stopPropagation()">открыть ссылку</a>`
@@ -1043,6 +1148,7 @@ function renderItemCard(item) {
           <span>${time}</span>
           ${duration ? `<span>${duration}</span>` : ""}
           <span class="price-pill">${price}</span>
+          ${participantBadge}
           <span>${date}</span>
           ${link ? `<span>${link}</span>` : ""}
         </div>
@@ -1068,6 +1174,7 @@ function openItemSheet(itemId = null) {
   const form = $("#itemForm");
   form.reset();
   fillSelects();
+  renderParticipantOwnerField();
   $("#deleteItemButton").style.display = itemId ? "inline-flex" : "none";
   $("#itemSheetTitle").textContent = itemId ? "Редактировать элемент" : "Добавить в поездку";
   if (itemId) {
@@ -1081,6 +1188,7 @@ function openItemSheet(itemId = null) {
     form.elements.status.value = "want";
     form.elements.priority.value = "nice";
     form.elements.date.value = "";
+    form.elements.participantId.value = getSelfParticipant().id;
   }
   updateOpenLinkButton();
   openSheet("itemSheet");
@@ -1099,9 +1207,16 @@ function fillSelects() {
   form.elements.type.innerHTML = itemTypes.map(([key, label]) => `<option value="${key}">${label}</option>`).join("");
   form.elements.status.innerHTML = statuses.map(([key, label]) => `<option value="${key}">${label}</option>`).join("");
   form.elements.priority.innerHTML = priorities.map(([key, label]) => `<option value="${key}">${label}</option>`).join("");
+  form.elements.participantId.innerHTML = state.trip.participants
+    .map((participant) => `<option value="${escapeAttr(participant.id)}">${escapeHtml(participant.name)}${participant.isSelf ? " · Это я" : ""}</option>`)
+    .join("");
   form.elements.date.innerHTML = `<option value="">Без даты</option>${getTripDates()
     .map((date, index) => `<option value="${date}">День ${index + 1} · ${formatDate(date)}</option>`)
     .join("")}`;
+}
+
+function renderParticipantOwnerField() {
+  $("#participantOwnerField").hidden = state.trip.participants.length <= 1;
 }
 
 function saveItem(event) {
@@ -1121,6 +1236,9 @@ function saveItem(event) {
     durationMinutes: parseMoney(data.durationMinutes),
     price: parseMoney(data.price),
     paidAmount: parseMoney(data.paidAmount),
+    participantId: state.trip.participants.some((participant) => participant.id === data.participantId)
+      ? data.participantId
+      : getSelfParticipant().id,
     link: data.link.trim(),
     locationText: data.locationText.trim(),
     notes: data.notes.trim(),
@@ -1229,8 +1347,156 @@ function openTripSheet() {
     if (form.elements[key]) form.elements[key].value = value ?? "";
   });
   syncTripDateInputs();
+  renderParticipantsList();
   openSheet("tripSheet");
   trackEvent("trip_settings_opened", getTripAnalyticsContext());
+}
+
+function renderParticipantsList() {
+  const list = $("#participantsList");
+  if (!list) return;
+  list.innerHTML = state.trip.participants.map((participant) => `
+    <div class="participant-row">
+      ${renderParticipantAvatar(participant)}
+      <div class="participant-row-text">
+        <strong>${escapeHtml(participant.name)}${participant.isSelf ? ` <span>(это я)</span>` : ""}</strong>
+      </div>
+      <div class="participant-row-actions">
+        <button class="ghost-button compact" type="button" data-rename-participant="${escapeAttr(participant.id)}">Переименовать</button>
+        ${participant.isSelf ? "" : `<button class="danger-button compact participant-delete-button" type="button" data-delete-participant="${escapeAttr(participant.id)}">Удалить</button>`}
+      </div>
+    </div>
+    ${participantEditorState.mode === "rename" && participantEditorState.participantId === participant.id ? renderParticipantEditor() : ""}
+  `).join("") + (participantEditorState.mode === "add" ? renderParticipantEditor() : "");
+}
+
+function renderParticipantEditor() {
+  const label = participantEditorState.mode === "add" ? "Имя участника" : "Новое имя";
+  return `
+    <div class="participant-editor-row">
+      <label class="field participant-editor-field">
+        ${label}
+        <input id="participantEditorInput" value="${escapeAttr(participantEditorState.value)}" maxlength="40" />
+      </label>
+      <button class="ghost-button compact" type="button" data-save-participant>Сохранить</button>
+      <button class="ghost-button compact" type="button" data-cancel-participant>Отмена</button>
+    </div>
+  `;
+}
+
+function focusParticipantEditor() {
+  window.setTimeout(() => {
+    const input = $("#participantEditorInput");
+    if (!input) return;
+    input.focus();
+    input.select();
+  }, 0);
+}
+
+function openParticipantEditor(mode, participantId = "") {
+  const participant = participantId ? state.trip.participants.find((entry) => entry.id === participantId) : null;
+  participantEditorState = {
+    mode,
+    participantId,
+    value: participant ? participant.name : "",
+  };
+  renderParticipantsList();
+  focusParticipantEditor();
+}
+
+function closeParticipantEditor() {
+  participantEditorState = { mode: "", participantId: "", value: "" };
+  renderParticipantsList();
+}
+
+function readParticipantEditorName() {
+  const input = $("#participantEditorInput");
+  const name = normalizeParticipantName(input ? input.value : "");
+  if (!name) {
+    showToast("Введите имя участника");
+    return "";
+  }
+  if (name.length > 40) {
+    showToast("Имя слишком длинное");
+    return "";
+  }
+  return name;
+}
+
+function isParticipantNameDuplicate(name, participantId = "") {
+  const normalizedName = normalizeParticipantName(name).toLowerCase();
+  return state.trip.participants.some((participant) => participant.id !== participantId && participant.name.toLowerCase() === normalizedName);
+}
+
+function requestParticipantName(initialName = "") {
+  const name = normalizeParticipantName(window.prompt("Имя участника", initialName) || "");
+  if (!name) {
+    showToast("Введите имя участника");
+    return "";
+  }
+  if (name.length > 40) {
+    showToast("Имя слишком длинное");
+    return "";
+  }
+  return name;
+}
+
+function addParticipant() {
+  openParticipantEditor("add");
+}
+
+function saveParticipantEditor() {
+  const name = readParticipantEditorName();
+  if (!name) return;
+
+  const participant = participantEditorState.participantId
+    ? state.trip.participants.find((entry) => entry.id === participantEditorState.participantId)
+    : null;
+  const duplicateId = participant ? participant.id : "";
+  if (isParticipantNameDuplicate(name, duplicateId)) {
+    showToast("Участник с таким именем уже добавлен");
+    return;
+  }
+
+  if (participantEditorState.mode === "add") {
+    state.trip.participants.push(createParticipant({
+      tripId: state.trip.id,
+      name,
+      index: state.trip.participants.length,
+    }));
+    showToast("Участник добавлен");
+  } else if (participant) {
+    participant.name = name;
+    participant.initials = generateParticipantInitials(name);
+    participant.updatedAt = new Date().toISOString();
+  }
+
+  participantEditorState = { mode: "", participantId: "", value: "" };
+  saveState();
+  renderParticipantsList();
+  render();
+}
+
+function renameParticipant(participantId) {
+  openParticipantEditor("rename", participantId);
+}
+
+function deleteParticipant(participantId) {
+  const participant = state.trip.participants.find((entry) => entry.id === participantId);
+  const selfParticipant = getSelfParticipant();
+  if (!participant || participant.isSelf || !selfParticipant) return;
+  const assignedItems = state.items.filter((item) => item.participantId === participant.id);
+  const total = assignedItems.filter(isActiveCost).reduce((sum, item) => sum + parseMoney(item.price), 0);
+  const message = assignedItems.length
+    ? `На ${participant.name} находится ${assignedItems.length} расход(ов) на сумму ${formatMoney(total)}. Перенести их на вас и удалить участника?`
+    : `Участник "${participant.name}" будет удален из этой поездки.`;
+  if (!window.confirm(message)) return;
+  state.items = state.items.map((item) => item.participantId === participant.id ? { ...item, participantId: selfParticipant.id } : item);
+  state.trip.participants = state.trip.participants.filter((entry) => entry.id !== participant.id);
+  saveState();
+  renderParticipantsList();
+  render();
+  showToast(assignedItems.length ? "Расходы перенесены на вас" : "Участник удален");
 }
 
 function getTripDateInputs() {
@@ -2303,6 +2569,30 @@ function bindEvents() {
 
     const coverTripButton = event.target.closest("[data-cover-trip]");
     if (coverTripButton) selectTripCover(coverTripButton.dataset.coverTrip);
+
+    const renameParticipantButton = event.target.closest("[data-rename-participant]");
+    if (renameParticipantButton) renameParticipant(renameParticipantButton.dataset.renameParticipant);
+
+    const deleteParticipantButton = event.target.closest("[data-delete-participant]");
+    if (deleteParticipantButton) deleteParticipant(deleteParticipantButton.dataset.deleteParticipant);
+
+    const saveParticipantButton = event.target.closest("[data-save-participant]");
+    if (saveParticipantButton) saveParticipantEditor();
+
+    const cancelParticipantButton = event.target.closest("[data-cancel-participant]");
+    if (cancelParticipantButton) closeParticipantEditor();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (!event.target.closest("#participantEditorInput")) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      saveParticipantEditor();
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeParticipantEditor();
+    }
   });
 
   $("#trainerTripCard").addEventListener("click", () => openTrip("trainer-kazan"));
@@ -2334,6 +2624,7 @@ function bindEvents() {
   $("#tripForm").elements.startDate.addEventListener("input", handleTripStartDateChange);
   $("#tripForm").elements.endDate.addEventListener("change", handleTripEndDateChange);
   $("#tripForm").elements.endDate.addEventListener("input", handleTripEndDateChange);
+  $("#addParticipantButton")?.addEventListener("click", addParticipant);
   $("#resetDemoButton").addEventListener("click", resetDemo);
   $("#shareButton").addEventListener("click", openShareSheet);
   $("#installAppButton").addEventListener("click", installPwa);

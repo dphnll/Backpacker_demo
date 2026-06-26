@@ -1296,6 +1296,55 @@ h3 {
   font-weight: 700;
 }
 
+.participant-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 2px 7px 2px 3px;
+  border-radius: 999px;
+  background: rgba(18, 54, 61, 0.08);
+  color: var(--brand);
+}
+
+.participant-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border-radius: 999px;
+  color: var(--ink);
+  background: #ffbe35;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.participant-orange {
+  background: #ff8f3d;
+}
+
+.participant-yellow {
+  background: #ffcf36;
+}
+
+.participant-blue {
+  background: #7fd8ee;
+}
+
+.participant-teal {
+  background: #65c7a0;
+}
+
+.participant-purple {
+  background: #c8a7da;
+}
+
+.participant-pink {
+  background: #f7a7b6;
+}
+
 .item-note {
   margin: 8px 0 0;
   color: var(--muted);
@@ -1915,6 +1964,167 @@ h3 {
   grid-column: 1 / -1;
 }
 
+.participants-field {
+  grid-column: 1 / -1;
+}
+
+.participants-section {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  padding: 10px;
+}
+
+.participants-actions,
+.participant-total-row,
+.participant-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.participants-actions .ghost-button {
+  width: 100%;
+  min-height: 44px;
+}
+
+.participants-list {
+  display: grid;
+  gap: 8px;
+}
+
+.participant-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 40px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+}
+
+.participant-row-text {
+  display: grid;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.participant-row-text strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.participant-row-text strong span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.participant-row-text span,
+.participant-total-row em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.participant-delete-button {
+  min-width: 0;
+}
+
+.participant-row-actions {
+  display: flex;
+  grid-column: 3;
+  gap: 6px;
+  justify-self: end;
+}
+
+.participant-row-actions .ghost-button,
+.participant-row-actions .danger-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 104px;
+  min-width: 104px;
+  min-height: 34px;
+  padding-right: 4px;
+  padding-left: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  text-align: center;
+  line-height: 1;
+}
+
+.participant-editor-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: end;
+  gap: 8px;
+  padding: 6px 0 2px;
+}
+
+.participant-editor-field {
+  min-width: 0;
+}
+
+.participant-editor-row .ghost-button {
+  min-width: 112px;
+}
+
+@media (max-width: 420px) {
+  .participant-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .participant-row-actions {
+    grid-column: 3;
+    justify-self: end;
+  }
+
+  .participant-row-actions .ghost-button,
+  .participant-row-actions .danger-button {
+    width: 104px;
+    min-width: 104px;
+  }
+
+  .participant-editor-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.participant-totals-card {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+}
+
+.participant-total-row {
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 8px 0;
+  border-top: 1px solid rgba(18, 54, 61, 0.1);
+}
+
+.participant-total-row > span {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.participant-total-row strong {
+  flex-shrink: 0;
+}
+
 input,
 select,
 textarea {
@@ -1941,6 +2151,14 @@ textarea:focus {
 
 .form-actions {
   margin-top: 4px;
+}
+
+#tripForm .form-actions .ghost-button,
+#tripForm .form-actions .primary-button {
+  display: inline-grid;
+  place-items: center;
+  text-align: center;
+  line-height: 1;
 }
 
 .share-actions {
