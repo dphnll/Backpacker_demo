@@ -59,10 +59,10 @@ const typeIcons = {
 
 const statuses = [
   ["paid", "Оплачено"],
-  ["fixed", "Забронировано"],
+  ["fixed", "Бронь"],
   ["want", "Хочу"],
   ["maybe", "Думаю"],
-  ["backup", "Запасной"],
+  ["backup", "Запас"],
   ["skipped", "Пропущено"],
 ];
 
@@ -673,6 +673,69 @@ function formatDate(dateString, options = {}) {
   });
 }
 
+function formatDurationText(minutes) {
+  const total = parseMoney(minutes);
+  if (!total) return "--";
+  const hours = Math.floor(total / 60);
+  const rest = total % 60;
+  if (hours && rest) return `${hours} ч ${rest} мин`;
+  if (hours) return `${hours} ч`;
+  return `${rest} мин`;
+}
+
+function splitTimeSlots(time) {
+  if (!time) return ["--", "--"];
+  const [hours, minutes] = String(time).split(":");
+  return [hours || "--", minutes || "--"];
+}
+
+function getEndTime(startTime, durationMinutes) {
+  const duration = parseMoney(durationMinutes);
+  if (!startTime || !duration) return "";
+  const [hours, minutes] = splitTimeSlots(startTime).map((value) => Number(value));
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return "";
+  const date = new Date(2000, 0, 1, hours, minutes + duration);
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function getItemDateSlots(dateString) {
+  if (!dateString) return ["--", "--", "----"];
+  const date = new Date(`${dateString}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return ["--", "--", "----"];
+  return [
+    String(date.getDate()).padStart(2, "0"),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getFullYear()),
+  ];
+}
+
+function renderTimeSlot(value) {
+  return `<span class="item-slot">${escapeHtml(value)}</span>`;
+}
+
+function renderItemTimeSlots(item) {
+  const start = splitTimeSlots(item.startTime);
+  const end = splitTimeSlots(getEndTime(item.startTime, item.durationMinutes));
+  return `
+    ${renderTimeSlot(start[0])}
+    ${renderTimeSlot(start[1])}
+    <span class="item-slot-dash">-</span>
+    ${renderTimeSlot(end[0])}
+    ${renderTimeSlot(end[1])}
+  `;
+}
+
+function renderItemDateSlots(item) {
+  const [day, month, year] = getItemDateSlots(item.date);
+  return `
+    ${renderTimeSlot(day)}
+    <span class="item-slot-separator">.</span>
+    ${renderTimeSlot(month)}
+    <span class="item-slot-separator">.</span>
+    ${renderTimeSlot(year)}
+  `;
+}
+
 function getTripDates() {
   const dates = [];
   const start = new Date(`${state.trip.startDate}T12:00:00`);
@@ -714,11 +777,11 @@ function getParticipantTotals() {
 
 function getStatusIcon(status) {
   return {
-    paid: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="M9 9.8h5.2M9 12h4.3M9 14.2h3.5"></path></svg>`,
-    fixed: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="10" width="12" height="9" rx="2"></rect><path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10"></path></svg>`,
-    want: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19s-7-4.4-7-9.1A3.9 3.9 0 0 1 12 7.6 3.9 3.9 0 0 1 19 9.9C19 14.6 12 19 12 19z"></path></svg>`,
-    maybe: "?",
-    backup: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M8.2 14.2a6 6 0 1 1 7.6 0c-.8.6-1.3 1.4-1.5 2.3H9.7c-.2-.9-.7-1.7-1.5-2.3z"></path></svg>`,
+    paid: `<img src="./assets/status-paid.png" alt="" aria-hidden="true">`,
+    fixed: `<img src="./assets/status-fixed.png" alt="" aria-hidden="true">`,
+    want: `<img src="./assets/status-want.png" alt="" aria-hidden="true">`,
+    maybe: `<img src="./assets/status-maybe.png" alt="" aria-hidden="true">`,
+    backup: `<img src="./assets/status-backup.png" alt="" aria-hidden="true">`,
     skipped: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"></path></svg>`,
   }[status] || `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle></svg>`;
 }
@@ -998,13 +1061,18 @@ function renderBasket() {
     ["all", "Все"],
     ["nodate", "Без даты"],
     ["paid", "Оплачено"],
-    ["fixed", "Фикс"],
+    ["fixed", "Бронь"],
     ["want", "Хочу"],
     ["maybe", "Думаю"],
     ["backup", "Запас"],
   ];
   $("#filterRow").innerHTML = filters
-    .map(([key, label]) => `<button class="chip ${currentFilter === key ? "active" : ""}" data-filter="${key}" type="button">${label}</button>`)
+    .map(([key, label]) => {
+      const icon = ["paid", "fixed", "want", "maybe", "backup"].includes(key)
+        ? `<span class="filter-status-icon">${getStatusIcon(key)}</span>`
+        : "";
+      return `<button class="chip filter-chip ${currentFilter === key ? "active" : ""}" data-filter="${key}" type="button">${icon}<span>${label}</span></button>`;
+    })
     .join("");
 
   let items = [...state.items];
@@ -1054,7 +1122,7 @@ function renderBudget() {
     <section class="budget-grid">
       <div class="metric-card"><span>Бюджет поездки</span><strong>${formatMoney(state.trip.budgetLimit)}</strong></div>
       <div class="metric-card"><span>Уже оплачено</span><strong>${formatMoney(totals.paid)}</strong></div>
-      <div class="metric-card"><span>Забронировано</span><strong>${formatMoney(totals.fixed)}</strong></div>
+      <div class="metric-card"><span>Бронь</span><strong>${formatMoney(totals.fixed)}</strong></div>
       <div class="metric-card"><span>Опционально</span><strong>${formatMoney(totals.optional)}</strong></div>
       <div class="metric-card service-total"><span>Возможный итог</span><strong>${formatMoney(totals.possible)}</strong></div>
       <div class="metric-card"><span>Остаток</span><strong style="color:${totals.remaining < 0 ? "var(--danger)" : "var(--green)"}">${formatMoney(totals.remaining)}</strong></div>
@@ -1121,13 +1189,10 @@ function renderEstimateTable() {
 }
 
 function renderItemCard(item) {
-  const time = item.startTime || "без времени";
-  const duration = item.durationMinutes ? `${item.durationMinutes} мин` : "";
-  const price = parseMoney(item.price) ? formatMoney(item.price) : "без цены";
-  const date = item.date ? formatDate(item.date) : "без даты";
+  const price = parseMoney(item.price) ? formatMoney(item.price) : "--";
   const participant = getParticipantById(item.participantId);
   const participantBadge = state.trip.participants.length > 1
-    ? `<span class="participant-chip">${renderParticipantAvatar(participant)}<span>На ${escapeHtml(participant.name)}</span></span>`
+    ? `<span class="item-side-badge item-participant-badge participant-${escapeAttr(participant.colorKey)}" aria-label="Расход назначен участнику ${escapeAttr(participant.name)}">${escapeHtml(participant.initials)}</span>`
     : "";
   const note = item.notes ? `<p class="item-note">${escapeHtml(item.notes)}</p>` : "";
   const link = item.link
@@ -1142,16 +1207,21 @@ function renderItemCard(item) {
       <div class="item-body">
         <div class="item-top">
           <span class="item-title">${escapeHtml(item.title)}</span>
-          <span class="status-icon status-${item.status}" title="${escapeAttr(getStatusLabel(item.status))}" aria-label="${escapeAttr(getStatusLabel(item.status))}">${getStatusIcon(item.status)}</span>
-        </div>
-        <div class="item-meta">
-          <span>${time}</span>
-          ${duration ? `<span>${duration}</span>` : ""}
           <span class="price-pill">${price}</span>
-          ${participantBadge}
-          <span>${date}</span>
-          ${link ? `<span>${link}</span>` : ""}
         </div>
+        <div class="item-content-grid">
+          <div class="item-main-flow">
+            <p class="item-duration">${formatDurationText(item.durationMinutes)}</p>
+            <div class="item-time-slots" aria-label="Время события">${renderItemTimeSlots(item)}</div>
+            <p class="item-date-label">Дата</p>
+            <div class="item-date-slots" aria-label="Дата события">${renderItemDateSlots(item)}</div>
+          </div>
+          <div class="item-side-badges">
+            <span class="item-side-badge status-icon status-${item.status}" title="${escapeAttr(getStatusLabel(item.status))}" aria-label="${escapeAttr(getStatusLabel(item.status))}">${getStatusIcon(item.status)}</span>
+            ${participantBadge}
+          </div>
+        </div>
+        ${link ? `<div class="item-link-row">${link}</div>` : ""}
         ${note}
       </div>
     </button>
