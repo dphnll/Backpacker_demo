@@ -685,9 +685,9 @@ function formatDurationText(minutes) {
 }
 
 function splitTimeSlots(time) {
-  if (!time) return ["--", "--"];
+  if (!time) return ["–", "–"];
   const [hours, minutes] = String(time).split(":");
-  return [hours || "--", minutes || "--"];
+  return [hours || "–", minutes || "–"];
 }
 
 function getEndTime(startTime, durationMinutes) {
@@ -700,9 +700,9 @@ function getEndTime(startTime, durationMinutes) {
 }
 
 function getItemDateSlots(dateString) {
-  if (!dateString) return ["--", "--", "----"];
+  if (!dateString) return ["–", "–", "––"];
   const date = new Date(`${dateString}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return ["--", "--", "----"];
+  if (Number.isNaN(date.getTime())) return ["–", "–", "––"];
   return [
     String(date.getDate()).padStart(2, "0"),
     String(date.getMonth() + 1).padStart(2, "0"),
@@ -1482,6 +1482,83 @@ function closeParticipantEditor() {
   renderParticipantsList();
 }
 
+function closeAddParticipantDialog(dialog) {
+  dialog?.remove();
+}
+
+function readAddParticipantName(dialog) {
+  const input = dialog.querySelector("[data-add-participant-name]");
+  const name = normalizeParticipantName(input ? input.value : "");
+  if (!name) {
+    showToast("Введите имя участника");
+    return "";
+  }
+  if (name.length > 40) {
+    showToast("Имя слишком длинное");
+    return "";
+  }
+  if (isParticipantNameDuplicate(name)) {
+    showToast("Участник с таким именем уже добавлен");
+    return "";
+  }
+  return name;
+}
+
+function saveAddParticipant(dialog) {
+  const name = readAddParticipantName(dialog);
+  if (!name) return;
+  state.trip.participants.push(createParticipant({
+    tripId: state.trip.id,
+    name,
+    index: state.trip.participants.length,
+  }));
+  saveState();
+  closeAddParticipantDialog(dialog);
+  renderParticipantsList();
+  render();
+  showToast("Участник добавлен");
+}
+
+function openAddParticipantDialog() {
+  closeParticipantEditor();
+  const dialog = document.createElement("div");
+  dialog.className = "add-participant-dialog";
+  dialog.innerHTML = `
+    <div class="add-participant-backdrop" data-add-participant-cancel></div>
+    <section class="add-participant-panel" role="dialog" aria-modal="true" aria-labelledby="addParticipantTitle">
+      <h2 id="addParticipantTitle">Добавить участника</h2>
+      <label class="field">
+        Имя участника
+        <input data-add-participant-name maxlength="40" />
+      </label>
+      <div class="add-participant-actions">
+        <button class="primary-button" type="button" data-add-participant-save>Сохранить</button>
+        <button class="ghost-button" type="button" data-add-participant-cancel>Отмена</button>
+      </div>
+    </section>
+  `;
+  document.body.appendChild(dialog);
+  dialog.addEventListener("click", (event) => {
+    if (event.target.closest("[data-add-participant-save]")) {
+      saveAddParticipant(dialog);
+      return;
+    }
+    if (event.target.closest("[data-add-participant-cancel]")) {
+      closeAddParticipantDialog(dialog);
+    }
+  });
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      saveAddParticipant(dialog);
+    }
+    if (event.key === "Escape") {
+      closeAddParticipantDialog(dialog);
+    }
+  });
+  window.setTimeout(() => dialog.querySelector("[data-add-participant-name]")?.focus(), 0);
+}
+
 function readParticipantEditorName() {
   const input = $("#participantEditorInput");
   const name = normalizeParticipantName(input ? input.value : "");
@@ -1515,7 +1592,7 @@ function requestParticipantName(initialName = "") {
 }
 
 function addParticipant() {
-  openParticipantEditor("add");
+  openAddParticipantDialog();
 }
 
 function saveParticipantEditor() {
@@ -1742,7 +1819,7 @@ function escapeCsvValue(value = "") {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
-function buildEstimateCsv() {
+function buildEstimateRows() {
   const header = ["Событие", "Тип", "Статус", "День", "Время", "Цена", "Оплачено", "Ссылка"];
   const rows = [...state.items]
     .sort((a, b) => (a.date || "9999-99-99").localeCompare(b.date || "9999-99-99") || sortItems(a, b))
@@ -1756,10 +1833,15 @@ function buildEstimateCsv() {
       parseMoney(item.paidAmount),
       item.link || "",
     ]);
+  return { header, rows };
+}
+
+function buildEstimateCsv() {
+  const { header, rows } = buildEstimateRows();
   return [header, ...rows].map((row) => row.map(escapeCsvValue).join(";")).join("\n");
 }
 
-function buildPlanCsv() {
+function buildPlanRows() {
   const header = ["День", "Дата", "Время", "Событие", "Тип", "Статус", "Цена", "Ссылка"];
   const rows = [];
   getTripDates().forEach((date, index) => {
@@ -1794,6 +1876,11 @@ function buildPlanCsv() {
         item.link || "",
       ]);
     });
+  return { header, rows };
+}
+
+function buildPlanCsv() {
+  const { header, rows } = buildPlanRows();
   return [header, ...rows].map((row) => row.map(escapeCsvValue).join(";")).join("\n");
 }
 
@@ -1819,22 +1906,91 @@ function downloadTextFile(fileName, content, mimeType = "text/plain;charset=utf-
   URL.revokeObjectURL(url);
 }
 
+function escapeSpreadsheetValue(value = "") {
+  return escapeHtml(String(value ?? ""));
+}
+
+function buildSpreadsheetHtml(title, table) {
+  const headerHtml = table.header.map((cell) => `<th>${escapeSpreadsheetValue(cell)}</th>`).join("");
+  const rowsHtml = table.rows
+    .map((row) => `<tr>${row.map((cell) => `<td>${escapeSpreadsheetValue(cell)}</td>`).join("")}</tr>`)
+    .join("");
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Arial, sans-serif; }
+    h1 { font-size: 18px; }
+    table { border-collapse: collapse; }
+    th, td { border: 1px solid #9aa6a3; padding: 6px 8px; vertical-align: top; }
+    th { background: #dfe9e5; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>${escapeSpreadsheetValue(title)}</h1>
+  <table>
+    <thead><tr>${headerHtml}</tr></thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+</body>
+</html>`;
+}
+
+function downloadSpreadsheet(fileName, title, table) {
+  downloadTextFile(
+    fileName,
+    `\uFEFF${buildSpreadsheetHtml(title, table)}`,
+    "application/vnd.ms-excel;charset=utf-8",
+  );
+}
+
 function downloadEstimate() {
-  const name = `${slugifyFileName(state.trip.title)}-estimate.csv`;
-  downloadTextFile(name, `\uFEFF${buildEstimateCsv()}`, "text/csv;charset=utf-8");
+  const name = `${slugifyFileName(state.trip.title)}-estimate.xls`;
+  downloadSpreadsheet(name, "Смета поездки", buildEstimateRows());
   showToast("Смета скачана");
-  trackEvent("export_completed", { ...getTripAnalyticsContext(), export_type: "estimate", format: "csv" });
+  trackEvent("export_completed", { ...getTripAnalyticsContext(), export_type: "estimate", format: "xls" });
 }
 
 function downloadPlan() {
-  const name = `${slugifyFileName(state.trip.title)}-plan.csv`;
-  downloadTextFile(name, `\uFEFF${buildPlanCsv()}`, "text/csv;charset=utf-8");
+  const name = `${slugifyFileName(state.trip.title)}-plan.xls`;
+  downloadSpreadsheet(name, "План по дням", buildPlanRows());
   showToast("План скачан");
-  trackEvent("export_completed", { ...getTripAnalyticsContext(), export_type: "plan", format: "csv" });
+  trackEvent("export_completed", { ...getTripAnalyticsContext(), export_type: "plan", format: "xls" });
+}
+
+function closeExportFormatDialog(dialog, resolve, value = null) {
+  dialog.remove();
+  resolve(value);
 }
 
 function chooseExportFormat() {
-  return window.confirm("Выберите формат:\nОК — CSV для Excel/Google Sheets\nОтмена — PDF") ? "csv" : "pdf";
+  return new Promise((resolve) => {
+    const dialog = document.createElement("div");
+    dialog.className = "export-format-dialog";
+    dialog.innerHTML = `
+      <div class="export-format-backdrop" data-export-cancel></div>
+      <section class="export-format-panel" role="dialog" aria-modal="true" aria-labelledby="exportFormatTitle">
+        <h2 id="exportFormatTitle">Выберите удобный формат:</h2>
+        <div class="export-format-actions">
+          <button class="export-format-button" type="button" data-export-format="pdf">PDF</button>
+          <button class="export-format-button" type="button" data-export-format="xls">XLS</button>
+        </div>
+        <button class="export-format-cancel" type="button" data-export-cancel>Отмена</button>
+      </section>
+    `;
+    document.body.appendChild(dialog);
+    dialog.addEventListener("click", (event) => {
+      const formatButton = event.target.closest("[data-export-format]");
+      if (formatButton) {
+        closeExportFormatDialog(dialog, resolve, formatButton.dataset.exportFormat);
+        return;
+      }
+      if (event.target.closest("[data-export-cancel]")) {
+        closeExportFormatDialog(dialog, resolve, null);
+      }
+    });
+  });
 }
 
 function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
@@ -1855,48 +2011,7 @@ function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
   return lines.length * lineHeight;
 }
 
-function buildEstimatePdfLines() {
-  const lines = [
-    { type: "title", text: "Смета поездки" },
-    { type: "meta", text: `${state.trip.title} · ${formatDate(state.trip.startDate)}-${formatDate(state.trip.endDate)}` },
-    { type: "gap" },
-  ];
-  [...state.items]
-    .sort((a, b) => (a.date || "9999-99-99").localeCompare(b.date || "9999-99-99") || sortItems(a, b))
-    .forEach((item) => {
-      lines.push({ type: "strong", text: item.title });
-      lines.push({
-        type: "text",
-        text: `${getTypeLabel(item.type)} · ${getStatusLabel(item.status)} · ${item.date ? formatDate(item.date) : "без даты"} ${item.startTime || ""}`,
-      });
-      lines.push({ type: "text", text: `Цена: ${formatMoney(item.price)} · Оплачено: ${formatMoney(item.paidAmount)}` });
-      if (item.link) lines.push({ type: "muted", text: item.link });
-      lines.push({ type: "gap" });
-    });
-  return lines;
-}
-
-function buildPlanPdfLines() {
-  const lines = [
-    { type: "title", text: "План по дням" },
-    { type: "meta", text: `${state.trip.title} · ${formatDate(state.trip.startDate)}-${formatDate(state.trip.endDate)}` },
-    { type: "gap" },
-  ];
-  getTripDates().forEach((date, index) => {
-    const items = state.items.filter((item) => item.date === date && item.status !== "skipped").sort(sortItems);
-    lines.push({ type: "section", text: `День ${index + 1} · ${formatDate(date)}` });
-    if (!items.length) lines.push({ type: "muted", text: "Пока пусто" });
-    items.forEach((item) => {
-      lines.push({ type: "strong", text: `${item.startTime ? `${item.startTime} · ` : ""}${item.title}` });
-      lines.push({ type: "text", text: `${getTypeLabel(item.type)} · ${getStatusLabel(item.status)} · ${formatMoney(item.price)}` });
-      if (item.link) lines.push({ type: "muted", text: item.link });
-    });
-    lines.push({ type: "gap" });
-  });
-  return lines;
-}
-
-async function downloadPdfFile(fileName, lines, previewWindow = null) {
+async function downloadPdfFile(fileName, title, table, previewWindow = null) {
   if (!window.PDFLib?.PDFDocument) {
     previewWindow?.close();
     showToast("PDF-модуль не загрузился");
@@ -1931,25 +2046,84 @@ async function downloadPdfFile(fileName, lines, previewWindow = null) {
   const x = 42;
   const maxWidth = pageWidth - x * 2;
 
-  for (const line of lines) {
-    if (line.type === "gap") {
-      y += 10;
-      continue;
-    }
-    const isTitle = line.type === "title";
-    const isSection = line.type === "section";
-    const isStrong = line.type === "strong";
-    const isMuted = line.type === "muted";
-    const fontSize = isTitle ? 22 : isSection ? 17 : 12;
-    const lineHeight = isTitle ? 28 : isSection ? 23 : 17;
-    ctx.font = `${isTitle || isSection || isStrong ? 700 : 400} ${fontSize}px Arial, sans-serif`;
-    ctx.fillStyle = isMuted ? "#66716f" : "#1f2423";
-    const height = Math.max(lineHeight, drawWrappedText(ctx, line.text, x, y, maxWidth, lineHeight));
-    y += height + (isTitle || isSection ? 8 : 3);
-    if (y > pageHeight - 56) {
+  const columnCount = table.header.length;
+  const columnWidth = maxWidth / columnCount;
+  const lineHeight = 14;
+  const cellPadding = 5;
+  const rowFont = "400 10px Arial, sans-serif";
+  const headerFont = "700 10px Arial, sans-serif";
+
+  function wrapCellText(text, width) {
+    const words = String(text ?? "").split(/\s+/).filter(Boolean);
+    const lines = [];
+    let line = "";
+    words.forEach((word) => {
+      const test = line ? `${line} ${word}` : word;
+      if (ctx.measureText(test).width > width && line) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = test;
+      }
+    });
+    if (line) lines.push(line);
+    return lines.length ? lines : [""];
+  }
+
+  function getRowHeight(row, font) {
+    ctx.font = font;
+    const linesCount = Math.max(
+      1,
+      ...row.map((cell) => wrapCellText(cell, columnWidth - cellPadding * 2).length),
+    );
+    return Math.max(26, linesCount * lineHeight + cellPadding * 2);
+  }
+
+  function drawRow(row, rowY, rowHeight, font, fillStyle = "#ffffff") {
+    ctx.font = font;
+    ctx.fillStyle = fillStyle;
+    ctx.fillRect(x, rowY, maxWidth, rowHeight);
+    row.forEach((cell, index) => {
+      const cellX = x + index * columnWidth;
+      ctx.strokeStyle = "#9aa6a3";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(cellX, rowY, columnWidth, rowHeight);
+      ctx.fillStyle = "#1f2423";
+      wrapCellText(cell, columnWidth - cellPadding * 2).forEach((line, lineIndex) => {
+        ctx.fillText(line, cellX + cellPadding, rowY + cellPadding + 10 + lineIndex * lineHeight);
+      });
+    });
+  }
+
+  function drawPageTitle() {
+    ctx.font = "700 22px Arial, sans-serif";
+    ctx.fillStyle = "#1f2423";
+    ctx.fillText(title, x, y);
+    y += 28;
+    ctx.font = "400 12px Arial, sans-serif";
+    ctx.fillStyle = "#66716f";
+    ctx.fillText(`${state.trip.title} · ${formatDate(state.trip.startDate)}-${formatDate(state.trip.endDate)}`, x, y);
+    y += 24;
+  }
+
+  function drawHeader() {
+    const headerHeight = getRowHeight(table.header, headerFont);
+    drawRow(table.header, y, headerHeight, headerFont, "#dfe9e5");
+    y += headerHeight;
+  }
+
+  drawPageTitle();
+  drawHeader();
+
+  for (const row of table.rows) {
+    const rowHeight = getRowHeight(row, rowFont);
+    if (y + rowHeight > pageHeight - 42) {
       await commitPage();
       y = startPage();
+      drawHeader();
     }
+    drawRow(row, y, rowHeight, rowFont);
+    y += rowHeight;
   }
   await commitPage();
 
@@ -1977,23 +2151,27 @@ async function downloadPdfFile(fileName, lines, previewWindow = null) {
 }
 
 async function chooseAndDownloadEstimate() {
-  if (chooseExportFormat() === "csv") {
+  const format = await chooseExportFormat();
+  if (!format) return;
+  if (format === "xls") {
     downloadEstimate();
   } else {
     const previewWindow = window.open("", "_blank");
     previewWindow?.document.write("<p>Готовим PDF...</p>");
-    await downloadPdfFile(`${slugifyFileName(state.trip.title)}-estimate.pdf`, buildEstimatePdfLines(), previewWindow);
+    await downloadPdfFile(`${slugifyFileName(state.trip.title)}-estimate.pdf`, "Смета поездки", buildEstimateRows(), previewWindow);
     trackEvent("export_completed", { ...getTripAnalyticsContext(), export_type: "estimate", format: "pdf" });
   }
 }
 
 async function chooseAndDownloadPlan() {
-  if (chooseExportFormat() === "csv") {
+  const format = await chooseExportFormat();
+  if (!format) return;
+  if (format === "xls") {
     downloadPlan();
   } else {
     const previewWindow = window.open("", "_blank");
     previewWindow?.document.write("<p>Готовим PDF...</p>");
-    await downloadPdfFile(`${slugifyFileName(state.trip.title)}-plan.pdf`, buildPlanPdfLines(), previewWindow);
+    await downloadPdfFile(`${slugifyFileName(state.trip.title)}-plan.pdf`, "План по дням", buildPlanRows(), previewWindow);
     trackEvent("export_completed", { ...getTripAnalyticsContext(), export_type: "plan", format: "pdf" });
   }
 }

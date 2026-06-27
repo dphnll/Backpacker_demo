@@ -295,6 +295,7 @@ a {
   height: 178px;
   object-fit: contain;
   filter: drop-shadow(5px 5px 0 rgba(18, 54, 61, 0.08));
+  transform: translateY(10px);
 }
 
 .intro-card .intro-title-brand {
@@ -1365,7 +1366,7 @@ h3 {
   display: inline-grid;
   place-items: center;
   min-width: 27px;
-  min-height: 31px;
+  height: 31px;
   padding: 0 4px;
   border-radius: 4px;
   background: var(--item-slot-bg);
@@ -1373,6 +1374,7 @@ h3 {
   font-size: 19px;
   font-weight: 400;
   line-height: 1;
+  white-space: nowrap;
 }
 
 .item-date-slots .item-slot:last-child {
@@ -2148,6 +2150,122 @@ h3 {
   background: var(--panel);
   overflow: auto;
   box-shadow: 0 -18px 45px rgba(35, 35, 31, 0.24);
+}
+
+.export-format-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: grid;
+  place-items: center;
+}
+
+.export-format-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(35, 35, 31, 0.42);
+}
+
+.export-format-panel {
+  position: relative;
+  z-index: 1;
+  width: min(360px, calc(100vw - 34px));
+  padding: 18px;
+  border-radius: 18px;
+  background: var(--panel);
+  box-shadow: 0 18px 45px rgba(35, 35, 31, 0.24);
+}
+
+.export-format-panel h2 {
+  margin: 0 0 14px;
+  color: var(--text);
+  font-size: 19px;
+}
+
+.export-format-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.export-format-button,
+.export-format-cancel {
+  min-height: 46px;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.export-format-button {
+  border: 1px solid rgba(39, 48, 45, 0.16);
+  color: #ffffff;
+  background: var(--active-button-gradient);
+  box-shadow: var(--active-button-shadow);
+}
+
+.export-format-cancel {
+  width: 100%;
+  margin-top: 10px;
+  border: 1px solid rgba(39, 48, 45, 0.14);
+  color: var(--text);
+  background: transparent;
+}
+
+.add-participant-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+}
+
+.add-participant-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(35, 35, 31, 0.42);
+}
+
+.add-participant-panel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 14px;
+  width: min(360px, calc(100vw - 34px));
+  padding: 18px;
+  border-radius: 18px;
+  background: var(--panel);
+  box-shadow: 0 18px 45px rgba(35, 35, 31, 0.24);
+}
+
+.add-participant-panel h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 19px;
+}
+
+.add-participant-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.add-participant-actions .primary-button,
+.add-participant-actions .ghost-button {
+  min-height: 46px;
+}
+
+.add-participant-actions .primary-button {
+  border: 1px solid rgba(39, 48, 45, 0.16);
+  color: #ffffff;
+  background: var(--active-button-gradient);
+  box-shadow: var(--active-button-shadow);
+}
+
+.add-participant-actions .ghost-button {
+  border: 1px solid rgba(39, 48, 45, 0.14);
+  background: transparent;
+  box-shadow: none;
 }
 
 .sheet-header {
