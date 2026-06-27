@@ -1063,6 +1063,8 @@ h3 {
   gap: 8px;
   padding: 14px 16px 12px;
   overflow-x: auto;
+  touch-action: pan-x pan-y;
+  overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory;
   scroll-padding-inline: 16px;
   scrollbar-width: auto;
@@ -1104,7 +1106,8 @@ h3 {
   --item-card-bg: #ffefcf;
   --item-card-accent: #d88d22;
   --item-slot-bg: rgba(240, 165, 55, 0.72);
-  zoom: 0.82;
+  --item-card-scale: 0.82;
+  zoom: var(--item-card-scale);
   padding: 0;
   text-align: left;
   display: grid;
@@ -1114,7 +1117,7 @@ h3 {
   overflow: hidden;
   background: var(--item-card-bg);
   cursor: grab;
-  touch-action: none;
+  touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
@@ -1123,6 +1126,7 @@ h3 {
 .mobile-dragging,
 .mobile-dragging * {
   cursor: grabbing;
+  touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;

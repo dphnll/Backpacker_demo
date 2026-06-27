@@ -795,9 +795,11 @@ function isActiveCost(item) {
 }
 
 function getTotals() {
-  const paid = state.items.reduce((sum, item) => sum + parseMoney(item.paidAmount), 0);
+  const paid = state.items
+    .filter((item) => item.status === "paid")
+    .reduce((sum, item) => sum + parseMoney(item.price), 0);
   const fixed = state.items
-    .filter((item) => ["paid", "fixed"].includes(item.status))
+    .filter((item) => item.status === "fixed")
     .reduce((sum, item) => sum + parseMoney(item.price), 0);
   const optional = state.items
     .filter((item) => ["want", "maybe"].includes(item.status))
@@ -1199,7 +1201,7 @@ function renderItemCard(item) {
     ? `<a class="item-link" href="${escapeAttr(item.link)}" target="_blank" rel="noreferrer" onclick="event.stopPropagation()">открыть ссылку</a>`
     : "";
   return `
-    <button class="item-card type-${item.type}" data-edit="${item.id}" data-drag-id="${item.id}" draggable="true" type="button">
+    <button class="item-card type-${item.type}" data-edit="${item.id}" data-drag-id="${item.id}" draggable="false" type="button">
       <span class="tile-icon" aria-hidden="true">
         <span>${typeIcons[item.type] || typeIcons.other}</span>
         <small>${getTypeLabel(item.type)}</small>
@@ -2449,6 +2451,10 @@ function bindDesktopDrag() {
   document.addEventListener("dragstart", (event) => {
     const card = event.target.closest("[data-drag-id]");
     if (!card) return;
+    if (card.getAttribute("draggable") === "false") {
+      event.preventDefault();
+      return;
+    }
     draggedItemId = card.dataset.dragId;
     desktopDragPoint = { x: event.clientX, y: event.clientY };
     card.classList.add("dragging-source");
@@ -2490,17 +2496,23 @@ function bindDesktopDrag() {
 function bindPointerDrag() {
   const longPressDelay = 420;
   const mouseDragDistance = 4;
+  const touchScrollDistance = 10;
 
   function startPointerDrag(event) {
     if (!pointerDrag || pointerDrag.active) return;
     const rect = pointerDrag.card.getBoundingClientRect();
+    const cardStyles = getComputedStyle(pointerDrag.card);
+    const cardZoom = Number.parseFloat(cardStyles.getPropertyValue("--item-card-scale")) || Number.parseFloat(cardStyles.zoom) || 1;
+    const layoutWidth = pointerDrag.card.offsetWidth || rect.width / cardZoom;
+    const layoutHeight = pointerDrag.card.offsetHeight || rect.height / cardZoom;
     draggedItemId = pointerDrag.id;
     pointerDrag.active = true;
     pointerDrag.lastX = pointerDrag.currentX;
     pointerDrag.lastY = pointerDrag.currentY;
     pointerDrag.ghost = pointerDrag.card.cloneNode(true);
     pointerDrag.ghost.classList.add("drag-ghost");
-    pointerDrag.ghost.style.width = `${rect.width}px`;
+    pointerDrag.ghost.style.width = `${layoutWidth}px`;
+    pointerDrag.ghost.style.height = `${layoutHeight}px`;
     pointerDrag.ghost.style.left = `${rect.left}px`;
     pointerDrag.ghost.style.top = `${rect.top}px`;
     pointerDrag.ghost.style.transform = `translate(${pointerDrag.currentX - pointerDrag.startX}px, ${pointerDrag.currentY - pointerDrag.startY}px)`;
@@ -2526,7 +2538,11 @@ function bindPointerDrag() {
     stopAutoScroll();
     drag.ghost?.remove();
     drag.card.classList.remove("dragging-source");
-    if (drag.restoreDraggable) drag.card.setAttribute("draggable", "true");
+    if (drag.previousDraggable === null) {
+      drag.card.removeAttribute("draggable");
+    } else {
+      drag.card.setAttribute("draggable", drag.previousDraggable);
+    }
     drag.card.releasePointerCapture?.(drag.pointerId);
     document.body.classList.remove("mobile-dragging");
     draggedItemId = null;
@@ -2537,14 +2553,14 @@ function bindPointerDrag() {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     const card = event.target.closest("[data-drag-id]");
     if (!card || event.target.closest("a, input, textarea, select, button:not(.item-card)")) return;
-    if (event.pointerType !== "mouse") event.preventDefault();
     cleanupPointerDrag();
+    const previousDraggable = card.getAttribute("draggable");
     card.setAttribute("draggable", "false");
     card.setPointerCapture?.(event.pointerId);
     pointerDrag = {
       id: card.dataset.dragId,
       card,
-      restoreDraggable: true,
+      previousDraggable,
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
@@ -2561,14 +2577,18 @@ function bindPointerDrag() {
 
   document.addEventListener("pointermove", (event) => {
     if (!pointerDrag) return;
-    if (pointerDrag.pointerType !== "mouse") event.preventDefault();
     pointerDrag.currentX = event.clientX;
     pointerDrag.currentY = event.clientY;
     const distance = Math.hypot(event.clientX - pointerDrag.startX, event.clientY - pointerDrag.startY);
+    if (!pointerDrag.active && pointerDrag.pointerType !== "mouse" && distance > touchScrollDistance) {
+      cleanupPointerDrag();
+      return;
+    }
     if (!pointerDrag.active && pointerDrag.pointerType === "mouse" && distance > mouseDragDistance) {
       startPointerDrag(event);
     }
     if (!pointerDrag.active) return;
+    if (pointerDrag.pointerType !== "mouse") event.preventDefault();
     pointerDrag.lastX = event.clientX;
     pointerDrag.lastY = event.clientY;
     pointerDrag.ghost.style.transform = `translate(${event.clientX - pointerDrag.startX}px, ${event.clientY - pointerDrag.startY}px)`;
