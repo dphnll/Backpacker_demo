@@ -1105,7 +1105,7 @@ h3 {
 .item-card {
   --item-card-bg: #ffefcf;
   --item-card-accent: #d88d22;
-  --item-slot-bg: rgba(240, 165, 55, 0.72);
+  --item-slot-bg: rgba(240, 165, 55, 0.62);
   --item-card-scale: 0.82;
   zoom: var(--item-card-scale);
   padding: 0;
@@ -1135,56 +1135,56 @@ h3 {
 .type-ticket {
   --item-card-bg: #ddf4e9;
   --item-card-accent: #4fb986;
-  --item-slot-bg: rgba(101, 199, 160, 0.72);
+  --item-slot-bg: rgba(101, 199, 160, 0.62);
 }
 
 .type-stay {
   --item-card-bg: #fff0c9;
   --item-card-accent: #e8a51d;
-  --item-slot-bg: rgba(255, 190, 53, 0.72);
+  --item-slot-bg: rgba(255, 190, 53, 0.62);
 }
 
 .type-transport {
   --item-card-bg: #d7f4f7;
   --item-card-accent: #1aaec3;
-  --item-slot-bg: rgba(46, 196, 214, 0.72);
+  --item-slot-bg: rgba(46, 196, 214, 0.62);
 }
 
 .type-excursion {
   --item-card-bg: #ffe1c8;
   --item-card-accent: #e97725;
-  --item-slot-bg: rgba(255, 143, 61, 0.72);
+  --item-slot-bg: rgba(255, 143, 61, 0.62);
 }
 
 .type-food {
   --item-card-bg: #ffe0db;
   --item-card-accent: #d94a35;
-  --item-slot-bg: rgba(243, 95, 71, 0.72);
+  --item-slot-bg: rgba(243, 95, 71, 0.62);
 }
 
 .type-place {
   --item-card-bg: #d9f1f5;
   --item-card-accent: #0c8ca8;
-  --item-slot-bg: rgba(22, 161, 190, 0.72);
+  --item-slot-bg: rgba(22, 161, 190, 0.62);
 }
 
 .type-spa {
   --item-card-bg: #f0dde5;
   --item-card-accent: #8f4f6c;
-  --item-slot-bg: rgba(165, 101, 128, 0.72);
+  --item-slot-bg: rgba(165, 101, 128, 0.62);
 }
 
 .type-shopping {
   --item-card-bg: #e6f1e8;
   --item-card-accent: #689d72;
-  --item-slot-bg: rgba(127, 176, 136, 0.72);
+  --item-slot-bg: rgba(127, 176, 136, 0.62);
 }
 
 .type-idea,
 .type-other {
   --item-card-bg: #ffefcf;
   --item-card-accent: #d88d22;
-  --item-slot-bg: rgba(240, 165, 55, 0.72);
+  --item-slot-bg: rgba(240, 165, 55, 0.62);
 }
 
 .item-card:active {
@@ -1259,6 +1259,7 @@ h3 {
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+  transform: translateY(-2px);
 }
 
 .tile-icon small {
@@ -1273,7 +1274,7 @@ h3 {
   line-height: 0.9;
   text-align: right;
   text-transform: uppercase;
-  transform: translateY(-2px);
+  transform: translateY(-4px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -10,6 +10,7 @@ const ANALYTICS_CONFIG = window.BACKPACKER_ANALYTICS || {};
 const ANALYTICS_SCHEMA_VERSION = "2026-06-25.1";
 const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
+const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
 const APP_VERSION = "analytics-first-layer-2026-06-25";
 const DEFAULT_ITEM_STATUS = "want";
@@ -2137,10 +2138,13 @@ function showIntroScreen(trigger = "first_open") {
 }
 
 function finishIntro() {
-  try {
-    localStorage.setItem(ONBOARDING_STORAGE_KEY, "seen");
-  } catch {
-    // The app should still open when storage is unavailable.
+  const previewOnboarding = new URLSearchParams(window.location.search).get(ONBOARDING_PREVIEW_PARAM) === "1";
+  if (!previewOnboarding) {
+    try {
+      localStorage.setItem(ONBOARDING_STORAGE_KEY, "seen");
+    } catch {
+      // The app should still open when storage is unavailable.
+    }
   }
   onboardingExitTracked = true;
   trackEvent("onboarding_finished", { onboarding_version: ONBOARDING_VERSION, outcome: "completed" });
@@ -2156,7 +2160,8 @@ function trackOnboardingExit() {
 function startApp() {
   hideAppSplash();
   trackAppOpen();
-  const forceIntro = new URLSearchParams(window.location.search).get("intro") === "1";
+  const params = new URLSearchParams(window.location.search);
+  const forceIntro = params.get("intro") === "1" || params.get(ONBOARDING_PREVIEW_PARAM) === "1";
   let onboardingSeen = false;
   try {
     onboardingSeen = localStorage.getItem(ONBOARDING_STORAGE_KEY) === "seen";
