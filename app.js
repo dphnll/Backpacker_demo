@@ -2909,8 +2909,8 @@ function bindEvents() {
   $("#resetDemoButton").addEventListener("click", resetDemo);
   $("#shareButton").addEventListener("click", openShareSheet);
   $("#installAppButton").addEventListener("click", installPwa);
-  $("#downloadEstimateButton").addEventListener("click", downloadEstimate);
-  $("#downloadPlanButton").addEventListener("click", downloadPlan);
+  $("#downloadEstimateButton").addEventListener("click", chooseAndDownloadEstimate);
+  $("#downloadPlanButton").addEventListener("click", chooseAndDownloadPlan);
   $("#shareTripButton").addEventListener("click", shareTrip);
   $("#copyEstimateButton").addEventListener("click", chooseAndDownloadEstimate);
   $("#refreshRatesButton").addEventListener("click", refreshExchangeRates);
