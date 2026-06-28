@@ -7,6 +7,7 @@ const HOME_TRAINER_VISIBILITY_KEY = "backpacker.home.trainer.hidden.v1";
 const ANALYTICS_USER_KEY = "backpacker.analytics.user.v1";
 const ANALYTICS_LAST_OPEN_KEY = "backpacker.analytics.lastOpen.v1";
 const ANALYTICS_MILESTONES_KEY = "backpacker.analytics.milestones.v1";
+const DONATION_STATE_KEY = "backpacker.donation.state.v1";
 const ANALYTICS_CONFIG = window.BACKPACKER_ANALYTICS || {};
 const ANALYTICS_SCHEMA_VERSION = "2026-06-25.1";
 const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
@@ -15,6 +16,8 @@ const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
 const APP_VERSION = "1.1.0.0";
 const APP_RELEASE_SUMMARY = "первая стабильная версия: карточки, дорожки дней, бюджет, экспорт, нижние модалки, тренажер и мобильное управление работают как канонический базовый сценарий.";
+const DONATION_FLOW_ENABLED = new URLSearchParams(window.location.search).get("donationTest") === "1";
+const DONATION_URL = ANALYTICS_CONFIG.donationUrl || "https://t.me/bckpckrbot?start=donate";
 const DEFAULT_ITEM_STATUS = "want";
 const DEFAULT_ITEM_PRIORITY = "nice";
 const TRIP_DATE_RANGE_ERROR = "Дата окончания не может быть раньше даты начала";
@@ -33,6 +36,12 @@ const ANALYTICS_MILESTONE_CONFIG = {
 };
 let deferredInstallPrompt = null;
 let participantEditorState = { mode: "", participantId: "", value: "" };
+let donationState = loadDonationState();
+let donationPromptTimer = null;
+let donationSheetHistoryArmed = false;
+let donationIgnoreNextPop = false;
+let donationDragStartY = 0;
+let donationDragCurrentY = 0;
 
 const itemTypes = [
   ["ticket", "Билет"],
@@ -569,6 +578,43 @@ function persistTripStore(store = tripStore) {
   localStorage.setItem(TRIPS_STORAGE_KEY, JSON.stringify(store));
 }
 
+function getDefaultDonationState() {
+  return {
+    firstPromptShownAt: null,
+    lastPromptDismissedAt: null,
+    donationCtaClickedAt: null,
+    donatedAt: null,
+    promptShowCount: 0,
+  };
+}
+
+function normalizeDonationState(nextState = {}) {
+  const defaults = getDefaultDonationState();
+  return {
+    firstPromptShownAt: nextState.firstPromptShownAt || defaults.firstPromptShownAt,
+    lastPromptDismissedAt: nextState.lastPromptDismissedAt || defaults.lastPromptDismissedAt,
+    donationCtaClickedAt: nextState.donationCtaClickedAt || defaults.donationCtaClickedAt,
+    donatedAt: nextState.donatedAt || defaults.donatedAt,
+    promptShowCount: Number(nextState.promptShowCount) || defaults.promptShowCount,
+  };
+}
+
+function loadDonationState() {
+  try {
+    return normalizeDonationState(JSON.parse(localStorage.getItem(DONATION_STATE_KEY) || "{}"));
+  } catch {
+    return getDefaultDonationState();
+  }
+}
+
+function saveDonationState() {
+  try {
+    localStorage.setItem(DONATION_STATE_KEY, JSON.stringify(donationState));
+  } catch {
+    // Donation prompts are optional; planning must keep working if storage fails.
+  }
+}
+
 function formatMoney(value = 0) {
   const amount = Number(value) || 0;
   return `${amount.toLocaleString("ru-RU")} ${currencySymbol(state.trip.currency)}`;
@@ -1057,6 +1103,95 @@ function toggleHomeSupportPanel(panelName) {
   if (sheetId) openSheet(sheetId);
 }
 
+function setupDonationFlow() {
+  const button = $("#donationPigButton");
+  if (!button || !DONATION_FLOW_ENABLED) return;
+  button.disabled = false;
+  button.removeAttribute("aria-disabled");
+  button.classList.add("donation-enabled");
+}
+
+function isMeaningfulTrip(entry) {
+  if (!entry || entry.isDemo || entry.isImported || entry.origin === "imported") return false;
+  const items = normalizeState(entry.state).items || [];
+  return items.length >= 3;
+}
+
+function getMeaningfulTripsCount() {
+  return tripStore.trips.filter(isMeaningfulTrip).length;
+}
+
+function shouldShowDonationPrompt() {
+  return (
+    DONATION_FLOW_ENABLED &&
+    getMeaningfulTripsCount() >= 2 &&
+    donationState.firstPromptShownAt === null &&
+    donationState.donatedAt === null
+  );
+}
+
+function getDonationPromptCopy(source = "manual") {
+  if (source === "auto") {
+    return "Вы уже планируете вторую поездку в Backpacker. Если приложение оказалось полезным, можно поддержать его развитие любой суммой.";
+  }
+  return "Если Backpacker помогает планировать поездки, можно поддержать развитие приложения любой суммой.";
+}
+
+function openDonationSheet(source = "manual") {
+  if (!DONATION_FLOW_ENABLED) return;
+  const text = $("#donationPromptText");
+  if (text) text.textContent = getDonationPromptCopy(source);
+  openSheet("donationSheet");
+  if (!donationSheetHistoryArmed) {
+    history.pushState({ backpackerDonationSheet: true }, "");
+    donationSheetHistoryArmed = true;
+  }
+  trackEvent("donation_prompt_shown", {
+    ...getTripAnalyticsContext(),
+    source,
+    meaningful_trips_count: getMeaningfulTripsCount(),
+    prompt_show_count: donationState.promptShowCount,
+  });
+}
+
+function scheduleDonationPrompt() {
+  window.clearTimeout(donationPromptTimer);
+  if (!shouldShowDonationPrompt()) return;
+  donationState.firstPromptShownAt = new Date().toISOString();
+  donationState.promptShowCount += 1;
+  saveDonationState();
+  switchView("plan");
+  donationPromptTimer = window.setTimeout(() => {
+    if ($$(".sheet.open").length) return;
+    openDonationSheet("auto");
+  }, 600);
+}
+
+function dismissDonationSheet(method = "not_now", options = {}) {
+  const sheet = $("#donationSheet");
+  if (!sheet?.classList.contains("open")) return;
+  donationState.lastPromptDismissedAt = new Date().toISOString();
+  saveDonationState();
+  closeSheet("donationSheet");
+  trackEvent("donation_prompt_dismissed", {
+    ...getTripAnalyticsContext(),
+    dismiss_method: method,
+  });
+  if (donationSheetHistoryArmed && !options.fromPopState) {
+    donationIgnoreNextPop = true;
+    history.back();
+  }
+  donationSheetHistoryArmed = false;
+}
+
+function openDonationCheckout() {
+  donationState.donationCtaClickedAt = new Date().toISOString();
+  saveDonationState();
+  trackEvent("donation_cta_clicked", getTripAnalyticsContext());
+  trackEvent("donation_checkout_opened", getTripAnalyticsContext());
+  window.open(DONATION_URL, "_blank", "noopener,noreferrer");
+}
+
 function renderHome() {
   const list = $("#tripList");
   if (!list) return;
@@ -1456,6 +1591,7 @@ function saveItem(event) {
       trainer_version: TRAINER_VERSION,
     });
   }
+  if (isNew) scheduleDonationPrompt();
   checkTripMilestones();
 }
 
@@ -2984,6 +3120,9 @@ function bindEvents() {
     const closeTarget = event.target.closest("[data-close]");
     if (closeTarget) closeSheet(`${closeTarget.dataset.close}Sheet`);
 
+    const donationDismissTarget = event.target.closest("[data-donation-dismiss]");
+    if (donationDismissTarget) dismissDonationSheet(donationDismissTarget.dataset.donationDismiss || "not_now");
+
     const openTripButton = event.target.closest("[data-open-trip]");
     if (openTripButton) openTrip(openTripButton.dataset.openTrip);
 
@@ -3033,6 +3172,14 @@ function bindEvents() {
   $("#homeShareButton").addEventListener("click", openHomeShareSheet);
   $("#homeInstallAppButton").addEventListener("click", installPwa);
   $("#shareAppButton").addEventListener("click", shareApp);
+  $("#donationPigButton")?.addEventListener("click", () => {
+    if (!DONATION_FLOW_ENABLED) return;
+    trackEvent("donation_pig_opened_manually", {
+      meaningful_trips_count: getMeaningfulTripsCount(),
+    });
+    openDonationSheet("manual");
+  });
+  $("#donationCtaButton")?.addEventListener("click", openDonationCheckout);
   $$("[data-home-panel]").forEach((button) => {
     button.addEventListener("click", () => toggleHomeSupportPanel(button.dataset.homePanel));
   });
@@ -3075,9 +3222,39 @@ function bindEvents() {
   });
   bindDesktopDrag();
   bindPointerDrag();
+  bindDonationSheetGestures();
+}
+
+function bindDonationSheetGestures() {
+  const panel = $("[data-donation-panel]");
+  if (!panel) return;
+  panel.addEventListener("pointerdown", (event) => {
+    donationDragStartY = event.clientY;
+    donationDragCurrentY = event.clientY;
+    panel.setPointerCapture?.(event.pointerId);
+  });
+  panel.addEventListener("pointermove", (event) => {
+    if (!donationDragStartY) return;
+    donationDragCurrentY = event.clientY;
+    const deltaY = Math.max(0, donationDragCurrentY - donationDragStartY);
+    panel.style.transform = deltaY ? `translateY(${Math.min(deltaY, 96)}px)` : "";
+  });
+  panel.addEventListener("pointerup", () => {
+    const deltaY = Math.max(0, donationDragCurrentY - donationDragStartY);
+    panel.style.transform = "";
+    donationDragStartY = 0;
+    donationDragCurrentY = 0;
+    if (deltaY > 70) dismissDonationSheet("swipe");
+  });
+  panel.addEventListener("pointercancel", () => {
+    panel.style.transform = "";
+    donationDragStartY = 0;
+    donationDragCurrentY = 0;
+  });
 }
 
 bindEvents();
+setupDonationFlow();
 renderProductVersionInfo();
 switchView(currentView);
 render();
@@ -3093,6 +3270,16 @@ window.addEventListener("beforeinstallprompt", (event) => {
 window.addEventListener("appinstalled", () => {
   trackEvent("pwa_installed");
   deferredInstallPrompt = null;
+});
+
+window.addEventListener("popstate", () => {
+  if (donationIgnoreNextPop) {
+    donationIgnoreNextPop = false;
+    return;
+  }
+  if ($("#donationSheet")?.classList.contains("open")) {
+    dismissDonationSheet("back", { fromPopState: true });
+  }
 });
 
 window.addEventListener("pagehide", trackOnboardingExit);

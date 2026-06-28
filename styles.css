@@ -752,6 +752,43 @@ button[aria-disabled="true"] .home-support-icon {
   padding-bottom: calc(18px + env(safe-area-inset-bottom));
 }
 
+.donation-sheet-panel {
+  display: grid;
+  gap: 12px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  touch-action: pan-y;
+  transition: transform 0.18s ease;
+}
+
+.donation-sheet-handle {
+  justify-self: center;
+  width: 42px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(18, 54, 61, 0.22);
+}
+
+.donation-sheet-copy {
+  margin: 0;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.42;
+}
+
+.donation-sheet-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.donation-sheet-actions .primary-button,
+.donation-sheet-actions .ghost-button {
+  display: grid;
+  min-height: 45px;
+  place-items: center;
+  line-height: 1;
+}
+
 .home-support-panel h2 {
   color: var(--ink);
   font-size: 20px;
