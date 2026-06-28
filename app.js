@@ -13,7 +13,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "analytics-first-layer-2026-06-25";
+const APP_VERSION = "1.1.0.0";
+const APP_RELEASE_SUMMARY = "первая стабильная версия: карточки, дорожки дней, бюджет, экспорт, нижние модалки, тренажер и мобильное управление работают как канонический базовый сценарий.";
 const DEFAULT_ITEM_STATUS = "want";
 const DEFAULT_ITEM_PRIORITY = "nice";
 const TRIP_DATE_RANGE_ERROR = "Дата окончания не может быть раньше даты начала";
@@ -1039,6 +1040,12 @@ function renderHomeSupport() {
   if (trainerButton) {
     trainerButton.textContent = isHidden ? "Показать тренажер на главной" : "Скрыть тренажер на главной";
   }
+}
+
+function renderProductVersionInfo() {
+  const target = $("#productVersionInfo");
+  if (!target) return;
+  target.textContent = `Версия ${APP_VERSION}: ${APP_RELEASE_SUMMARY}`;
 }
 
 function toggleHomeSupportPanel(panelName) {
@@ -3071,6 +3078,7 @@ function bindEvents() {
 }
 
 bindEvents();
+renderProductVersionInfo();
 switchView(currentView);
 render();
 window.setTimeout(startApp, 520);
