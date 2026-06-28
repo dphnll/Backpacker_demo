@@ -2679,7 +2679,7 @@ function bindDesktopDrag() {
 function bindPointerDrag() {
   const longPressDelay = 420;
   const mouseDragDistance = 4;
-  const touchScrollDistance = 10;
+  const touchScrollDistance = 22;
 
   function startPointerDrag(event) {
     if (!pointerDrag || pointerDrag.active) return;
@@ -2747,6 +2747,7 @@ function bindPointerDrag() {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
+      startTime: Date.now(),
       currentX: event.clientX,
       currentY: event.clientY,
       lastX: event.clientX,
@@ -2763,6 +2764,9 @@ function bindPointerDrag() {
     pointerDrag.currentX = event.clientX;
     pointerDrag.currentY = event.clientY;
     const distance = Math.hypot(event.clientX - pointerDrag.startX, event.clientY - pointerDrag.startY);
+    if (!pointerDrag.active && pointerDrag.pointerType !== "mouse" && Date.now() - pointerDrag.startTime >= longPressDelay) {
+      startPointerDrag(event);
+    }
     if (!pointerDrag.active && pointerDrag.pointerType !== "mouse" && distance > touchScrollDistance) {
       cleanupPointerDrag();
       return;
@@ -2783,7 +2787,11 @@ function bindPointerDrag() {
     cleanupPointerDrag({ drop: true, event });
   });
 
-  document.addEventListener("pointercancel", () => {
+  document.addEventListener("pointercancel", (event) => {
+    if (pointerDrag?.active) {
+      event.preventDefault?.();
+      return;
+    }
     cleanupPointerDrag();
   });
 
@@ -2793,7 +2801,7 @@ function bindPointerDrag() {
   });
 
   document.addEventListener("lostpointercapture", () => {
-    if (pointerDrag?.active) cleanupPointerDrag();
+    if (!pointerDrag?.active) cleanupPointerDrag();
   });
 }
 
