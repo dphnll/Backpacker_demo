@@ -14,9 +14,9 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.0.0";
-const APP_RELEASE_SUMMARY = "первая стабильная версия: карточки, дорожки дней, бюджет, экспорт, нижние модалки, тренажер и мобильное управление работают как канонический базовый сценарий.";
-const DONATION_FLOW_ENABLED = new URLSearchParams(window.location.search).get("donationTest") === "1";
+const APP_VERSION = "1.1.0.1";
+const APP_RELEASE_SUMMARY = "патч первой стабильной версии: подготовлен закрытый сценарий поддержки Backpacker с выбором суммы; публичная кнопка остается заблокированной до отдельной команды на активацию.";
+const DONATION_FLOW_ENABLED = false;
 const DONATION_URL = ANALYTICS_CONFIG.donationUrl || "https://t.me/bckpckrbot?start=donate";
 const DEFAULT_ITEM_STATUS = "want";
 const DEFAULT_ITEM_PRIORITY = "nice";
@@ -1131,16 +1131,12 @@ function shouldShowDonationPrompt() {
 }
 
 function getDonationPromptCopy(source = "manual") {
-  if (source === "auto") {
-    return "Вы уже планируете вторую поездку в Backpacker. Если приложение оказалось полезным, можно поддержать его развитие любой суммой.";
-  }
-  return "Если Backpacker помогает планировать поездки, можно поддержать развитие приложения любой суммой.";
+  return "Если Backpacker уже помогает вам планировать поездки и вы захотите поддержать развитие приложения - будем очень благодарны ❤️";
 }
 
 function openDonationSheet(source = "manual") {
   if (!DONATION_FLOW_ENABLED) return;
-  const text = $("#donationPromptText");
-  if (text) text.textContent = getDonationPromptCopy(source);
+  renderDonationIntroStep(source);
   openSheet("donationSheet");
   if (!donationSheetHistoryArmed) {
     history.pushState({ backpackerDonationSheet: true }, "");
@@ -1184,12 +1180,60 @@ function dismissDonationSheet(method = "not_now", options = {}) {
   donationSheetHistoryArmed = false;
 }
 
-function openDonationCheckout() {
+function renderDonationIntroStep(source = "manual") {
+  $("#donationIntroActions")?.classList.remove("hidden");
+  $("#donationAmountStep")?.classList.add("hidden");
+  const text = $("#donationPromptText");
+  if (text) text.textContent = getDonationPromptCopy(source);
+}
+
+function renderDonationAmountStep() {
+  $("#donationIntroActions")?.classList.add("hidden");
+  $("#donationAmountStep")?.classList.remove("hidden");
+  $("#donationCustomAmount")?.classList.add("hidden");
+  $(".donation-amount-grid")?.classList.remove("hidden");
+  const text = $("#donationPromptText");
+  if (text) text.textContent = "Выберите удобную сумму поддержки.\nКнопка откроет платёжную страницу (карту не привязываем, данные не собираем!), с которой вы сможете перейти в ваш банк.";
+}
+
+function renderDonationCustomAmountStep() {
+  $(".donation-amount-grid")?.classList.add("hidden");
+  $("#donationCustomAmount")?.classList.remove("hidden");
+  const input = $("#donationCustomAmountInput");
+  if (input) {
+    input.value = "";
+    window.setTimeout(() => input.focus(), 80);
+  }
+}
+
+function submitDonationCustomAmount() {
+  const amount = parseMoney($("#donationCustomAmountInput")?.value);
+  if (!amount) {
+    showToast("Введите сумму");
+    return;
+  }
+  openDonationCheckout(String(amount));
+}
+
+function handleDonationCtaClick() {
+  trackEvent("donation_cta_clicked", getTripAnalyticsContext());
+  renderDonationAmountStep();
+}
+
+function buildDonationCheckoutUrl(amount = "custom") {
+  const url = new URL(DONATION_URL, window.location.href);
+  url.searchParams.set("amount", amount);
+  return url.toString();
+}
+
+function openDonationCheckout(amount = "custom") {
   donationState.donationCtaClickedAt = new Date().toISOString();
   saveDonationState();
-  trackEvent("donation_cta_clicked", getTripAnalyticsContext());
-  trackEvent("donation_checkout_opened", getTripAnalyticsContext());
-  window.open(DONATION_URL, "_blank", "noopener,noreferrer");
+  trackEvent("donation_checkout_opened", {
+    ...getTripAnalyticsContext(),
+    amount_option: amount,
+  });
+  window.open(buildDonationCheckoutUrl(amount), "_blank", "noopener,noreferrer");
 }
 
 function renderHome() {
@@ -3121,7 +3165,12 @@ function bindEvents() {
     if (closeTarget) closeSheet(`${closeTarget.dataset.close}Sheet`);
 
     const donationDismissTarget = event.target.closest("[data-donation-dismiss]");
-    if (donationDismissTarget) dismissDonationSheet(donationDismissTarget.dataset.donationDismiss || "not_now");
+    if (donationDismissTarget) {
+      event.preventDefault();
+      event.stopPropagation();
+      dismissDonationSheet(donationDismissTarget.dataset.donationDismiss || "not_now");
+      return;
+    }
 
     const openTripButton = event.target.closest("[data-open-trip]");
     if (openTripButton) openTrip(openTripButton.dataset.openTrip);
@@ -3179,7 +3228,24 @@ function bindEvents() {
     });
     openDonationSheet("manual");
   });
-  $("#donationCtaButton")?.addEventListener("click", openDonationCheckout);
+  $("#donationCtaButton")?.addEventListener("click", handleDonationCtaClick);
+  $("#donationBackButton")?.addEventListener("click", () => renderDonationIntroStep("manual"));
+  $$("[data-donation-amount]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const amount = button.dataset.donationAmount || "custom";
+      if (amount === "custom") {
+        renderDonationCustomAmountStep();
+        return;
+      }
+      openDonationCheckout(amount);
+    });
+  });
+  $("#donationCustomAmountOk")?.addEventListener("click", submitDonationCustomAmount);
+  $("#donationCustomAmountInput")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    submitDonationCustomAmount();
+  });
   $$("[data-home-panel]").forEach((button) => {
     button.addEventListener("click", () => toggleHomeSupportPanel(button.dataset.homePanel));
   });
@@ -3229,6 +3295,7 @@ function bindDonationSheetGestures() {
   const panel = $("[data-donation-panel]");
   if (!panel) return;
   panel.addEventListener("pointerdown", (event) => {
+    if (event.target.closest("button, a, input, textarea, select")) return;
     donationDragStartY = event.clientY;
     donationDragCurrentY = event.clientY;
     panel.setPointerCapture?.(event.pointerId);

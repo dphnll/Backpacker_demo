@@ -572,13 +572,29 @@
       <section class="sheet-panel donation-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="donationSheetTitle" data-donation-panel>
         <div class="donation-sheet-handle" aria-hidden="true"></div>
         <header class="sheet-header">
-          <h2 id="donationSheetTitle">Свинка Backpacker</h2>
+          <h2 id="donationSheetTitle">Копилка Backpacker</h2>
           <button class="icon-button" data-donation-dismiss="not_now" type="button" aria-label="Закрыть">×</button>
         </header>
         <p class="donation-sheet-copy" id="donationPromptText"></p>
-        <div class="donation-sheet-actions">
-          <button class="primary-button" id="donationCtaButton" type="button">Поддержать Backpacker</button>
+        <div class="donation-sheet-actions" id="donationIntroActions">
+          <button class="primary-button" id="donationCtaButton" type="button">Поддержать</button>
           <button class="ghost-button" id="donationNotNowButton" type="button" data-donation-dismiss="not_now">Не сейчас</button>
+        </div>
+        <div class="donation-amount-step hidden" id="donationAmountStep">
+          <div class="donation-amount-grid" role="group" aria-label="Выберите сумму поддержки">
+            <button class="donation-amount-button" type="button" data-donation-amount="100">100 ₽</button>
+            <button class="donation-amount-button" type="button" data-donation-amount="300">300 ₽</button>
+            <button class="donation-amount-button" type="button" data-donation-amount="500">500 ₽</button>
+            <button class="donation-amount-button" type="button" data-donation-amount="custom">Другая сумма</button>
+          </div>
+          <div class="donation-custom-amount hidden" id="donationCustomAmount">
+            <label class="field wide">
+              Сумма поддержки
+              <input id="donationCustomAmountInput" inputmode="numeric" placeholder="Например, 700" />
+            </label>
+            <button class="primary-button" id="donationCustomAmountOk" type="button">Ок</button>
+          </div>
+          <button class="ghost-button donation-back-button" id="donationBackButton" type="button">Назад</button>
         </div>
       </section>
     </div>

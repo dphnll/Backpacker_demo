@@ -772,8 +772,9 @@ button[aria-disabled="true"] .home-support-icon {
   margin: 0;
   color: var(--ink);
   font-size: 15px;
-  font-weight: 650;
+  font-weight: 400;
   line-height: 1.42;
+  white-space: pre-line;
 }
 
 .donation-sheet-actions {
@@ -787,6 +788,70 @@ button[aria-disabled="true"] .home-support-icon {
   min-height: 45px;
   place-items: center;
   line-height: 1;
+}
+
+#donationCtaButton {
+  border-color: rgba(18, 54, 61, 0.34);
+  background: var(--active-button-gradient);
+  color: #fff;
+  box-shadow: var(--active-button-shadow);
+}
+
+.donation-amount-step {
+  display: grid;
+  gap: 10px;
+}
+
+.donation-amount-step.hidden {
+  display: none;
+}
+
+.donation-amount-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.donation-amount-grid.hidden {
+  display: none;
+}
+
+.donation-amount-button {
+  display: grid;
+  min-height: 45px;
+  place-items: center;
+  border: 1px solid rgba(18, 54, 61, 0.34);
+  border-radius: 6px;
+  background: var(--active-button-gradient);
+  color: #fff;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: var(--active-button-shadow);
+}
+
+.donation-back-button {
+  display: grid;
+  min-height: 42px;
+  place-items: center;
+}
+
+.donation-custom-amount {
+  display: grid;
+  gap: 10px;
+}
+
+.donation-custom-amount.hidden {
+  display: none;
+}
+
+.donation-custom-amount .primary-button {
+  display: grid;
+  min-height: 45px;
+  place-items: center;
+  border-color: rgba(18, 54, 61, 0.34);
+  background: var(--active-button-gradient);
+  color: #fff;
+  box-shadow: var(--active-button-shadow);
 }
 
 .home-support-panel h2 {
