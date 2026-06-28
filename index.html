@@ -178,33 +178,6 @@
               </svg>
             </a>
           </div>
-
-          <div class="section-heading home-list-heading hidden" id="productInfoTitle">
-            <h2>О продукте</h2>
-          </div>
-          <div class="home-support-panel hidden" id="productInfoPanel">
-            <p>BACKPACKER вырос из живого планирования поездок: когда хочется собрать поездку из событий, мест для посещения, броней и идей в одном месте, а не метаться по разным источникам в поисках ссылок на сайты, заметок и таблиц.</p>
-            <p>BACKPACKER поможет быстро набросать план путешествия, разложить карточки событий и мест по дням, наглядно увидеть бюджет, не потерять идеи и спокойно возвращаться к редактированию поездки с телефона.</p>
-          </div>
-
-          <div class="section-heading home-list-heading hidden" id="howToTitle">
-            <h2>How-to</h2>
-          </div>
-          <div class="home-support-panel hidden" id="howToPanel">
-            <details open>
-              <summary>Что где лежит</summary>
-              <p>На главной есть тренажёр, создание новой поездки и лента ваших поездок. Внутри поездки карточки можно раскладывать по дням, убирать в парковку идей, менять статусы и смотреть бюджет.</p>
-            </details>
-            <details>
-              <summary>Зачем нужен тренажёр</summary>
-              <p>Тренажёр — готовая демо-поездка. В ней можно потрогать дни, карточки, смету, статусы и экспорт без риска испортить свою реальную поездку.</p>
-            </details>
-            <details>
-              <summary>Как пользоваться карточками</summary>
-              <p>Откройте карточку, задайте тип, цену, статус, дату, время и ссылку. На мобильном карточки можно перетаскивать долгим тапом, а дорожки дней листать свайпом.</p>
-            </details>
-            <button class="home-trainer-toggle" id="trainerVisibilityButton" type="button">Скрыть тренажер на главной</button>
-          </div>
         </section>
       </main>
       <input id="coverInput" type="file" accept="image/*" hidden />
@@ -419,16 +392,25 @@
             <select name="participantId"></select>
           </label>
           <label class="field">
-            День
-            <select name="date"></select>
+            Дата
+            <input name="date" inputmode="numeric" maxlength="10" placeholder="дд.мм.гггг" />
           </label>
           <label class="field">
             Время
             <input name="startTime" type="time" />
           </label>
           <label class="field">
-            Длительность, мин
-            <input name="durationMinutes" inputmode="numeric" placeholder="90" />
+            Длительность
+            <span class="duration-fields">
+              <span class="duration-field">
+                <input name="durationHours" inputmode="numeric" />
+                <span>ч.</span>
+              </span>
+              <span class="duration-field">
+                <input name="durationRemainder" inputmode="numeric" />
+                <span>мин.</span>
+              </span>
+            </span>
           </label>
           <label class="field">
             Цена
@@ -456,8 +438,9 @@
             <textarea name="notes" rows="3" placeholder="Почему хочу, что важно, запасной план..."></textarea>
           </label>
           <div class="form-actions">
-            <button class="danger-button" id="deleteItemButton" type="button">Удалить</button>
             <button class="primary-button" type="submit">Сохранить</button>
+            <button class="primary-button" id="resetItemButton" type="button">Сбросить</button>
+            <button class="danger-button" id="deleteItemButton" type="button">Удалить</button>
           </div>
         </form>
       </section>
@@ -523,6 +506,45 @@
             <button class="primary-button" type="submit">Сохранить</button>
           </div>
         </form>
+      </section>
+    </div>
+
+    <div class="sheet" id="productInfoSheet" aria-hidden="true">
+      <div class="sheet-backdrop" data-close="productInfo"></div>
+      <section class="sheet-panel home-support-sheet" role="dialog" aria-modal="true" aria-labelledby="productInfoSheetTitle">
+        <header class="sheet-header">
+          <h2 id="productInfoSheetTitle">О продукте</h2>
+          <button class="icon-button" data-close="productInfo" type="button" aria-label="Закрыть">×</button>
+        </header>
+        <div class="home-support-sheet-body">
+          <p>BACKPACKER вырос из живого планирования поездок: когда хочется собрать поездку из событий, мест для посещения, броней и идей в одном месте, а не метаться по разным источникам в поисках ссылок на сайты, заметок и таблиц.</p>
+          <p>BACKPACKER поможет быстро набросать план путешествия, разложить карточки событий и мест по дням, наглядно увидеть бюджет, не потерять идеи и спокойно возвращаться к редактированию поездки с телефона.</p>
+        </div>
+      </section>
+    </div>
+
+    <div class="sheet" id="howToSheet" aria-hidden="true">
+      <div class="sheet-backdrop" data-close="howTo"></div>
+      <section class="sheet-panel home-support-sheet" role="dialog" aria-modal="true" aria-labelledby="howToSheetTitle">
+        <header class="sheet-header">
+          <h2 id="howToSheetTitle">How-to</h2>
+          <button class="icon-button" data-close="howTo" type="button" aria-label="Закрыть">×</button>
+        </header>
+        <div class="home-support-sheet-body">
+          <details open>
+            <summary>Что где лежит</summary>
+            <p>На главной есть тренажёр, создание новой поездки и лента ваших поездок. Внутри поездки карточки можно раскладывать по дням, убирать в парковку идей, менять статусы и смотреть бюджет.</p>
+          </details>
+          <details>
+            <summary>Зачем нужен тренажёр</summary>
+            <p>Тренажёр — готовая демо-поездка. В ней можно потрогать дни, карточки, смету, статусы и экспорт без риска испортить свою реальную поездку.</p>
+            <button class="home-trainer-toggle" id="trainerVisibilityButton" type="button">Скрыть тренажер на главной</button>
+          </details>
+          <details>
+            <summary>Как пользоваться карточками</summary>
+            <p>Откройте карточку, задайте тип, цену, статус, дату, время и ссылку. На мобильном карточки можно перетаскивать долгим тапом, а дорожки дней листать свайпом.</p>
+          </details>
+        </div>
       </section>
     </div>
 

@@ -675,6 +675,53 @@ function formatDate(dateString, options = {}) {
   });
 }
 
+function formatDateForInput(dateString) {
+  if (!dateString) return "";
+  const [year, month, day] = dateString.split("-");
+  if (!year || !month || !day) return "";
+  return `${day}.${month}.${year}`;
+}
+
+function parseDateFromInput(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const normalized = raw.replace(/[^\d]/g, "");
+  if (normalized.length !== 8) return "";
+  const day = normalized.slice(0, 2);
+  const month = normalized.slice(2, 4);
+  const year = normalized.slice(4, 8);
+  const date = new Date(`${year}-${month}-${day}T12:00:00`);
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== Number(year) ||
+    date.getMonth() + 1 !== Number(month) ||
+    date.getDate() !== Number(day)
+  ) {
+    return "";
+  }
+  const iso = `${year}-${month}-${day}`;
+  if (state.trip.startDate && iso < state.trip.startDate) return "";
+  if (state.trip.endDate && iso > state.trip.endDate) return "";
+  return iso;
+}
+
+function getTripDayCount(trip) {
+  const start = new Date(`${trip?.startDate || ""}T12:00:00`);
+  const end = new Date(`${trip?.endDate || trip?.startDate || ""}T12:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 1;
+  const diff = Math.round((end - start) / 86400000);
+  return Math.max(1, diff + 1);
+}
+
+function formatTripDayCount(trip) {
+  const count = getTripDayCount(trip);
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${count} день`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} дня`;
+  return `${count} дней`;
+}
+
 function formatDurationText(minutes) {
   const total = parseMoney(minutes);
   if (!total) return "--";
@@ -683,6 +730,22 @@ function formatDurationText(minutes) {
   if (hours && rest) return `${hours} ч ${rest} мин`;
   if (hours) return `${hours} ч`;
   return `${rest} мин`;
+}
+
+function splitDurationInput(minutes) {
+  const total = parseMoney(minutes);
+  if (!total) return { hours: "", minutes: "" };
+  return {
+    hours: Math.floor(total / 60) || "",
+    minutes: total % 60 || "",
+  };
+}
+
+function getDurationFromInput(hours, minutes) {
+  const hourValue = parseMoney(hours);
+  const minuteValue = parseMoney(minutes);
+  if (!hourValue && !minuteValue) return 0;
+  return hourValue * 60 + minuteValue;
 }
 
 function splitTimeSlots(time) {
@@ -952,15 +1015,6 @@ function render() {
   renderSharePreview();
 }
 
-function getEntryTotals(entry) {
-  const entryState = normalizeState(entry.state);
-  const paid = entryState.items.reduce((sum, item) => sum + parseMoney(item.paidAmount), 0);
-  const possible = entryState.items
-    .filter((item) => item.status !== "skipped" && item.status !== "backup")
-    .reduce((sum, item) => sum + parseMoney(item.price), 0);
-  return { paid, possible };
-}
-
 function isHomeTrainerHidden() {
   try {
     return localStorage.getItem(HOME_TRAINER_VISIBILITY_KEY) === "true";
@@ -988,19 +1042,12 @@ function renderHomeSupport() {
 }
 
 function toggleHomeSupportPanel(panelName) {
-  const panelMap = {
-    product: $("#productInfoPanel"),
-    howto: $("#howToPanel"),
+  const sheetMap = {
+    product: "productInfoSheet",
+    howto: "howToSheet",
   };
-  const titleMap = {
-    product: $("#productInfoTitle"),
-    howto: $("#howToTitle"),
-  };
-  Object.entries(panelMap).forEach(([name, panel]) => {
-    const shouldShow = name === panelName && panel.classList.contains("hidden");
-    panel?.classList.toggle("hidden", !shouldShow);
-    titleMap[name]?.classList.toggle("hidden", !shouldShow);
-  });
+  const sheetId = sheetMap[panelName];
+  if (sheetId) openSheet(sheetId);
 }
 
 function renderHome() {
@@ -1023,7 +1070,6 @@ function renderHome() {
 
   list.innerHTML = trips.map((entry) => {
     const trip = entry.state.trip;
-    const totals = getEntryTotals(entry);
     const style = entry.coverDataUrl ? ` style="background-image: linear-gradient(145deg, rgba(18,54,61,.66), rgba(18,54,61,.12)), url('${escapeAttr(entry.coverDataUrl)}')"` : "";
     return `
       <article class="home-card trip-list-card"${style}>
@@ -1032,8 +1078,8 @@ function renderHome() {
           <strong>${escapeHtml(trip.title || "Новая поездка")}</strong>
           <span>${escapeHtml(trip.destination || "Направление не задано")}</span>
           <div class="home-card-meta">
+            <span>${formatTripDayCount(trip)}</span>
             <span>${formatCurrencyAmount(trip.budgetLimit, trip.currency)}</span>
-            <span>план ${formatCurrencyAmount(totals.possible, trip.currency)}</span>
           </div>
         </button>
         <button class="cover-trip-button" data-cover-trip="${escapeAttr(entry.id)}" type="button" aria-label="Добавить обложку">
@@ -1287,26 +1333,36 @@ function sortItems(a, b) {
   return orderA - orderB || a.title.localeCompare(b.title);
 }
 
-function openItemSheet(itemId = null) {
+function fillItemForm(item = null) {
   const form = $("#itemForm");
   form.reset();
-  fillSelects();
-  renderParticipantOwnerField();
-  $("#deleteItemButton").style.display = itemId ? "inline-flex" : "none";
-  $("#itemSheetTitle").textContent = itemId ? "Редактировать элемент" : "Добавить в поездку";
-  if (itemId) {
-    const item = state.items.find((entry) => entry.id === itemId);
+  if (item) {
     Object.entries(item).forEach(([key, value]) => {
       if (form.elements[key]) form.elements[key].value = value ?? "";
     });
-  } else {
-    form.elements.id.value = "";
-    form.elements.type.value = "idea";
-    form.elements.status.value = "want";
-    form.elements.priority.value = "nice";
-    form.elements.date.value = "";
-    form.elements.participantId.value = getSelfParticipant().id;
+    form.elements.date.value = formatDateForInput(item.date);
+    const duration = splitDurationInput(item.durationMinutes);
+    form.elements.durationHours.value = duration.hours;
+    form.elements.durationRemainder.value = duration.minutes;
+    return;
   }
+  form.elements.id.value = "";
+  form.elements.type.value = "idea";
+  form.elements.status.value = "want";
+  form.elements.priority.value = "nice";
+  form.elements.date.value = "";
+  form.elements.durationHours.value = "";
+  form.elements.durationRemainder.value = "";
+  form.elements.participantId.value = getSelfParticipant().id;
+}
+
+function openItemSheet(itemId = null) {
+  fillSelects();
+  renderParticipantOwnerField();
+  $("#deleteItemButton").style.display = itemId ? "inline-flex" : "none";
+  $("#resetItemButton").style.display = itemId ? "inline-flex" : "none";
+  $("#itemSheetTitle").textContent = itemId ? "Редактировать элемент" : "Добавить в поездку";
+  fillItemForm(itemId ? state.items.find((entry) => entry.id === itemId) : null);
   updateOpenLinkButton();
   openSheet("itemSheet");
   const trackedItem = itemId ? state.items.find((entry) => entry.id === itemId) : null;
@@ -1327,9 +1383,6 @@ function fillSelects() {
   form.elements.participantId.innerHTML = state.trip.participants
     .map((participant) => `<option value="${escapeAttr(participant.id)}">${escapeHtml(participant.name)}${participant.isSelf ? " · Это я" : ""}</option>`)
     .join("");
-  form.elements.date.innerHTML = `<option value="">Без даты</option>${getTripDates()
-    .map((date, index) => `<option value="${date}">День ${index + 1} · ${formatDate(date)}</option>`)
-    .join("")}`;
 }
 
 function renderParticipantOwnerField() {
@@ -1342,15 +1395,16 @@ function saveItem(event) {
   const data = Object.fromEntries(new FormData(form).entries());
   const existing = state.items.find((entry) => entry.id === data.id);
   const isNew = !existing;
+  const itemDate = parseDateFromInput(data.date);
   const item = {
     id: data.id || `item-${Date.now()}`,
     title: data.title.trim(),
     type: data.type || "idea",
     status: data.status || "want",
     priority: data.priority || "nice",
-    date: data.date || "",
+    date: itemDate,
     startTime: data.startTime || "",
-    durationMinutes: parseMoney(data.durationMinutes),
+    durationMinutes: getDurationFromInput(data.durationHours, data.durationRemainder),
     price: parseMoney(data.price),
     paidAmount: parseMoney(data.paidAmount),
     participantId: state.trip.participants.some((participant) => participant.id === data.participantId)
@@ -1359,7 +1413,7 @@ function saveItem(event) {
     link: data.link.trim(),
     locationText: data.locationText.trim(),
     notes: data.notes.trim(),
-    order: existing && (existing.date || "") === (data.date || "") ? existing.order : getNextOrder(data.date || ""),
+    order: existing && (existing.date || "") === (itemDate || "") ? existing.order : getNextOrder(itemDate),
   };
   if (!item.title) return;
   const existingIndex = state.items.findIndex((entry) => entry.id === item.id);
@@ -1396,6 +1450,16 @@ function saveItem(event) {
     });
   }
   checkTripMilestones();
+}
+
+function resetCurrentItemForm() {
+  const id = $("#itemForm").elements.id.value;
+  if (!id) return;
+  const item = state.items.find((entry) => entry.id === id);
+  if (!item) return;
+  fillItemForm(item);
+  updateOpenLinkButton();
+  showToast("Изменения сброшены");
 }
 
 function getNextOrder(date) {
@@ -1445,6 +1509,8 @@ function deleteCurrentItem() {
   const id = $("#itemForm").elements.id.value;
   if (!id) return;
   const item = state.items.find((entry) => entry.id === id);
+  const title = item?.title || "элемент";
+  if (!window.confirm(`Удалить «${title}»? Это действие нельзя отменить.`)) return;
   state.items = state.items.filter((item) => item.id !== id);
   saveState();
   closeSheet("itemSheet");
@@ -1877,6 +1943,9 @@ function buildEstimateRows() {
       parseMoney(item.paidAmount),
       item.link || "",
     ]);
+  const totalPrice = rows.reduce((sum, row) => sum + parseMoney(row[5]), 0);
+  const totalPaid = rows.reduce((sum, row) => sum + parseMoney(row[6]), 0);
+  rows.push(["Итого", "", "", "", "", totalPrice, totalPaid, ""]);
   return { header, rows };
 }
 
@@ -1956,8 +2025,19 @@ function escapeSpreadsheetValue(value = "") {
 
 function buildSpreadsheetHtml(title, table) {
   const headerHtml = table.header.map((cell) => `<th>${escapeSpreadsheetValue(cell)}</th>`).join("");
+  const textColumnIndexes = table.header
+    .map((cell, index) => (cell === "Время" ? index : -1))
+    .filter((index) => index >= 0);
   const rowsHtml = table.rows
-    .map((row) => `<tr>${row.map((cell) => `<td>${escapeSpreadsheetValue(cell)}</td>`).join("")}</tr>`)
+    .map(
+      (row) =>
+        `<tr>${row
+          .map((cell, index) => {
+            const className = textColumnIndexes.includes(index) ? ` class="spreadsheet-text"` : "";
+            return `<td${className}>${escapeSpreadsheetValue(cell)}</td>`;
+          })
+          .join("")}</tr>`,
+    )
     .join("");
   return `<!doctype html>
 <html>
@@ -1969,6 +2049,7 @@ function buildSpreadsheetHtml(title, table) {
     table { border-collapse: collapse; }
     th, td { border: 1px solid #9aa6a3; padding: 6px 8px; vertical-align: top; }
     th { background: #dfe9e5; font-weight: 700; }
+    .spreadsheet-text { mso-number-format:"\\@"; }
   </style>
 </head>
 <body>
@@ -2960,6 +3041,7 @@ function bindEvents() {
   $("#feedbackButton").addEventListener("click", () => trackEvent("feedback_channel_opened", { channel: "telegram" }));
   $("#homeButton").addEventListener("click", showHomeScreen);
   $("#itemForm").addEventListener("submit", saveItem);
+  $("#resetItemButton").addEventListener("click", resetCurrentItemForm);
   $("#deleteItemButton").addEventListener("click", deleteCurrentItem);
   $("#itemForm").elements.link.addEventListener("input", updateOpenLinkButton);
   $("#openLinkButton").addEventListener("click", openItemLink);
