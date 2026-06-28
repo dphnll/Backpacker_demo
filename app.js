@@ -992,8 +992,14 @@ function toggleHomeSupportPanel(panelName) {
     product: $("#productInfoPanel"),
     howto: $("#howToPanel"),
   };
+  const titleMap = {
+    product: $("#productInfoTitle"),
+    howto: $("#howToTitle"),
+  };
   Object.entries(panelMap).forEach(([name, panel]) => {
-    panel?.classList.toggle("hidden", name !== panelName || !panel.classList.contains("hidden"));
+    const shouldShow = name === panelName && panel.classList.contains("hidden");
+    panel?.classList.toggle("hidden", !shouldShow);
+    titleMap[name]?.classList.toggle("hidden", !shouldShow);
   });
 }
 
@@ -2721,6 +2727,8 @@ function bindPointerDrag() {
 
   function startPointerDrag(event) {
     if (!pointerDrag || pointerDrag.active) return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
     const rect = pointerDrag.card.getBoundingClientRect();
     const cardStyles = getComputedStyle(pointerDrag.card);
     const cardZoom = Number.parseFloat(cardStyles.getPropertyValue("--item-card-scale")) || Number.parseFloat(cardStyles.zoom) || 1;
@@ -2814,6 +2822,7 @@ function bindPointerDrag() {
     }
     if (!pointerDrag.active) return;
     if (pointerDrag.pointerType !== "mouse") event.preventDefault();
+    event.stopPropagation();
     pointerDrag.lastX = event.clientX;
     pointerDrag.lastY = event.clientY;
     pointerDrag.ghost.style.transform = `translate(${event.clientX - pointerDrag.startX}px, ${event.clientY - pointerDrag.startY}px)`;
@@ -2837,6 +2846,13 @@ function bindPointerDrag() {
     if (!pointerDrag?.active) return;
     event.preventDefault();
   });
+
+  document.addEventListener("touchmove", (event) => {
+    if (!pointerDrag || pointerDrag.pointerType === "mouse") return;
+    if (!pointerDrag.active && Date.now() - pointerDrag.startTime < longPressDelay) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, { passive: false, capture: true });
 
   document.addEventListener("lostpointercapture", () => {
     if (!pointerDrag?.active) cleanupPointerDrag();

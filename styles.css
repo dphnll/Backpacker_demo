@@ -384,7 +384,7 @@ a {
   width: min(100%, 760px);
   min-height: 100vh;
   margin: 0 auto;
-  padding: 0 14px 128px;
+  padding: 0 14px 112px;
   background: #fff;
 }
 
@@ -493,7 +493,7 @@ a {
 
 .home-trainer-shell {
   position: relative;
-  margin: 0 -6px 0;
+  margin: 0 -6px 12px;
   padding: 10px;
   border: 1px solid rgba(18, 54, 61, 0.14);
   border-radius: 8px;
@@ -508,17 +508,17 @@ a {
 .home-trainer-hide {
   position: absolute;
   z-index: 2;
-  top: 16px;
+  top: 20px;
   right: 16px;
   min-height: 30px;
   padding: 5px 10px;
   border: 1px solid rgba(18, 54, 61, 0.18);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.88);
-  color: var(--brand);
+  background: var(--active-button-gradient);
+  color: #fff;
   font-size: 12px;
   font-weight: 900;
-  box-shadow: 3px 3px 0 rgba(18, 54, 61, 0.1);
+  box-shadow: var(--active-button-shadow);
 }
 
 .trainer-card {
@@ -624,8 +624,8 @@ a {
 
 .trip-list-section {
   display: grid;
-  gap: 10px;
-  margin-top: 0;
+  gap: 4px;
+  margin-top: 12px;
 }
 
 .home-list-heading {
@@ -643,8 +643,8 @@ a {
 
 .home-support {
   display: grid;
-  gap: 10px;
-  margin-top: 4px;
+  gap: 4px;
+  margin-top: 12px;
 }
 
 .home-support-menu {
@@ -656,7 +656,7 @@ a {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
-  padding: 8px;
+  padding: 6px 8px;
   border: 1px solid rgba(18, 54, 61, 0.12);
   border-radius: 8px;
   background:
@@ -670,10 +670,10 @@ a {
 
 .home-support-button {
   display: grid;
-  min-height: 56px;
+  min-height: 45px;
   place-items: center;
   align-content: center;
-  padding: 8px;
+  padding: 6px;
   border: 1px solid rgba(18, 54, 61, 0.22);
   border-radius: 8px;
   background: var(--active-button-gradient);
@@ -684,35 +684,48 @@ a {
 }
 
 .home-support-button span,
-.home-support-button svg {
+.home-support-button svg,
+.home-support-icon {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   place-items: center;
+  object-fit: contain;
   color: #fff;
   fill: none;
   stroke: #fff;
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
-  font-size: 25px;
+  font-size: 22px;
   font-weight: 900;
+}
+
+.home-support-icon {
+  filter: invert(1) brightness(2);
 }
 
 .home-support-button:disabled {
   cursor: not-allowed;
-  opacity: 0.54;
-  filter: grayscale(0.35);
+  background:
+    var(--app-gradient),
+    var(--panel);
+  opacity: 1;
+  filter: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -8px 16px rgba(18, 54, 61, 0.05),
+    4px 4px 0 rgba(18, 54, 61, 0.08);
 }
 
 .home-support-panel {
   display: grid;
   gap: 10px;
   padding: 14px;
-  border: 1px solid rgba(18, 54, 61, 0.14);
+  border: 1px dashed rgba(18, 54, 61, 0.22);
   border-radius: 8px;
-  background: var(--panel);
-  box-shadow: 7px 7px 0 rgba(18, 54, 61, 0.08);
+  background: #fff;
+  color: var(--muted);
 }
 
 .home-support-panel h2 {
@@ -746,12 +759,12 @@ a {
 
 .home-trainer-toggle {
   width: 100%;
-  min-height: 52px;
+  min-height: 45px;
   border: 1px solid rgba(18, 54, 61, 0.22);
   border-radius: 8px;
   background: var(--active-button-gradient);
   color: #fff;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 900;
   box-shadow: var(--active-button-shadow);
 }
@@ -760,7 +773,7 @@ a {
   position: relative;
   display: grid;
   gap: 12px;
-  min-height: 132px;
+  min-height: 112px;
   padding: 0;
   overflow: hidden;
   background:
@@ -776,9 +789,10 @@ a {
 }
 
 .trip-card-open {
+  position: relative;
   width: 100%;
-  min-height: 132px;
-  padding: 14px 72px 54px 14px;
+  min-height: 112px;
+  padding: 12px 72px 48px 12px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -805,13 +819,20 @@ a {
 .trip-card-open > span:not(.home-card-kicker) {
   width: fit-content;
   max-width: 100%;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   padding: 3px 8px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.82);
   color: var(--ink);
   font-size: 13px;
   font-weight: 400;
+}
+
+.trip-card-open .home-card-meta {
+  position: absolute;
+  right: 86px;
+  bottom: 12px;
+  left: 12px;
 }
 
 .cover-trip-button,
@@ -847,10 +868,10 @@ a {
 .delete-trip-button {
   right: 12px;
   bottom: 12px;
-  min-height: 32px;
-  padding: 6px 12px;
+  min-height: 28px;
+  padding: 5px 10px;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 700;
 }
 
 .empty-trips {
