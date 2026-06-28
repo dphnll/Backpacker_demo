@@ -3,6 +3,7 @@ const TRIPS_STORAGE_KEY = "backpacker.trips.v1";
 const ACTIVE_TRIP_STORAGE_KEY = "backpacker.activeTrip.v1";
 const VIEW_STORAGE_KEY = "backpacker.currentView.v1";
 const ONBOARDING_STORAGE_KEY = "backpacker.onboarding.v1";
+const HOME_TRAINER_VISIBILITY_KEY = "backpacker.home.trainer.hidden.v1";
 const ANALYTICS_USER_KEY = "backpacker.analytics.user.v1";
 const ANALYTICS_LAST_OPEN_KEY = "backpacker.analytics.lastOpen.v1";
 const ANALYTICS_MILESTONES_KEY = "backpacker.analytics.milestones.v1";
@@ -960,9 +961,46 @@ function getEntryTotals(entry) {
   return { paid, possible };
 }
 
+function isHomeTrainerHidden() {
+  try {
+    return localStorage.getItem(HOME_TRAINER_VISIBILITY_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function setHomeTrainerHidden(isHidden) {
+  try {
+    localStorage.setItem(HOME_TRAINER_VISIBILITY_KEY, isHidden ? "true" : "false");
+  } catch {
+    // The UI state is optional; the trainer remains visible if storage is unavailable.
+  }
+}
+
+function renderHomeSupport() {
+  const trainerShell = $("#homeTrainerShell");
+  const trainerButton = $("#trainerVisibilityButton");
+  const isHidden = isHomeTrainerHidden();
+  trainerShell?.classList.toggle("hidden", isHidden);
+  if (trainerButton) {
+    trainerButton.textContent = isHidden ? "Показать тренажер на главной" : "Скрыть тренажер на главной";
+  }
+}
+
+function toggleHomeSupportPanel(panelName) {
+  const panelMap = {
+    product: $("#productInfoPanel"),
+    howto: $("#howToPanel"),
+  };
+  Object.entries(panelMap).forEach(([name, panel]) => {
+    panel?.classList.toggle("hidden", name !== panelName || !panel.classList.contains("hidden"));
+  });
+}
+
 function renderHome() {
   const list = $("#tripList");
   if (!list) return;
+  renderHomeSupport();
   const trips = tripStore.trips
     .filter((entry) => !entry.isDemo)
     .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
@@ -2891,6 +2929,18 @@ function bindEvents() {
   $("#homeShareButton").addEventListener("click", openHomeShareSheet);
   $("#homeInstallAppButton").addEventListener("click", installPwa);
   $("#shareAppButton").addEventListener("click", shareApp);
+  $$("[data-home-panel]").forEach((button) => {
+    button.addEventListener("click", () => toggleHomeSupportPanel(button.dataset.homePanel));
+  });
+  $("#trainerVisibilityButton")?.addEventListener("click", () => {
+    setHomeTrainerHidden(!isHomeTrainerHidden());
+    renderHomeSupport();
+  });
+  $("#hideTrainerButton")?.addEventListener("click", () => {
+    setHomeTrainerHidden(true);
+    renderHomeSupport();
+  });
+  $("#homeTelegramButton")?.addEventListener("click", () => trackEvent("feedback_channel_opened", { channel: "telegram", source: "home_support" }));
   $("#feedbackButton").addEventListener("click", () => trackEvent("feedback_channel_opened", { channel: "telegram" }));
   $("#homeButton").addEventListener("click", showHomeScreen);
   $("#itemForm").addEventListener("submit", saveItem);

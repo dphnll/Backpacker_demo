@@ -384,7 +384,7 @@ a {
   width: min(100%, 760px);
   min-height: 100vh;
   margin: 0 auto;
-  padding: 0 14px 96px;
+  padding: 0 14px 128px;
   background: #fff;
 }
 
@@ -433,7 +433,7 @@ a {
 
 .home-content {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .home-card {
@@ -491,8 +491,42 @@ a {
   font-weight: 900;
 }
 
+.home-trainer-shell {
+  position: relative;
+  margin: 0 -6px 0;
+  padding: 10px;
+  border: 1px solid rgba(18, 54, 61, 0.14);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(18, 54, 61, 0.12), rgba(255, 255, 255, 0.86) 54%, rgba(46, 196, 214, 0.12)),
+    #e8f1ef;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    7px 7px 0 rgba(18, 54, 61, 0.08);
+}
+
+.home-trainer-hide {
+  position: absolute;
+  z-index: 2;
+  top: 16px;
+  right: 16px;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid rgba(18, 54, 61, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 3px 3px 0 rgba(18, 54, 61, 0.1);
+}
+
 .trainer-card {
   cursor: pointer;
+  min-height: 112px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -10px 18px rgba(18, 54, 61, 0.05);
   background:
     linear-gradient(145deg, rgba(18, 54, 61, 0.7), rgba(18, 54, 61, 0.18) 46%, rgba(255, 253, 248, 0.24)),
     linear-gradient(145deg, rgba(255, 255, 255, 0.22), rgba(198, 207, 203, 0.2)),
@@ -501,11 +535,6 @@ a {
   background-position: center;
   background-size: cover;
   color: #fff;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.85),
-    inset 0 -10px 18px rgba(18, 54, 61, 0.05),
-    7px 7px 0 rgba(18, 54, 61, 0.1),
-    0 18px 34px rgba(18, 54, 61, 0.1);
 }
 
 .trainer-card:hover {
@@ -544,6 +573,7 @@ a {
   align-items: center;
   gap: 10px;
   min-height: 68px;
+  margin-top: 0;
   padding: 10px;
   background:
     var(--app-gradient),
@@ -595,7 +625,7 @@ a {
 .trip-list-section {
   display: grid;
   gap: 10px;
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .home-list-heading {
@@ -609,6 +639,121 @@ a {
 .trip-list {
   display: grid;
   gap: 12px;
+}
+
+.home-support {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.home-support-menu {
+  position: fixed;
+  right: max(14px, calc((100vw - 760px) / 2 + 14px));
+  bottom: 12px;
+  left: max(14px, calc((100vw - 760px) / 2 + 14px));
+  z-index: 30;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(18, 54, 61, 0.12);
+  border-radius: 8px;
+  background:
+    var(--app-gradient),
+    var(--panel);
+  box-shadow:
+    0 -10px 24px rgba(18, 54, 61, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    inset 0 -10px 18px rgba(18, 54, 61, 0.05);
+}
+
+.home-support-button {
+  display: grid;
+  min-height: 56px;
+  place-items: center;
+  align-content: center;
+  padding: 8px;
+  border: 1px solid rgba(18, 54, 61, 0.22);
+  border-radius: 8px;
+  background: var(--active-button-gradient);
+  color: #fff;
+  text-align: center;
+  text-decoration: none;
+  box-shadow: var(--active-button-shadow);
+}
+
+.home-support-button span,
+.home-support-button svg {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: #fff;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  font-size: 25px;
+  font-weight: 900;
+}
+
+.home-support-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.54;
+  filter: grayscale(0.35);
+}
+
+.home-support-panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(18, 54, 61, 0.14);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 7px 7px 0 rgba(18, 54, 61, 0.08);
+}
+
+.home-support-panel h2 {
+  color: var(--ink);
+  font-size: 20px;
+}
+
+.home-support-panel p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.42;
+}
+
+.home-support-panel details {
+  padding: 10px 0;
+  border-top: 1px solid rgba(18, 54, 61, 0.12);
+}
+
+.home-support-panel details:first-of-type {
+  border-top: 0;
+}
+
+.home-support-panel summary {
+  cursor: pointer;
+  color: var(--brand);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.home-trainer-toggle {
+  width: 100%;
+  min-height: 52px;
+  border: 1px solid rgba(18, 54, 61, 0.22);
+  border-radius: 8px;
+  background: var(--active-button-gradient);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 900;
+  box-shadow: var(--active-button-shadow);
 }
 
 .trip-list-card {
