@@ -30,3 +30,5 @@ The prototype is static and does not require a build step.
 
 - `BACKPACKER_MVP_SCOPE.md`
 - `BACKPACKER_WIREFRAMES.md`
+- `BACKPACKER_STABLE_V1_1_0_0.md`
+- `PRODUCT_OVERVIEW.md`
