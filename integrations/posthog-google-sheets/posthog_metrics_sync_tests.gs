@@ -429,6 +429,7 @@ function test_findRowByPeriod_returnsMinusOneWhenEmpty() {
 
 function FakeSheet_(headers) {
   this.rows = [headers.slice()];
+  this.timeZone = "Europe/Moscow"; // matches appsscript.json; override per-test if needed
 }
 
 FakeSheet_.prototype.getLastRow = function() {
@@ -440,6 +441,15 @@ FakeSheet_.prototype.getLastColumn = function() {
 };
 
 FakeSheet_.prototype.setFrozenRows = function() {};
+
+// Mirrors Sheet.getParent().getSpreadsheetTimeZone() — findRowByPeriod_ reads
+// the *spreadsheet's* time zone, not the script's, to normalize Date cells.
+FakeSheet_.prototype.getParent = function() {
+  var sheet = this;
+  return {
+    getSpreadsheetTimeZone: function() { return sheet.timeZone; }
+  };
+};
 
 FakeSheet_.prototype.getRange = function(row, col, numRows, numCols) {
   var sheet = this;
@@ -494,6 +504,105 @@ function buildFakeSyncMetrics_(newAnonUsers) {
     users_trip_first_value_reached: 1, users_trip_working_plan_reached: 0,
     app_versions: "1.1.2.1"
   };
+}
+
+// =============================================================================
+// normalizePeriodDate_ / findRowByPeriod_ — Google Sheets auto-converts a
+// written "yyyy-MM-dd" string into a real Date cell. getValues() then hands
+// back a Date object instead of the original string, and a naive
+// String(cell) comparison never matches the plain-string period again,
+// causing every resync to append instead of update.
+// =============================================================================
+
+function test_normalizePeriodDate_passesThroughStrings() {
+  assert_("plain string passes through unchanged", normalizePeriodDate_("2026-06-22", "Europe/Moscow"), "2026-06-22");
+  assert_("surrounding whitespace is trimmed", normalizePeriodDate_("  2026-06-22  ", "Europe/Moscow"), "2026-06-22");
+  Logger.log("[PASS] normalizePeriodDate_ passes plain strings through unchanged");
+}
+
+function test_normalizePeriodDate_handlesNullOrUndefined() {
+  assert_("null becomes empty string", normalizePeriodDate_(null, "Europe/Moscow"), "");
+  assert_("undefined becomes empty string", normalizePeriodDate_(undefined, "Europe/Moscow"), "");
+  Logger.log("[PASS] normalizePeriodDate_ never throws on null/undefined, returns empty string");
+}
+
+function test_normalizePeriodDate_formatsDateObjects() {
+  var d = new Date(Date.UTC(2026, 5, 22, 12, 0, 0)); // midday UTC, unambiguous in most zones
+  assert_("Date object is formatted as yyyy-MM-dd", normalizePeriodDate_(d, "Europe/Moscow"), "2026-06-22");
+  Logger.log("[PASS] normalizePeriodDate_ formats Date objects to yyyy-MM-dd");
+}
+
+function test_normalizePeriodDate_respectsSpreadsheetTimeZoneNearBoundary() {
+  // 22:00 UTC on 2026-06-21 is already 2026-06-22 01:00 in Europe/Moscow
+  // (UTC+3). If the code ever formatted using UTC (or the wrong time zone)
+  // instead of the spreadsheet's own zone, this would resolve to the wrong
+  // calendar day and silently break the period match again.
+  var nearMidnightMoscow = new Date(Date.UTC(2026, 5, 21, 22, 0, 0));
+  assert_("boundary date resolves to the Moscow calendar day, not the UTC day",
+    normalizePeriodDate_(nearMidnightMoscow, "Europe/Moscow"), "2026-06-22");
+  Logger.log("[PASS] normalizePeriodDate_ uses the given time zone, not UTC, for boundary dates");
+}
+
+function test_findRowByPeriod_findsRowWhenStoredAsPlainStrings() {
+  var sheet = new FakeSheet_(HEADERS);
+  var seed = HEADERS.map(function() { return ""; });
+  seed[HEADERS.indexOf("period_start")] = "2026-06-22";
+  seed[HEADERS.indexOf("period_end")] = "2026-06-29";
+  sheet.appendRow(seed);
+
+  var row = findRowByPeriod_(sheet, "2026-06-22", "2026-06-29", HEADERS);
+  assert_("finds the row when period cells are plain strings", row, 2);
+  Logger.log("[PASS] findRowByPeriod_ finds a row whose period cells are plain strings");
+}
+
+function test_findRowByPeriod_findsRowWhenStoredAsDateObjects() {
+  var sheet = new FakeSheet_(HEADERS);
+  // Simulates what Google Sheets actually does to a written "yyyy-MM-dd"
+  // string: silently stores it as a Date, regardless of how it displays.
+  var seed = HEADERS.map(function() { return ""; });
+  seed[HEADERS.indexOf("period_start")] = new Date(Date.UTC(2026, 5, 22, 0, 0, 0));
+  seed[HEADERS.indexOf("period_end")] = new Date(Date.UTC(2026, 5, 29, 0, 0, 0));
+  sheet.appendRow(seed);
+
+  var row = findRowByPeriod_(sheet, "2026-06-22", "2026-06-29", HEADERS);
+  assert_("finds the row even when Sheets auto-converted the period to Date objects", row, 2);
+  Logger.log("[PASS] findRowByPeriod_ finds a row whose period cells were auto-converted to Date objects");
+}
+
+function test_findRowByPeriod_findsCorrectRowAmongMixedStringAndDateRows() {
+  var sheet = new FakeSheet_(HEADERS);
+  var stringRow = HEADERS.map(function() { return ""; });
+  stringRow[HEADERS.indexOf("period_start")] = "2026-06-15";
+  stringRow[HEADERS.indexOf("period_end")] = "2026-06-22";
+  sheet.appendRow(stringRow);
+
+  var dateRow = HEADERS.map(function() { return ""; });
+  dateRow[HEADERS.indexOf("period_start")] = new Date(Date.UTC(2026, 5, 22, 0, 0, 0));
+  dateRow[HEADERS.indexOf("period_end")] = new Date(Date.UTC(2026, 5, 29, 0, 0, 0));
+  sheet.appendRow(dateRow);
+
+  var row = findRowByPeriod_(sheet, "2026-06-22", "2026-06-29", HEADERS);
+  assert_("picks row 3 (the Date-typed one), not row 2", row, 3);
+  Logger.log("[PASS] findRowByPeriod_ matches the correct row among mixed string/Date period cells");
+}
+
+function test_upsertRow_updatesExistingRowEvenWhenPeriodStoredAsDate() {
+  var sheet = new FakeSheet_(HEADERS);
+  var period = { start: "2026-06-22", end: "2026-06-29", label: "2026-06-22 – 2026-06-28" };
+
+  // Reproduces the exact production defect: an earlier sync left the period
+  // cells as Date objects (Sheets auto-conversion), and a resync must still
+  // update this row instead of appending a duplicate.
+  var seed = HEADERS.map(function() { return ""; });
+  seed[HEADERS.indexOf("period_start")] = new Date(Date.UTC(2026, 5, 22, 0, 0, 0));
+  seed[HEADERS.indexOf("period_end")] = new Date(Date.UTC(2026, 5, 29, 0, 0, 0));
+  seed[HEADERS.indexOf("new_anon_users")] = 6;
+  sheet.appendRow(seed);
+
+  upsertRow_(sheet, buildFakeSyncMetrics_(6), period);
+
+  assert_("no duplicate row created when the existing period was stored as a Date", sheet.getLastRow(), 2);
+  Logger.log("[PASS] upsertRow_ updates the existing row in place even when Sheets stored the period as a Date");
 }
 
 function test_upsertRow_noDuplicateOnResync() {
@@ -674,6 +783,14 @@ function runAllTests() {
     test_buildRow_featureMetricsDefaultToZeroWhenAbsent();
     test_buildRow_manualColsEmptyWhenNoExistingRow();
     test_findRowByPeriod_returnsMinusOneWhenEmpty();
+    test_normalizePeriodDate_passesThroughStrings();
+    test_normalizePeriodDate_handlesNullOrUndefined();
+    test_normalizePeriodDate_formatsDateObjects();
+    test_normalizePeriodDate_respectsSpreadsheetTimeZoneNearBoundary();
+    test_findRowByPeriod_findsRowWhenStoredAsPlainStrings();
+    test_findRowByPeriod_findsRowWhenStoredAsDateObjects();
+    test_findRowByPeriod_findsCorrectRowAmongMixedStringAndDateRows();
+    test_upsertRow_updatesExistingRowEvenWhenPeriodStoredAsDate();
     test_upsertRow_noDuplicateOnResync();
     test_upsertRow_differentPeriodsAppendSeparateRows();
     test_ensurePostHogHeaders_migratesOldSheetPreservingData();

@@ -639,6 +639,20 @@ function buildRow_(m, period, headers, existingData) {
   return headers.map(function(h) { return h in data ? data[h] : ""; });
 }
 
+// Google Sheets auto-detects a written "yyyy-MM-dd" string and stores the
+// cell as a real Date, even though it keeps displaying/left-aligning like
+// text. getValues() then returns a JS Date object for that cell instead of
+// the original string, so a naive String(cell) comparison against the
+// plain-string period never matches. This normalizes either shape to the
+// same "yyyy-MM-dd" using the spreadsheet's own time zone (not the script's
+// default one, which is not guaranteed to match).
+function normalizePeriodDate_(value, timeZone) {
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, timeZone, "yyyy-MM-dd");
+  }
+  return String(value == null ? "" : value).trim();
+}
+
 function findRowByPeriod_(sheet, periodStart, periodEnd, headers) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return -1;
@@ -647,11 +661,13 @@ function findRowByPeriod_(sheet, periodStart, periodEnd, headers) {
   var eIdx = headers.indexOf("period_end");
   if (sIdx < 0 || eIdx < 0) return -1;
 
+  var timeZone = sheet.getParent().getSpreadsheetTimeZone();
   var sVals = sheet.getRange(2, sIdx + 1, lastRow - 1, 1).getValues();
   var eVals = sheet.getRange(2, eIdx + 1, lastRow - 1, 1).getValues();
 
   for (var i = 0; i < sVals.length; i++) {
-    if (String(sVals[i][0]) === periodStart && String(eVals[i][0]) === periodEnd) {
+    if (normalizePeriodDate_(sVals[i][0], timeZone) === periodStart &&
+        normalizePeriodDate_(eVals[i][0], timeZone) === periodEnd) {
       return i + 2;
     }
   }
