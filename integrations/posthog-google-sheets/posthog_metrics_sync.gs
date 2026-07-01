@@ -483,7 +483,7 @@ function getOrCreateMetricsSheet_() {
 }
 
 function upsertRow_(sheet, m, period) {
-  ensureHeaders_(sheet);
+  ensurePostHogHeaders_(sheet);
 
   var colCount = Math.max(sheet.getLastColumn(), HEADERS.length);
   var rawHeaders = sheet.getRange(1, 1, 1, colCount).getValues()[0];
@@ -556,7 +556,7 @@ function findRowByPeriod_(sheet, periodStart, periodEnd, headers) {
   return -1;
 }
 
-function ensureHeaders_(sheet) {
+function ensurePostHogHeaders_(sheet) {
   if (sheet.getLastRow() === 0) {
     sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
     sheet.setFrozenRows(1);
