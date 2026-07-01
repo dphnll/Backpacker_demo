@@ -192,6 +192,103 @@ function test_inSubquery_acceptsAllAllowedSchemaVersions() {
 }
 
 // =============================================================================
+// Feature-adoption metrics (buildFeatureMetricsQuery_ / parseFeatureMetricsRow_)
+// =============================================================================
+
+function test_buildFeatureMetricsQuery_containsAllFiveEvents() {
+  var q = buildFeatureMetricsQuery_("2026-06-19", "2026-06-26");
+  ["item_created", "share_completed", "export_completed", "export_failed", "item_form_reset"].forEach(function(evt) {
+    if (q.indexOf(evt) === -1) {
+      throw new Error("[FAIL] buildFeatureMetricsQuery_ is missing event: " + evt);
+    }
+  });
+  Logger.log("[PASS] buildFeatureMetricsQuery_ references all five events");
+}
+
+function test_buildFeatureMetricsQuery_onlyCurrentSchemaVersion() {
+  var q = buildFeatureMetricsQuery_("2026-06-19", "2026-06-26");
+  if (q.indexOf("'" + SCHEMA_VERSION + "'") === -1) {
+    throw new Error("[FAIL] buildFeatureMetricsQuery_ does not filter the current schema version");
+  }
+  if (q.indexOf("2026-06-25.1") !== -1) {
+    throw new Error("[FAIL] buildFeatureMetricsQuery_ must not include the historical schema version — these events never existed under it");
+  }
+  if (q.indexOf("analytics_schema_version IN (") !== -1) {
+    throw new Error("[FAIL] buildFeatureMetricsQuery_ must filter one exact schema version, not the core allow-list");
+  }
+  Logger.log("[PASS] buildFeatureMetricsQuery_ targets only the current schema version");
+}
+
+function test_buildFeatureMetricsQuery_isSingleQueryNotFiveScalars() {
+  // A single query returns five named aggregates in one SELECT — verified by
+  // checking all five "AS <name>" aliases are present in one query string.
+  var q = buildFeatureMetricsQuery_("2026-06-19", "2026-06-26");
+  ["users_item_copied", "users_text_share_completed", "users_pdf_export_completed", "pdf_export_failed_events", "users_item_form_reset"].forEach(function(alias) {
+    if (q.indexOf("AS " + alias) === -1) {
+      throw new Error("[FAIL] buildFeatureMetricsQuery_ is missing aggregate alias: " + alias);
+    }
+  });
+  Logger.log("[PASS] buildFeatureMetricsQuery_ computes all five metrics in one query");
+}
+
+function test_buildFeatureMetricsQuery_noCredentials() {
+  var q = buildFeatureMetricsQuery_("2026-06-19", "2026-06-26");
+  ["phx_", "phc_", "Bearer", "Authorization"].forEach(function(token) {
+    if (q.indexOf(token) !== -1) {
+      throw new Error("[FAIL] buildFeatureMetricsQuery_ leaks credentials: " + token);
+    }
+  });
+  Logger.log("[PASS] buildFeatureMetricsQuery_ does not contain credentials");
+}
+
+function test_parseFeatureMetricsRow_mapsValuesInOrder() {
+  var parsed = parseFeatureMetricsRow_([3, 5, 2, 1, 4]);
+  assert_("users_item_copied",          parsed.users_item_copied,          3);
+  assert_("users_text_share_completed", parsed.users_text_share_completed, 5);
+  assert_("users_pdf_export_completed", parsed.users_pdf_export_completed, 2);
+  assert_("pdf_export_failed_events",   parsed.pdf_export_failed_events,   1);
+  assert_("users_item_form_reset",      parsed.users_item_form_reset,      4);
+  Logger.log("[PASS] parseFeatureMetricsRow_ maps values in order");
+}
+
+function test_parseFeatureMetricsRow_missingRowDefaultsToZero() {
+  var parsed = parseFeatureMetricsRow_([]);
+  NEW_FEATURE_COLUMNS.forEach(function(key) {
+    assert_(key + " defaults to 0 when no events exist", parsed[key], 0);
+  });
+  var parsedUndefined = parseFeatureMetricsRow_(undefined);
+  NEW_FEATURE_COLUMNS.forEach(function(key) {
+    assert_(key + " defaults to 0 for an undefined row", parsedUndefined[key], 0);
+  });
+  Logger.log("[PASS] parseFeatureMetricsRow_ never throws on empty results — defaults to 0");
+}
+
+// =============================================================================
+// HEADERS layout and privacy
+// =============================================================================
+
+function test_HEADERS_featureColumnsBeforeManualColumns() {
+  var manualIdx = HEADERS.indexOf("main_observation");
+  if (manualIdx === -1) throw new Error("[FAIL] HEADERS is missing main_observation");
+  NEW_FEATURE_COLUMNS.forEach(function(name) {
+    var idx = HEADERS.indexOf(name);
+    if (idx === -1) throw new Error("[FAIL] HEADERS is missing feature column: " + name);
+    if (idx >= manualIdx) throw new Error("[FAIL] feature column '" + name + "' is not positioned before the manual columns");
+  });
+  Logger.log("[PASS] all feature columns sit before the manual columns");
+}
+
+function test_HEADERS_neverContainsPII() {
+  var forbidden = ["anon_user_id", "session_id", "trip_id", "item_id", "telegram_user_id", "username", "phone", "email"];
+  HEADERS.forEach(function(h) {
+    if (forbidden.indexOf(h) !== -1) {
+      throw new Error("[FAIL] HEADERS contains a forbidden PII column: " + h);
+    }
+  });
+  Logger.log("[PASS] HEADERS contains no PII column names");
+}
+
+// =============================================================================
 // buildRow_
 // =============================================================================
 
@@ -251,6 +348,45 @@ function test_buildRow_overwritesMetricColumns() {
   var nauIdx = HEADERS.indexOf("new_anon_users");
   assert_("new_anon_users updated to 99", row[nauIdx], 99);
   Logger.log("[PASS] buildRow_ overwrites metric columns");
+}
+
+function test_buildRow_includesFeatureMetrics() {
+  var period = { start: "2026-06-19", end: "2026-06-26", label: "2026-06-19 – 2026-06-25" };
+  var metrics = {
+    new_anon_users: 10, first_value_funnel_started: 5, first_value_funnel_completed: 2,
+    first_value_conversion_7d_pct: 40, working_plan_funnel_started: 2,
+    working_plan_funnel_completed: 1, working_plan_conversion_14d_pct: 50,
+    trainer_users: 8, trainer_action_users: 6, trainer_to_own_trip_7d: 3,
+    users_trip_first_value_reached: 2, users_trip_working_plan_reached: 1,
+    app_versions: "1.1.2.4",
+    users_item_copied: 3, users_text_share_completed: 5, users_pdf_export_completed: 2,
+    pdf_export_failed_events: 1, users_item_form_reset: 4
+  };
+  var row = buildRow_(metrics, period, HEADERS, null);
+  assert_("users_item_copied placed correctly",          row[HEADERS.indexOf("users_item_copied")],          3);
+  assert_("users_text_share_completed placed correctly", row[HEADERS.indexOf("users_text_share_completed")], 5);
+  assert_("users_pdf_export_completed placed correctly", row[HEADERS.indexOf("users_pdf_export_completed")], 2);
+  assert_("pdf_export_failed_events placed correctly",   row[HEADERS.indexOf("pdf_export_failed_events")],   1);
+  assert_("users_item_form_reset placed correctly",      row[HEADERS.indexOf("users_item_form_reset")],      4);
+  Logger.log("[PASS] buildRow_ includes feature metrics at the right columns");
+}
+
+function test_buildRow_featureMetricsDefaultToZeroWhenAbsent() {
+  var period = { start: "2026-06-19", end: "2026-06-26", label: "2026-06-19 – 2026-06-25" };
+  // Deliberately omit the five feature keys, as older callers/tests would.
+  var metrics = {
+    new_anon_users: 1, first_value_funnel_started: 0, first_value_funnel_completed: 0,
+    first_value_conversion_7d_pct: 0, working_plan_funnel_started: 0,
+    working_plan_funnel_completed: 0, working_plan_conversion_14d_pct: 0,
+    trainer_users: 0, trainer_action_users: 0, trainer_to_own_trip_7d: 0,
+    users_trip_first_value_reached: 0, users_trip_working_plan_reached: 0,
+    app_versions: ""
+  };
+  var row = buildRow_(metrics, period, HEADERS, null);
+  NEW_FEATURE_COLUMNS.forEach(function(name) {
+    assert_(name + " defaults to 0 when absent from metrics", row[HEADERS.indexOf(name)], 0);
+  });
+  Logger.log("[PASS] buildRow_ defaults missing feature metrics to 0, never throws");
 }
 
 function test_buildRow_manualColsEmptyWhenNoExistingRow() {
@@ -334,6 +470,21 @@ FakeSheet_.prototype.appendRow = function(row) {
   this.rows.push(row.slice());
 };
 
+// Mirrors Sheet.insertColumnsBefore(beforePosition, howMany): every row
+// (header and data alike) gets `numCols` blank cells spliced in at
+// `colIndex` (1-based), shifting existing values right — nothing is lost.
+FakeSheet_.prototype.insertColumnsBefore = function(colIndex, numCols) {
+  var insertAt = colIndex - 1;
+  this.rows = this.rows.map(function(row) {
+    var copy = row.slice();
+    while (copy.length < insertAt) copy.push("");
+    var blanks = [];
+    for (var i = 0; i < numCols; i++) blanks.push("");
+    copy.splice.apply(copy, [insertAt, 0].concat(blanks));
+    return copy;
+  });
+};
+
 function buildFakeSyncMetrics_(newAnonUsers) {
   return {
     new_anon_users: newAnonUsers, first_value_funnel_started: 1, first_value_funnel_completed: 1,
@@ -369,6 +520,106 @@ function test_upsertRow_differentPeriodsAppendSeparateRows() {
   upsertRow_(sheet, buildFakeSyncMetrics_(20), periodB);
   assert_("two distinct periods produce two data rows", sheet.getLastRow(), 3);
   Logger.log("[PASS] upsertRow_ appends a new row for a different period");
+}
+
+// =============================================================================
+// ensurePostHogHeaders_ — migrating a sheet synced before the feature columns
+// =============================================================================
+
+var OLD_HEADERS_PRE_FEATURE_COLUMNS = [
+  "period_start", "period_end", "period_label", "synced_at", "new_anon_users",
+  "first_value_funnel_started", "first_value_funnel_completed", "first_value_conversion_7d_pct",
+  "working_plan_funnel_started", "working_plan_funnel_completed", "working_plan_conversion_14d_pct",
+  "trainer_users", "trainer_action_users", "trainer_to_own_trip_7d",
+  "users_trip_first_value_reached", "users_trip_working_plan_reached", "app_versions",
+  "main_observation", "main_problem", "decision_for_next_week"
+];
+
+function test_ensurePostHogHeaders_migratesOldSheetPreservingData() {
+  var sheet = new FakeSheet_(OLD_HEADERS_PRE_FEATURE_COLUMNS);
+  sheet.appendRow([
+    "2026-06-19", "2026-06-26", "2026-06-19 – 2026-06-25", "2026-06-26 07:00:00",
+    10, 5, 2, 40, 2, 1, 50, 8, 6, 3, 2, 1, "1.1.2.0",
+    "Old observation", "Old problem", "Old decision"
+  ]);
+
+  ensurePostHogHeaders_(sheet);
+
+  var newHeaders = sheet.rows[0];
+  var manualIdx = newHeaders.indexOf("main_observation");
+  NEW_FEATURE_COLUMNS.forEach(function(name) {
+    var idx = newHeaders.indexOf(name);
+    if (idx === -1) throw new Error("[FAIL] migration did not add header: " + name);
+    if (idx >= manualIdx) throw new Error("[FAIL] migrated header '" + name + "' is not before main_observation");
+  });
+
+  var dataRow = sheet.rows[1];
+  assert_("main_observation preserved after migration", dataRow[newHeaders.indexOf("main_observation")], "Old observation");
+  assert_("main_problem preserved after migration",      dataRow[newHeaders.indexOf("main_problem")],      "Old problem");
+  assert_("decision_for_next_week preserved after migration", dataRow[newHeaders.indexOf("decision_for_next_week")], "Old decision");
+  assert_("existing core metric preserved after migration (new_anon_users)", dataRow[newHeaders.indexOf("new_anon_users")], 10);
+  assert_("existing core metric preserved after migration (app_versions)", dataRow[newHeaders.indexOf("app_versions")], "1.1.2.0");
+  Logger.log("[PASS] ensurePostHogHeaders_ migrates an old sheet without losing any data");
+}
+
+function test_ensurePostHogHeaders_migrationIsIdempotent() {
+  var sheet = new FakeSheet_(OLD_HEADERS_PRE_FEATURE_COLUMNS);
+  sheet.appendRow(OLD_HEADERS_PRE_FEATURE_COLUMNS.map(function() { return "x"; }));
+
+  ensurePostHogHeaders_(sheet);
+  var widthAfterFirstMigration = sheet.rows[0].length;
+  ensurePostHogHeaders_(sheet);
+  ensurePostHogHeaders_(sheet);
+
+  assert_("header width unchanged on repeated migration calls", sheet.rows[0].length, widthAfterFirstMigration);
+  assert_("new headers created exactly once (no duplicate columns)", sheet.rows[0].length, OLD_HEADERS_PRE_FEATURE_COLUMNS.length + NEW_FEATURE_COLUMNS.length);
+  Logger.log("[PASS] ensurePostHogHeaders_ migration is idempotent");
+}
+
+function test_ensurePostHogHeaders_freshSheetGetsFullHeaderRowOnce() {
+  var sheet = new FakeSheet_([]);
+  sheet.rows = [[]]; // simulate a brand-new, fully empty sheet (getLastRow() === 0)
+  var originalGetLastRow = sheet.getLastRow;
+  sheet.getLastRow = function() { return 0; };
+
+  ensurePostHogHeaders_(sheet);
+  sheet.getLastRow = originalGetLastRow;
+
+  assert_("fresh sheet gets the full current HEADERS row", sheet.rows[0].length, HEADERS.length);
+  NEW_FEATURE_COLUMNS.forEach(function(name) {
+    if (sheet.rows[0].indexOf(name) === -1) throw new Error("[FAIL] fresh sheet header row is missing: " + name);
+  });
+  Logger.log("[PASS] ensurePostHogHeaders_ writes the full header row once for a brand-new sheet");
+}
+
+function test_upsertRow_afterMigrationWritesFeatureMetricsIntoCorrectColumns() {
+  var sheet = new FakeSheet_(OLD_HEADERS_PRE_FEATURE_COLUMNS);
+  var period = { start: "2026-06-19", end: "2026-06-26", label: "2026-06-19 – 2026-06-25" };
+  sheet.appendRow([
+    period.start, period.end, period.label, "2026-06-26 07:00:00",
+    10, 5, 2, 40, 2, 1, 50, 8, 6, 3, 2, 1, "1.1.2.0",
+    "Old observation", "", ""
+  ]);
+
+  var metrics = buildFakeSyncMetrics_(12);
+  metrics.users_item_copied = 7;
+  metrics.users_text_share_completed = 9;
+  metrics.users_pdf_export_completed = 6;
+  metrics.pdf_export_failed_events = 2;
+  metrics.users_item_form_reset = 3;
+
+  upsertRow_(sheet, metrics, period);
+
+  var headers = sheet.rows[0];
+  var dataRow = sheet.rows[1];
+  assert_("no duplicate row created by migration + upsert", sheet.getLastRow(), 2);
+  assert_("users_item_copied written after migration", dataRow[headers.indexOf("users_item_copied")], 7);
+  assert_("users_text_share_completed written after migration", dataRow[headers.indexOf("users_text_share_completed")], 9);
+  assert_("users_pdf_export_completed written after migration", dataRow[headers.indexOf("users_pdf_export_completed")], 6);
+  assert_("pdf_export_failed_events written after migration", dataRow[headers.indexOf("pdf_export_failed_events")], 2);
+  assert_("users_item_form_reset written after migration", dataRow[headers.indexOf("users_item_form_reset")], 3);
+  assert_("manual observation preserved through migration + upsert", dataRow[headers.indexOf("main_observation")], "Old observation");
+  Logger.log("[PASS] upsertRow_ writes feature metrics into the right columns right after migration");
 }
 
 // =============================================================================
@@ -408,13 +659,27 @@ function runAllTests() {
     test_inSubquery_noAnonymousIds();
     test_inSubquery_containsEvent();
     test_inSubquery_acceptsAllAllowedSchemaVersions();
+    test_buildFeatureMetricsQuery_containsAllFiveEvents();
+    test_buildFeatureMetricsQuery_onlyCurrentSchemaVersion();
+    test_buildFeatureMetricsQuery_isSingleQueryNotFiveScalars();
+    test_buildFeatureMetricsQuery_noCredentials();
+    test_parseFeatureMetricsRow_mapsValuesInOrder();
+    test_parseFeatureMetricsRow_missingRowDefaultsToZero();
+    test_HEADERS_featureColumnsBeforeManualColumns();
+    test_HEADERS_neverContainsPII();
     test_buildRow_lengthMatchesHeaders();
     test_buildRow_preservesManualColumns();
     test_buildRow_overwritesMetricColumns();
+    test_buildRow_includesFeatureMetrics();
+    test_buildRow_featureMetricsDefaultToZeroWhenAbsent();
     test_buildRow_manualColsEmptyWhenNoExistingRow();
     test_findRowByPeriod_returnsMinusOneWhenEmpty();
     test_upsertRow_noDuplicateOnResync();
     test_upsertRow_differentPeriodsAppendSeparateRows();
+    test_ensurePostHogHeaders_migratesOldSheetPreservingData();
+    test_ensurePostHogHeaders_migrationIsIdempotent();
+    test_ensurePostHogHeaders_freshSheetGetsFullHeaderRowOnce();
+    test_upsertRow_afterMigrationWritesFeatureMetricsIntoCorrectColumns();
     test_noCredentialsInSQLHelpers();
     Logger.log("=== ALL TESTS PASSED ===");
   } catch (e) {

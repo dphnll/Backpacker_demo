@@ -1,0 +1,9 @@
+# clasp / Apps Script credentials — never commit
+.clasp.json
+.clasprc.json
+client_secret*.json
+*.oauth-token.json
+*credentials*.json
+
+# temporary clasp pull backups (see integrations/posthog-google-sheets/.remote-backup/)
+.remote-backup/

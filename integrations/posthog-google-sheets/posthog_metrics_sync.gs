@@ -30,6 +30,17 @@ var DEFAULT_SCHEMA_VERSIONS = ["2026-06-25.1", "2026-07-01.1"];
 
 var MANUAL_COLS = ["main_observation", "main_problem", "decision_for_next_week"];
 
+// Minimal feature-adoption columns (July observation release). These count
+// only the current analytics_schema_version — the underlying events never
+// existed under the older schema, so there is nothing to backfill.
+var NEW_FEATURE_COLUMNS = [
+  "users_item_copied",
+  "users_text_share_completed",
+  "users_pdf_export_completed",
+  "pdf_export_failed_events",
+  "users_item_form_reset"
+];
+
 var HEADERS = [
   "period_start",
   "period_end",
@@ -48,6 +59,11 @@ var HEADERS = [
   "users_trip_first_value_reached",
   "users_trip_working_plan_reached",
   "app_versions",
+  "users_item_copied",
+  "users_text_share_completed",
+  "users_pdf_export_completed",
+  "pdf_export_failed_events",
+  "users_item_form_reset",
   "main_observation",
   "main_problem",
   "decision_for_next_week"
@@ -171,6 +187,8 @@ function runSync_(previewOnly) {
     var cfg    = loadConfig_();
     var period = previousISOWeek_();
     var m      = fetchAllMetrics_(cfg, period.start, period.end);
+    var fm     = fetchFeatureMetrics_(cfg, period.start, period.end);
+    NEW_FEATURE_COLUMNS.forEach(function(key) { m[key] = fm[key]; });
 
     if (previewOnly) {
       if (ui) showPreview_(m, period);
@@ -215,6 +233,12 @@ function showPreview_(m, period) {
     "users_trip_first_value_reached:   " + m.users_trip_first_value_reached,
     "users_trip_working_plan_reached:  " + m.users_trip_working_plan_reached,
     "app_versions:                     " + m.app_versions,
+    "",
+    "users_item_copied:                " + m.users_item_copied,
+    "users_text_share_completed:       " + m.users_text_share_completed,
+    "users_pdf_export_completed:       " + m.users_pdf_export_completed,
+    "pdf_export_failed_events:         " + m.pdf_export_failed_events,
+    "users_item_form_reset:            " + m.users_item_form_reset,
     "",
     "[PREVIEW — nothing was written]"
   ];
@@ -370,6 +394,49 @@ function fetchAllMetrics_(cfg, start, end) {
     users_trip_working_plan_reached: wp_completed,
     app_versions:                    versions
   };
+}
+
+// ── Feature-adoption metrics (single combined query) ────────────────────────
+// All five feature columns come from one HogQL request instead of five
+// separate ones — they only count the current analytics_schema_version,
+// since these events never existed under the older schema.
+function buildFeatureMetricsQuery_(start, end) {
+  return [
+    "SELECT",
+    "  countDistinctIf(distinct_id, event = 'item_created' AND properties.creation_method = 'copy') AS users_item_copied,",
+    "  countDistinctIf(distinct_id, event = 'share_completed' AND properties.share_format = 'text' AND (properties.share_context = 'trip' OR isNull(properties.share_context))) AS users_text_share_completed,",
+    "  countDistinctIf(distinct_id, event = 'export_completed' AND properties.export_type = 'trip_pdf') AS users_pdf_export_completed,",
+    "  countIf(event = 'export_failed' AND properties.export_type = 'trip_pdf') AS pdf_export_failed_events,",
+    "  countDistinctIf(distinct_id, event = 'item_form_reset') AS users_item_form_reset",
+    "FROM events",
+    "WHERE properties.environment = 'production'",
+    "  AND properties.is_internal_user = false",
+    "  AND properties.is_test_user = false",
+    "  AND properties.analytics_schema_version = '" + SCHEMA_VERSION + "'",
+    "  AND event IN ('item_created', 'share_completed', 'export_completed', 'export_failed', 'item_form_reset')",
+    "  AND toDate(timestamp) >= toDate('" + start + "')",
+    "  AND toDate(timestamp) <  toDate('" + end + "')"
+  ].join("\n");
+}
+
+// Maps a single HogQL result row (in the exact column order of the query
+// above) to a named object. Missing/short rows default every value to 0
+// instead of throwing, matching "no events yet" behavior everywhere else.
+function parseFeatureMetricsRow_(row) {
+  var r = row || [];
+  return {
+    users_item_copied:          Number(r[0]) || 0,
+    users_text_share_completed: Number(r[1]) || 0,
+    users_pdf_export_completed: Number(r[2]) || 0,
+    pdf_export_failed_events:   Number(r[3]) || 0,
+    users_item_form_reset:      Number(r[4]) || 0
+  };
+}
+
+function fetchFeatureMetrics_(cfg, start, end) {
+  var res = runHogQL_(cfg, buildFeatureMetricsQuery_(start, end));
+  var row = (res && res.results && res.results[0]) ? res.results[0] : [];
+  return parseFeatureMetricsRow_(row);
 }
 
 // Reads the ANALYTICS_SCHEMA_VERSIONS Script Property (comma-separated) and
@@ -551,7 +618,12 @@ function buildRow_(m, period, headers, existingData) {
     "trainer_to_own_trip_7d":         m.trainer_to_own_trip_7d,
     "users_trip_first_value_reached": m.users_trip_first_value_reached,
     "users_trip_working_plan_reached":m.users_trip_working_plan_reached,
-    "app_versions":                   m.app_versions
+    "app_versions":                   m.app_versions,
+    "users_item_copied":              m.users_item_copied || 0,
+    "users_text_share_completed":     m.users_text_share_completed || 0,
+    "users_pdf_export_completed":     m.users_pdf_export_completed || 0,
+    "pdf_export_failed_events":       m.pdf_export_failed_events || 0,
+    "users_item_form_reset":          m.users_item_form_reset || 0
   };
 
   // Preserve manual columns from existing row
@@ -590,7 +662,29 @@ function ensurePostHogHeaders_(sheet) {
   if (sheet.getLastRow() === 0) {
     sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
     sheet.setFrozenRows(1);
+    return;
   }
+  migrateMissingFeatureHeaders_(sheet);
+}
+
+// A sheet synced before this release has the old header row (no feature
+// columns). Insert only the columns that are actually missing, right before
+// the manual columns, using insertColumnsBefore so every existing row
+// (including manual notes) shifts right intact — no data is copied by hand,
+// nothing is deleted, and re-running this is a no-op once headers match.
+function migrateMissingFeatureHeaders_(sheet) {
+  var lastCol = sheet.getLastColumn();
+  var currentHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) { return String(h); });
+  var missing = NEW_FEATURE_COLUMNS.filter(function(name) { return currentHeaders.indexOf(name) === -1; });
+  if (missing.length === 0) return;
+
+  var manualColIndex = currentHeaders.indexOf("main_observation") + 1; // 1-based
+  if (manualColIndex <= 0) {
+    sheet.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]);
+    return;
+  }
+  sheet.insertColumnsBefore(manualColIndex, missing.length);
+  sheet.getRange(1, manualColIndex, 1, missing.length).setValues([missing]);
 }
 
 // =============================================================================

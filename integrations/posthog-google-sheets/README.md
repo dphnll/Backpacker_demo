@@ -86,16 +86,30 @@ The trigger is idempotent: re-syncing the same period updates the existing row i
 | `users_trip_first_value_reached` | = `first_value_funnel_completed` |
 | `users_trip_working_plan_reached` | = `working_plan_funnel_completed` |
 | `app_versions` | Comma-separated distinct `app_version` values in period |
+| `users_item_copied` | Unique users with `item_created`, `creation_method=copy` (current schema only) |
+| `users_text_share_completed` | Unique users with `share_completed`, `share_format=text` (current schema only) |
+| `users_pdf_export_completed` | Unique users with `export_completed`, `export_type=trip_pdf` (current schema only) |
+| `pdf_export_failed_events` | **Event count** (not unique users) of `export_failed`, `export_type=trip_pdf` (current schema only) |
+| `users_item_form_reset` | Unique users with `item_form_reset` (current schema only) |
 | `main_observation` | **Manual** — preserved on re-sync |
 | `main_problem` | **Manual** — preserved on re-sync |
 | `decision_for_next_week` | **Manual** — preserved on re-sync |
+
+The five feature columns are a compact weekly product review, not a copy of PostHog. Deeper breakdowns (copy destination type, share method, PDF composition, navigation, etc.) live only in PostHog — see `POSTHOG_FEATURE_INSIGHTS.md` at the repo root.
 
 ## Filters applied to all metrics
 
 - `environment = production`
 - `is_internal_user = false`
 - `is_test_user = false`
-- `analytics_schema_version = 2026-06-25.1`
+
+Core metrics (everything above `app_versions`) accept every schema version listed in `ANALYTICS_SCHEMA_VERSIONS` (falls back to `2026-06-25.1` and `2026-07-01.1` when that Script Property is unset), so the weekly sync keeps counting events across a schema transition.
+
+The five feature columns filter `analytics_schema_version = 2026-07-01.1` only — those events never existed under the older schema, so there is nothing to include from it.
+
+## Migrating a sheet synced before the feature columns
+
+If `PostHog_метрики` already has rows from before this release, the next sync automatically inserts the five feature columns right before `main_observation` (via `insertColumnsBefore`), shifting the manual columns — and their existing text — to the right. No existing row or manual note is deleted. This runs once; if the columns are already present, nothing happens.
 
 ## Data privacy
 
