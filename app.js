@@ -14,8 +14,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.4";
-const APP_RELEASE_SUMMARY = "патч PDF поездки: действия с PDF разделены на отдельные кнопки «Скачать» и «Поделиться» с общими настройками экспорта.";
+const APP_VERSION = "1.1.2.5";
+const APP_RELEASE_SUMMARY = "патч PDF поездки: карточки в PDF приведены ближе к каноническому виду карточек в интерфейсе приложения.";
 const DONATION_FLOW_ENABLED = false;
 const DONATION_URL = ANALYTICS_CONFIG.donationUrl || "https://t.me/bckpckrbot?start=donate";
 const DEFAULT_ITEM_STATUS = "want";
@@ -3085,6 +3085,59 @@ async function buildTripPdfBlob(options) {
     ctx.textBaseline = "alphabetic";
   }
 
+  function drawPdfSlot(x, slotY, width, text, fill) {
+    ctx.fillStyle = fill;
+    roundRect(ctx, x, slotY, width, 26, 4);
+    ctx.fill();
+    ctx.fillStyle = "#1f2423";
+    ctx.font = "500 14px Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x + width / 2, slotY + 13);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+  }
+
+  function drawPdfTimeSlots(item, x, slotY, fill) {
+    const start = splitTimeSlots(item.startTime);
+    const end = splitTimeSlots(getEndTime(item.startTime, item.durationMinutes));
+    const slotWidth = 31;
+    const gap = 5;
+    drawPdfSlot(x, slotY, slotWidth, start[0], fill);
+    drawPdfSlot(x + slotWidth + gap, slotY, slotWidth, start[1], fill);
+    ctx.fillStyle = getPdfTypeColor(item.type);
+    ctx.font = "500 16px Arial, sans-serif";
+    ctx.fillText("-", x + slotWidth * 2 + gap * 2 + 2, slotY + 18);
+    drawPdfSlot(x + slotWidth * 2 + gap * 3 + 13, slotY, slotWidth, end[0], fill);
+    drawPdfSlot(x + slotWidth * 3 + gap * 4 + 13, slotY, slotWidth, end[1], fill);
+  }
+
+  function drawPdfDateSlots(item, x, slotY, fill) {
+    const [day, month, year] = getItemDateSlots(item.date);
+    drawPdfSlot(x, slotY, 31, day, fill);
+    ctx.fillStyle = getPdfTypeColor(item.type);
+    ctx.font = "500 16px Arial, sans-serif";
+    ctx.fillText(".", x + 36, slotY + 18);
+    drawPdfSlot(x + 46, slotY, 31, month, fill);
+    ctx.fillText(".", x + 82, slotY + 18);
+    drawPdfSlot(x + 92, slotY, 68, year, fill);
+  }
+
+  function drawPdfPricePill(text, x, pillY, width) {
+    ctx.fillStyle = "rgba(255, 255, 255, 0.72)";
+    roundRect(ctx, x, pillY, width, 28, 4);
+    ctx.fill();
+    ctx.strokeStyle = "#6f7877";
+    ctx.stroke();
+    ctx.fillStyle = "#1f2423";
+    ctx.font = "800 13px Arial, sans-serif";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x + width - 8, pillY + 14);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+  }
+
   function drawPdfItem(item, x, itemY, width) {
     const headerHeight = 44;
     const bodyY = itemY + headerHeight;
@@ -3094,7 +3147,9 @@ async function buildTripPdfBlob(options) {
     const participant = getParticipantById(item.participantId);
     const showParticipantBadge = state.trip.participants.length > 1;
     const badgeX = x + width - padding - 18;
-    ctx.fillStyle = "#ffffff";
+    const accent = getPdfTypeColor(item.type);
+    const slotFill = getPdfTypeSlotColor(item.type);
+    ctx.fillStyle = getPdfTypeBodyColor(item.type);
     roundRect(ctx, x, itemY, width, height, 8);
     ctx.fill();
     ctx.strokeStyle = "#ded8cc";
@@ -3102,31 +3157,42 @@ async function buildTripPdfBlob(options) {
     ctx.save();
     roundRect(ctx, x, itemY, width, height, 8);
     ctx.clip();
-    ctx.fillStyle = getPdfTypeColor(item.type);
+    ctx.fillStyle = accent;
     ctx.fillRect(x, itemY, width, headerHeight);
     ctx.restore();
     ctx.fillStyle = "#ffffff";
-    ctx.font = "800 13px Arial, sans-serif";
-    drawPdfWrappedText(ctx, getTypeLabel(item.type), x + padding, itemY + 18, width - padding * 2, 15, 1);
+    ctx.font = "800 23px Arial, sans-serif";
+    ctx.fillText(getPdfTypeMark(item.type), x + padding + 2, itemY + 29);
+    const typeLabel = getTypeLabel(item.type).toUpperCase();
+    ctx.font = "800 18px Arial, sans-serif";
+    ctx.textAlign = "right";
+    ctx.fillText(typeLabel, x + width - padding, itemY + 28);
+    ctx.textAlign = "left";
+
+    const price = options.includeBudget && parseMoney(item.price) ? formatMoney(item.price) : "--";
+    const priceWidth = Math.max(78, Math.min(100, ctx.measureText(price).width + 20));
+    drawPdfPricePill(price, x + width - padding - priceWidth, bodyY + 17, priceWidth);
+
     ctx.fillStyle = "#1f2423";
     ctx.font = "800 14px Arial, sans-serif";
-    drawPdfWrappedText(ctx, item.title, x + padding, bodyY + 22, width - padding * 2 - 46, 17, 3);
-    drawPdfBadge(badgeX, bodyY + 21, 18, getPdfTypeColor(item.type), getPdfStatusMark(item.status));
+    drawPdfWrappedText(ctx, item.title, x + padding, bodyY + 22, width - padding * 2 - priceWidth - 10, 17, 2);
+    ctx.fillStyle = accent;
+    ctx.font = "900 italic 13px Arial, sans-serif";
+    ctx.fillText(formatDurationText(item.durationMinutes), x + padding, bodyY + 64);
+    drawPdfTimeSlots(item, x + padding, bodyY + 73, slotFill);
+    ctx.fillStyle = accent;
+    ctx.font = "900 italic 13px Arial, sans-serif";
+    ctx.fillText("Дата", x + padding, bodyY + 124);
+    drawPdfDateSlots(item, x + padding, bodyY + 133, slotFill);
+
+    drawPdfBadge(badgeX, bodyY + 87, 18, accent, getPdfStatusMark(item.status));
     if (showParticipantBadge) {
-      drawPdfBadge(badgeX, bodyY + 69, 18, getPdfParticipantColor(participant), participant.initials, "#1f2423");
+      drawPdfBadge(badgeX, bodyY + 134, 18, getPdfParticipantColor(participant), participant.initials, "#1f2423");
     }
-    ctx.font = "700 10px Arial, sans-serif";
-    ctx.fillStyle = "#66716f";
-    const details = [
-      item.startTime || "без времени",
-      formatDurationText(item.durationMinutes),
-      options.includeBudget && parseMoney(item.price) ? formatMoney(item.price) : "",
-    ].filter(Boolean).join(" · ");
-    drawPdfWrappedText(ctx, details, x + padding, bodyY + 86, width - padding * 2 - 46, 13, 3);
     if (options.includeNotes && item.notes) {
       ctx.font = "400 10px Arial, sans-serif";
       ctx.fillStyle = "#1f2423";
-      drawPdfWrappedText(ctx, item.notes, x + padding, bodyY + 132, width - padding * 2, 13, 4);
+      drawPdfWrappedText(ctx, item.notes, x + padding, bodyY + 182, width - padding * 2, 13, 4);
     }
   }
 
@@ -3208,9 +3274,9 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.closePath();
 }
 
-function getPdfTypeColor(type) {
-  return {
-    ticket: "#4fb986",
+  function getPdfTypeColor(type) {
+    return {
+      ticket: "#4fb986",
     stay: "#e8a51d",
     transport: "#1aaec3",
     excursion: "#e97725",
@@ -3219,8 +3285,50 @@ function getPdfTypeColor(type) {
     spa: "#8f4f6c",
     shopping: "#689d72",
     idea: "#d88d22",
-  }[type] || "#d88d22";
-}
+    }[type] || "#d88d22";
+  }
+
+  function getPdfTypeBodyColor(type) {
+    return {
+      ticket: "#ddf4e9",
+      stay: "#fff0c9",
+      transport: "#d7f4f7",
+      excursion: "#ffe1c8",
+      food: "#ffe0db",
+      place: "#d9f1f5",
+      spa: "#f0dde5",
+      shopping: "#e6f1e8",
+      idea: "#ffefcf",
+    }[type] || "#ffefcf";
+  }
+
+  function getPdfTypeSlotColor(type) {
+    return {
+      ticket: "#9ee1bf",
+      stay: "#ffd979",
+      transport: "#91e0ea",
+      excursion: "#ffb27a",
+      food: "#f6aaa0",
+      place: "#81d0de",
+      spa: "#c998ae",
+      shopping: "#a9d4b1",
+      idea: "#f0bf72",
+    }[type] || "#f0bf72";
+  }
+
+  function getPdfTypeMark(type) {
+    return {
+      ticket: "↔",
+      stay: "⌂",
+      transport: "▣",
+      excursion: "♙",
+      food: "♨",
+      place: "⌖",
+      spa: "♨",
+      shopping: "□",
+      idea: "○",
+    }[type] || "○";
+  }
 
 function setTripPdfButtonsBusy(isBusy, label = "") {
   const downloadButton = $("#downloadTripPdfButton");
