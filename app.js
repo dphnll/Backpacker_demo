@@ -9,13 +9,13 @@ const ANALYTICS_LAST_OPEN_KEY = "backpacker.analytics.lastOpen.v1";
 const ANALYTICS_MILESTONES_KEY = "backpacker.analytics.milestones.v1";
 const DONATION_STATE_KEY = "backpacker.donation.state.v1";
 const ANALYTICS_CONFIG = window.BACKPACKER_ANALYTICS || {};
-const ANALYTICS_SCHEMA_VERSION = "2026-06-25.1";
+const ANALYTICS_SCHEMA_VERSION = "2026-07-01.1";
 const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.0";
-const APP_RELEASE_SUMMARY = "мини-фича первой стабильной версии: поездкой можно поделиться текстом или собрать локальный PDF с планом, сметой, заметками и элементами без даты.";
+const APP_VERSION = "1.1.2.4";
+const APP_RELEASE_SUMMARY = "патч PDF поездки: действия с PDF разделены на отдельные кнопки «Скачать» и «Поделиться» с общими настройками экспорта.";
 const DONATION_FLOW_ENABLED = false;
 const DONATION_URL = ANALYTICS_CONFIG.donationUrl || "https://t.me/bckpckrbot?start=donate";
 const DEFAULT_ITEM_STATUS = "want";
@@ -44,6 +44,8 @@ let donationDragStartY = 0;
 let donationDragCurrentY = 0;
 let cardCopySheetHistoryArmed = false;
 let cardCopyIgnoreNextPop = false;
+let itemFormOpenedAt = 0;
+let analyticsIsReturningUser = false;
 let cardCopyState = {
   sourceItemId: "",
   scope: "",
@@ -370,8 +372,9 @@ function trackAppOpen() {
   } catch {
     lastOpen = "";
   }
+  analyticsIsReturningUser = Boolean(lastOpen);
   trackEvent("app_opened", {
-    is_returning_user: Boolean(lastOpen),
+    is_returning_user: analyticsIsReturningUser,
     last_open_days_ago: lastOpen ? Math.round((new Date(today) - new Date(lastOpen)) / 86400000) : null,
   });
 }
@@ -1115,6 +1118,12 @@ function toggleHomeSupportPanel(panelName) {
   };
   const sheetId = sheetMap[panelName];
   if (sheetId) openSheet(sheetId);
+  if (panelName === "product") {
+    trackEvent("product_info_opened", {
+      entry_source: "home",
+      is_returning_user: analyticsIsReturningUser,
+    });
+  }
 }
 
 function setupDonationFlow() {
@@ -1170,7 +1179,7 @@ function scheduleDonationPrompt() {
   donationState.firstPromptShownAt = new Date().toISOString();
   donationState.promptShowCount += 1;
   saveDonationState();
-  switchView("plan");
+  switchView("plan", "automatic");
   donationPromptTimer = window.setTimeout(() => {
     if ($$(".sheet.open").length) return;
     openDonationSheet("auto");
@@ -1566,6 +1575,7 @@ function openItemSheet(itemId = null) {
   fillItemForm(itemId ? state.items.find((entry) => entry.id === itemId) : null);
   updateOpenLinkButton();
   openSheet("itemSheet");
+  itemFormOpenedAt = Date.now();
   const trackedItem = itemId ? state.items.find((entry) => entry.id === itemId) : null;
   trackEvent("item_form_opened", {
     ...getTripAnalyticsContext(),
@@ -1588,6 +1598,21 @@ function fillSelects() {
 
 function renderParticipantOwnerField() {
   $("#participantOwnerField").hidden = state.trip.participants.length <= 1;
+}
+
+function getItemAnalyticsFlags(item) {
+  return {
+    item_type: item.type,
+    item_status: item.status,
+    item_priority: item.priority,
+    has_date: Boolean(item.date),
+    has_time: Boolean(item.startTime),
+    has_price: Boolean(item.price),
+    has_paid_amount: Boolean(item.paidAmount),
+    has_link: Boolean(item.link),
+    has_location: Boolean(item.locationText),
+    has_note: Boolean(item.notes),
+  };
 }
 
 function saveItem(event) {
@@ -1631,17 +1656,8 @@ function saveItem(event) {
   trackEvent(isNew ? "item_created" : "item_updated", {
     ...getTripAnalyticsContext(),
     item_id: item.id,
-    item_type: item.type,
-    item_status: item.status,
-    item_priority: item.priority,
-    has_date: Boolean(item.date),
-    has_time: Boolean(item.startTime),
-    has_price: Boolean(item.price),
-    has_paid_amount: Boolean(item.paidAmount),
-    has_link: Boolean(item.link),
-    has_location: Boolean(item.locationText),
-    has_note: Boolean(item.notes),
-    ...(isNew ? {} : { changed_fields: changedFields }),
+    ...getItemAnalyticsFlags(item),
+    ...(isNew ? { creation_method: "manual" } : { changed_fields: changedFields }),
   });
   if (getTripOrigin() === "demo" && !isNew) {
     trackEvent("trainer_action_completed", {
@@ -1654,14 +1670,53 @@ function saveItem(event) {
   checkTripMilestones();
 }
 
+function getItemFormChangedFields(item) {
+  const form = $("#itemForm");
+  const current = {
+    title: form.elements.title.value.trim(),
+    type: form.elements.type.value,
+    status: form.elements.status.value,
+    priority: form.elements.priority.value,
+    date: parseDateFromInput(form.elements.date.value) || "",
+    startTime: form.elements.startTime.value || "",
+    durationMinutes: getDurationFromInput(form.elements.durationHours.value, form.elements.durationRemainder.value),
+    price: parseMoney(form.elements.price.value),
+    paidAmount: parseMoney(form.elements.paidAmount.value),
+    participantId: form.elements.participantId.value,
+    link: form.elements.link.value.trim(),
+    locationText: form.elements.locationText.value.trim(),
+    notes: form.elements.notes.value.trim(),
+  };
+  return Object.keys(current).filter((field) => String(item[field] ?? "") !== String(current[field] ?? ""));
+}
+
+function getFormTimeBucket(openedAt) {
+  if (!openedAt) return "under_10s";
+  const seconds = (Date.now() - openedAt) / 1000;
+  if (seconds < 10) return "under_10s";
+  if (seconds <= 30) return "10_30s";
+  if (seconds <= 60) return "31_60s";
+  return "over_60s";
+}
+
 function resetCurrentItemForm() {
   const id = $("#itemForm").elements.id.value;
   if (!id) return;
   const item = state.items.find((entry) => entry.id === id);
   if (!item) return;
+  const changedFields = getItemFormChangedFields(item);
   fillItemForm(item);
   updateOpenLinkButton();
   showToast("Изменения сброшены");
+  if (changedFields.length === 0) return;
+  trackEvent("item_form_reset", {
+    ...getTripAnalyticsContext(),
+    item_id: item.id,
+    mode: "edit",
+    had_unsaved_changes: true,
+    changed_fields_count: changedFields.length,
+    time_in_form_bucket: getFormTimeBucket(itemFormOpenedAt),
+  });
 }
 
 function getNextOrderForItems(items, date) {
@@ -1751,11 +1806,13 @@ function openCardCopySheet() {
     history.pushState({ backpackerCardCopySheet: true }, "");
     cardCopySheetHistoryArmed = true;
   }
-  trackEvent("card_copy_opened", {
+  trackEvent("item_copy_opened", {
     ...getTripAnalyticsContext(),
     item_id: sourceItem.id,
     item_type: sourceItem.type,
     item_status: sourceItem.status,
+    source_bucket: sourceItem.date ? "day" : "undated",
+    available_destination_scope: getCopyCandidateTrips().length > 0 ? "both" : "same_trip",
   });
 }
 
@@ -1767,7 +1824,7 @@ function dismissCardCopySheet(method = "close") {
     history.back();
   }
   cardCopySheetHistoryArmed = false;
-  trackEvent("card_copy_cancelled", {
+  trackEvent("item_copy_cancelled", {
     ...getTripAnalyticsContext(),
     item_id: sourceItem?.id || null,
     method,
@@ -1941,11 +1998,17 @@ function confirmCardCopy() {
     ? (cardCopyState.targetDate ? formatDate(cardCopyState.targetDate) : "Без даты")
     : `поездку «${targetState.trip.title || "Новая поездка"}»`;
   showToast(`Карточка скопирована в ${targetText}`);
-  trackEvent("card_copy_completed", {
-    ...getTripAnalyticsContext(),
-    destination_type: targetState.trip.id === state.trip.id ? "same_trip" : "another_trip",
-    target_has_date: Boolean(cardCopyState.targetDate),
-    currency_matched: state.trip.currency === targetState.trip.currency,
+  const sameTrip = targetState.trip.id === state.trip.id;
+  const hasTargetDate = Boolean(cardCopyState.targetDate);
+  const copyDestinationType = sameTrip
+    ? (hasTargetDate ? "same_trip_other_day" : "same_trip_undated")
+    : (hasTargetDate ? "other_trip_day" : "other_trip_undated");
+  trackEvent("item_created", {
+    ...getTripAnalyticsContext(targetState.trip),
+    item_id: copiedItem.id,
+    ...getItemAnalyticsFlags(copiedItem),
+    creation_method: "copy",
+    copy_destination_type: copyDestinationType,
   });
   cardCopyState.isSubmitting = false;
 }
@@ -2339,7 +2402,7 @@ function openShareSheet() {
   renderSharePreview();
   $("#tripPdfOptions")?.classList.add("hidden");
   openSheet("shareSheet");
-  trackEvent("trip_share_opened", getTripAnalyticsContext());
+  trackEvent("share_opened", { ...getTripAnalyticsContext(), share_context: "trip" });
 }
 
 function renderSharePreview() {
@@ -2799,6 +2862,38 @@ function getTripPdfOptions() {
   };
 }
 
+const TRIP_PDF_DEFAULT_OPTIONS = { includeBudget: true, includeNotes: false, includeUndated: true };
+
+function getTripPdfChangedOptionKeys(options) {
+  const changed = [];
+  if (options.includeBudget !== TRIP_PDF_DEFAULT_OPTIONS.includeBudget) changed.push("budget");
+  if (options.includeNotes !== TRIP_PDF_DEFAULT_OPTIONS.includeNotes) changed.push("notes");
+  if (options.includeUndated !== TRIP_PDF_DEFAULT_OPTIONS.includeUndated) changed.push("undated");
+  return changed;
+}
+
+function getTripPdfChangedOptionsBucket(options) {
+  const changed = getTripPdfChangedOptionKeys(options);
+  if (changed.length === 0) return "none";
+  if (changed.length > 1) return "multiple";
+  return changed[0];
+}
+
+function getTripPdfAnalyticsOptionProps(options) {
+  return {
+    include_budget: options.includeBudget,
+    include_notes: options.includeNotes,
+    include_undated: options.includeUndated,
+    options_changed: getTripPdfChangedOptionKeys(options).length > 0,
+    changed_options: getTripPdfChangedOptionsBucket(options),
+  };
+}
+
+function classifyTripPdfGenerationFailure(error) {
+  if (error?.message === "pdf-lib unavailable") return "browser";
+  return "generation";
+}
+
 function getTripPdfItemCount(options) {
   const datedCount = state.items.filter((item) => item.date && item.status !== "skipped").length;
   const undatedCount = options.includeUndated
@@ -2911,8 +3006,8 @@ async function buildTripPdfBlob(options) {
   async function drawBudget() {
     if (!options.includeBudget) return;
     const totals = getTotals();
-    const participantTotals = state.trip.participants.length > 1 ? getParticipantTotals() : [];
-    const height = participantTotals.length ? 112 + participantTotals.length * 18 : 104;
+    const hasGroupParticipants = state.trip.participants.length > 1;
+    const height = hasGroupParticipants ? 136 : 118;
     await ensureSpace(height);
     ctx.fillStyle = "#ffffff";
     roundRect(ctx, margin, y, contentWidth, height - 12, 8);
@@ -2921,12 +3016,12 @@ async function buildTripPdfBlob(options) {
     ctx.stroke();
     ctx.fillStyle = "#1f2423";
     ctx.font = "800 15px Arial, sans-serif";
-    ctx.fillText("Смета", margin + 14, y + 24);
+    ctx.fillText("Бюджет", margin + 14, y + 24);
     const budgetRows = [
       ["Бюджет", formatMoney(state.trip.budgetLimit)],
       ["Оплачено", formatMoney(totals.paid)],
-      ["Запланировано", formatMoney(totals.fixed + totals.optional)],
-      ["Потенциально", formatMoney(totals.possible)],
+      ["Уже распределено", formatMoney(totals.possible)],
+      ["Осталось распределить", formatMoney(totals.remaining)],
     ];
     ctx.font = "700 11px Arial, sans-serif";
     budgetRows.forEach((row, index) => {
@@ -2934,75 +3029,119 @@ async function buildTripPdfBlob(options) {
       ctx.fillStyle = "#66716f";
       ctx.fillText(row[0], margin + 14, rowY);
       ctx.fillStyle = "#1f2423";
-      ctx.fillText(row[1], margin + 150, rowY);
+      ctx.fillText(row[1], margin + 190, rowY);
     });
-    participantTotals.forEach(({ participant, total }, index) => {
-      const rowY = y + 48 + budgetRows.length * 18 + 8 + index * 18;
+    if (hasGroupParticipants) {
+      const rowY = y + 48 + budgetRows.length * 18;
       ctx.fillStyle = "#66716f";
-      ctx.fillText(participant.name, margin + 14, rowY);
+      ctx.fillText("Участники", margin + 14, rowY);
       ctx.fillStyle = "#1f2423";
-      ctx.fillText(formatMoney(total), margin + 150, rowY);
-    });
+      drawPdfWrappedText(
+        ctx,
+        state.trip.participants.map((participant) => participant.name).join(" · "),
+        margin + 190,
+        rowY,
+        contentWidth - 204,
+        13,
+        1,
+      );
+    }
     y += height;
   }
 
-  function getPdfItemHeight(item) {
-    ctx.font = "800 13px Arial, sans-serif";
-    const titleHeight = Math.max(18, drawPdfMeasureLines(ctx, item.title, contentWidth / 2 - 52).length * 16);
-    let height = 66 + titleHeight;
-    if (options.includeNotes && item.notes) {
-      ctx.font = "400 10px Arial, sans-serif";
-      height += Math.min(42, drawPdfMeasureLines(ctx, item.notes, contentWidth / 2 - 26).length * 13) + 8;
-    }
-    return Math.max(96, height);
+  function getPdfParticipantColor(participant) {
+    return {
+      orange: "#ff8f3d",
+      yellow: "#ffcf36",
+      blue: "#7fd8ee",
+      teal: "#65c7a0",
+      purple: "#c8a7da",
+      pink: "#f7a7b6",
+    }[participant?.colorKey] || "#ffbe35";
   }
 
-  function drawPdfItem(item, x, itemY, width, height) {
+  function getPdfStatusMark(status) {
+    return {
+      paid: "✓",
+      fixed: "Б",
+      want: "Х",
+      maybe: "?",
+      backup: "З",
+      skipped: "×",
+    }[status] || "•";
+  }
+
+  function drawPdfBadge(cx, cy, radius, fill, text, textColor = "#ffffff") {
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.fillStyle = textColor;
+    ctx.font = "900 12px Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, cx, cy + 0.5);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+  }
+
+  function drawPdfItem(item, x, itemY, width) {
+    const headerHeight = 44;
+    const bodyY = itemY + headerHeight;
+    const bodyHeight = width;
+    const height = headerHeight + bodyHeight;
+    const padding = 12;
     const participant = getParticipantById(item.participantId);
+    const showParticipantBadge = state.trip.participants.length > 1;
+    const badgeX = x + width - padding - 18;
     ctx.fillStyle = "#ffffff";
     roundRect(ctx, x, itemY, width, height, 8);
     ctx.fill();
     ctx.strokeStyle = "#ded8cc";
     ctx.stroke();
+    ctx.save();
+    roundRect(ctx, x, itemY, width, height, 8);
+    ctx.clip();
     ctx.fillStyle = getPdfTypeColor(item.type);
-    roundRect(ctx, x + 10, itemY + 10, 34, 34, 8);
-    ctx.fill();
+    ctx.fillRect(x, itemY, width, headerHeight);
+    ctx.restore();
     ctx.fillStyle = "#ffffff";
-    ctx.font = "800 17px Arial, sans-serif";
-    ctx.fillText(getTypeLabel(item.type).slice(0, 1), x + 21, itemY + 33);
-    ctx.fillStyle = "#1f2423";
     ctx.font = "800 13px Arial, sans-serif";
-    drawPdfWrappedText(ctx, item.title, x + 52, itemY + 21, width - 64, 16, 3);
+    drawPdfWrappedText(ctx, getTypeLabel(item.type), x + padding, itemY + 18, width - padding * 2, 15, 1);
+    ctx.fillStyle = "#1f2423";
+    ctx.font = "800 14px Arial, sans-serif";
+    drawPdfWrappedText(ctx, item.title, x + padding, bodyY + 22, width - padding * 2 - 46, 17, 3);
+    drawPdfBadge(badgeX, bodyY + 21, 18, getPdfTypeColor(item.type), getPdfStatusMark(item.status));
+    if (showParticipantBadge) {
+      drawPdfBadge(badgeX, bodyY + 69, 18, getPdfParticipantColor(participant), participant.initials, "#1f2423");
+    }
     ctx.font = "700 10px Arial, sans-serif";
     ctx.fillStyle = "#66716f";
     const details = [
       item.startTime || "без времени",
       formatDurationText(item.durationMinutes),
-      participant?.name ? `расход: ${participant.name}` : "",
       options.includeBudget && parseMoney(item.price) ? formatMoney(item.price) : "",
     ].filter(Boolean).join(" · ");
-    drawPdfWrappedText(ctx, details, x + 12, itemY + 62, width - 24, 13, 2);
+    drawPdfWrappedText(ctx, details, x + padding, bodyY + 86, width - padding * 2 - 46, 13, 3);
     if (options.includeNotes && item.notes) {
       ctx.font = "400 10px Arial, sans-serif";
       ctx.fillStyle = "#1f2423";
-      drawPdfWrappedText(ctx, item.notes, x + 12, itemY + 88, width - 24, 13, 3);
+      drawPdfWrappedText(ctx, item.notes, x + padding, bodyY + 132, width - padding * 2, 13, 4);
     }
   }
 
   async function drawItemGrid(items) {
-    const gap = 10;
-    const cardWidth = (contentWidth - gap) / 2;
+    const gap = 12;
+    const cardWidth = Math.floor((contentWidth - gap) / 2);
+    const cardHeight = cardWidth + 44;
     let index = 0;
     while (index < items.length) {
       const first = items[index];
       const second = items[index + 1];
-      const firstHeight = getPdfItemHeight(first);
-      const secondHeight = second ? getPdfItemHeight(second) : firstHeight;
-      const rowHeight = Math.max(firstHeight, secondHeight);
-      await ensureSpace(rowHeight + 12);
-      drawPdfItem(first, margin, y, cardWidth, rowHeight);
-      if (second) drawPdfItem(second, margin + cardWidth + gap, y, cardWidth, rowHeight);
-      y += rowHeight + 12;
+      await ensureSpace(cardHeight + 12);
+      drawPdfItem(first, margin, y, cardWidth);
+      if (second) drawPdfItem(second, margin + cardWidth + gap, y, cardWidth);
+      y += cardHeight + 12;
       index += 2;
     }
   }
@@ -3083,7 +3222,17 @@ function getPdfTypeColor(type) {
   }[type] || "#d88d22";
 }
 
-async function createAndShareTripPdf() {
+function setTripPdfButtonsBusy(isBusy, label = "") {
+  const downloadButton = $("#downloadTripPdfButton");
+  const shareButton = $("#shareTripPdfButton");
+  [downloadButton, shareButton].forEach((button) => {
+    if (button) button.disabled = isBusy;
+  });
+  if (downloadButton) downloadButton.textContent = isBusy && label === "download" ? "Готовим..." : "Скачать";
+  if (shareButton) shareButton.textContent = isBusy && label === "share" ? "Готовим..." : "Поделиться";
+}
+
+async function prepareTripPdfExport(deliveryMethod) {
   if (tripPdfGenerating) return;
   const options = getTripPdfOptions();
   const itemCount = getTripPdfItemCount(options);
@@ -3091,52 +3240,82 @@ async function createAndShareTripPdf() {
     showToast("В поездке пока нет элементов для экспорта.");
     return;
   }
-  const button = $("#createTripPdfButton");
   tripPdfGenerating = true;
-  button.disabled = true;
-  button.textContent = "Готовим PDF...";
-  trackEvent("trip_pdf_generation_started", {
+  setTripPdfButtonsBusy(true, deliveryMethod);
+  const optionProps = getTripPdfAnalyticsOptionProps(options);
+  trackEvent("export_started", {
     ...getTripAnalyticsContext(),
-    include_budget: options.includeBudget,
-    include_notes: options.includeNotes,
-    include_undated: options.includeUndated,
-    day_count: getTripDates().length,
-    item_count: itemCount,
+    export_type: "trip_pdf",
+    delivery_method: deliveryMethod,
+    ...optionProps,
   });
+  let blob;
   try {
-    const blob = await buildTripPdfBlob(options);
-    const fileName = getTripPdfFileName();
-    const file = new File([blob], fileName, { type: "application/pdf" });
-    trackEvent("trip_pdf_generated", {
+    blob = await buildTripPdfBlob(options);
+  } catch (error) {
+    trackEvent("export_failed", {
       ...getTripAnalyticsContext(),
-      include_budget: options.includeBudget,
-      include_notes: options.includeNotes,
-      include_undated: options.includeUndated,
-      day_count: getTripDates().length,
-      item_count: itemCount,
+      export_type: "trip_pdf",
+      delivery_method: deliveryMethod,
+      failure_reason_bucket: classifyTripPdfGenerationFailure(error),
     });
-    if (navigator.canShare?.({ files: [file] }) && navigator.share) {
+    showToast("Не удалось создать PDF. Попробуйте ещё раз.");
+    tripPdfGenerating = false;
+    setTripPdfButtonsBusy(false);
+    return;
+  }
+  const fileName = getTripPdfFileName();
+  trackEvent("export_completed", {
+    ...getTripAnalyticsContext(),
+    export_type: "trip_pdf",
+    delivery_method: deliveryMethod,
+    ...optionProps,
+  });
+  return { blob, fileName };
+}
+
+async function downloadTripPdf() {
+  const result = await prepareTripPdfExport("download");
+  if (!result) return;
+  downloadBlobFile(result.fileName, result.blob);
+  showToast("PDF сохранён");
+  tripPdfGenerating = false;
+  setTripPdfButtonsBusy(false);
+}
+
+async function shareTripPdf() {
+  const probeFile = new File(["probe"], "probe.pdf", { type: "application/pdf" });
+  const canShareFiles = Boolean(navigator.canShare?.({ files: [probeFile] }) && navigator.share);
+  const deliveryMethod = canShareFiles ? "share" : "download";
+  const result = await prepareTripPdfExport(deliveryMethod);
+  if (!result) return;
+  try {
+    if (canShareFiles) {
+      const file = new File([result.blob], result.fileName, { type: "application/pdf" });
       await navigator.share({
         title: `Backpacker: ${state.trip.title}`,
         text: "План поездки из Backpacker",
         files: [file],
       });
-      trackEvent("trip_pdf_shared", { ...getTripAnalyticsContext(), method: "web_share_file" });
+      trackEvent("share_completed", { ...getTripAnalyticsContext(), share_format: "pdf", method: "web_share" });
       showToast("PDF отправлен");
     } else {
-      downloadBlobFile(fileName, blob);
-      trackEvent("trip_pdf_downloaded", { ...getTripAnalyticsContext(), method: "download_fallback" });
+      downloadBlobFile(result.fileName, result.blob);
       showToast("PDF сохранён. Его можно отправить из загрузок.");
     }
   } catch (error) {
     if (error?.name !== "AbortError") {
-      trackEvent("trip_pdf_generation_failed", { ...getTripAnalyticsContext(), error_name: error?.name || "unknown" });
+      trackEvent("export_failed", {
+        ...getTripAnalyticsContext(),
+        export_type: "trip_pdf",
+        delivery_method: deliveryMethod,
+        failure_reason_bucket: "share_api",
+      });
       showToast("Не удалось создать PDF. Попробуйте ещё раз.");
     }
   } finally {
     tripPdfGenerating = false;
-    button.disabled = false;
-    button.textContent = "Создать и поделиться";
+    setTripPdfButtonsBusy(false);
   }
 }
 
@@ -3147,10 +3326,16 @@ async function shareTrip() {
     text,
     url: window.location.href,
   };
+  trackEvent("share_method_selected", {
+    ...getTripAnalyticsContext(),
+    share_context: "trip",
+    share_format: "text",
+    method: navigator.share ? "web_share" : "clipboard",
+  });
   if (navigator.share) {
     try {
       await navigator.share(shareData);
-      trackEvent("trip_shared_as_text", { ...getTripAnalyticsContext(), method: "web_share", result: "success" });
+      trackEvent("share_completed", { ...getTripAnalyticsContext(), share_context: "trip", share_format: "text", method: "web_share" });
       return;
     } catch (error) {
       if (error?.name === "AbortError") return;
@@ -3158,7 +3343,7 @@ async function shareTrip() {
   }
   await copyText(`${text}\n\n${window.location.href}`);
   showToast("Ссылка и сводка скопированы");
-  trackEvent("trip_shared_as_text", { ...getTripAnalyticsContext(), method: "copy_fallback", result: "fallback" });
+  trackEvent("share_completed", { ...getTripAnalyticsContext(), share_context: "trip", share_format: "text", method: "clipboard" });
 }
 
 async function shareApp() {
@@ -3319,13 +3504,13 @@ function startApp() {
   showHomeScreen();
 }
 
-function showHomeScreen() {
+function showHomeScreen(source = null) {
   currentScreen = "home";
   $("#introScreen").classList.add("hidden");
   $("#homeScreen").classList.remove("hidden");
   $(".app-shell").classList.add("hidden");
   renderHome();
-  trackEvent("home_opened", { trip_count: getUserTripCount() });
+  trackEvent("home_opened", { trip_count: getUserTripCount(), ...(source ? { source } : {}) });
 }
 
 function showTripScreen() {
@@ -3459,7 +3644,7 @@ function deleteTrip(tripId) {
   trackEvent("trip_deleted", { trip_id: tripId, trip_origin: "user_created" });
 }
 
-function switchView(view) {
+function switchView(view, navigationSource = "other") {
   const previousView = currentView;
   currentView = view;
   try {
@@ -3474,6 +3659,7 @@ function switchView(view) {
       ...getTripAnalyticsContext(),
       section: view,
       from_section: previousView,
+      navigation_source: navigationSource,
     });
     if (getTripOrigin() === "demo") {
       trackEvent("trainer_action_completed", { ...getTripAnalyticsContext(), action_type: "section_opened", trainer_version: TRAINER_VERSION });
@@ -3805,7 +3991,7 @@ function bindEvents() {
     if (editButton) openItemSheet(editButton.dataset.edit);
 
     const navButton = event.target.closest(".nav-button");
-    if (navButton) switchView(navButton.dataset.view);
+    if (navButton) switchView(navButton.dataset.view, "bottom_bar");
 
     const filterButton = event.target.closest("[data-filter]");
     if (filterButton) {
@@ -3937,7 +4123,7 @@ function bindEvents() {
   });
   $("#homeTelegramButton")?.addEventListener("click", () => trackEvent("feedback_channel_opened", { channel: "telegram", source: "home_support" }));
   $("#feedbackButton").addEventListener("click", () => trackEvent("feedback_channel_opened", { channel: "telegram" }));
-  $("#homeButton").addEventListener("click", showHomeScreen);
+  $("#homeButton").addEventListener("click", () => showHomeScreen("trip_bottom_bar"));
   $("#itemForm").addEventListener("submit", saveItem);
   $("#copyItemButton").addEventListener("click", openCardCopySheet);
   $("#resetItemButton").addEventListener("click", resetCurrentItemForm);
@@ -3959,7 +4145,8 @@ function bindEvents() {
   $("#shareButton").addEventListener("click", openShareSheet);
   $("#shareTripTextButton").addEventListener("click", shareTrip);
   $("#openTripPdfOptionsButton").addEventListener("click", showTripPdfOptions);
-  $("#createTripPdfButton").addEventListener("click", createAndShareTripPdf);
+  $("#downloadTripPdfButton").addEventListener("click", downloadTripPdf);
+  $("#shareTripPdfButton").addEventListener("click", shareTripPdf);
   $("#downloadEstimateButton").addEventListener("click", chooseAndDownloadEstimate);
   $("#downloadPlanButton").addEventListener("click", chooseAndDownloadPlan);
   $("#copyEstimateButton").addEventListener("click", chooseAndDownloadEstimate);

@@ -1406,6 +1406,12 @@ h3 {
   --item-slot-bg: rgba(240, 165, 55, 0.62);
   --item-card-scale: 0.82;
   zoom: var(--item-card-scale);
+  width: 220px;
+  min-width: 220px;
+  max-width: 220px;
+  height: 264px;
+  min-height: 264px;
+  max-height: 264px;
   padding: 0;
   text-align: left;
   display: grid;
@@ -1492,7 +1498,6 @@ h3 {
 .day-items .item-card,
 .basket-grid-list .item-card {
   flex: 0 0 220px;
-  min-height: 264px;
   scroll-snap-align: start;
 }
 
@@ -2911,9 +2916,15 @@ textarea:focus {
   accent-color: var(--brand);
 }
 
+.trip-pdf-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .trip-pdf-options .primary-button {
   display: grid;
-  width: min(260px, 100%);
+  width: 100%;
   min-height: 45px;
   justify-self: center;
   place-items: center;
