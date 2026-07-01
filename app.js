@@ -14,8 +14,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.5";
-const APP_RELEASE_SUMMARY = "патч PDF поездки: карточки в PDF приведены ближе к каноническому виду карточек в интерфейсе приложения.";
+const APP_VERSION = "1.1.2.6";
+const APP_RELEASE_SUMMARY = "патч PDF поездки: карточки в PDF уменьшены до сетки 4 в ряд, а шапка PDF приближена к мобильной шапке поездки.";
 const DONATION_FLOW_ENABLED = false;
 const DONATION_URL = ANALYTICS_CONFIG.donationUrl || "https://t.me/bckpckrbot?start=donate";
 const DEFAULT_ITEM_STATUS = "want";
@@ -2947,6 +2947,48 @@ async function buildTripPdfBlob(options) {
   const pages = [];
   let y = margin;
 
+  function loadPdfImage(src) {
+    return new Promise((resolve) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => resolve(null);
+      image.src = src;
+    });
+  }
+
+  function loadPdfSvgIcon(svgText, color = "#ffffff") {
+    return new Promise((resolve) => {
+      if (!svgText) {
+        resolve(null);
+        return;
+      }
+      const svg = svgText
+        .replace("<svg ", `<svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="${color}" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" `)
+        .replace(/aria-hidden="true"/g, "");
+      const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+      const image = new Image();
+      image.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve(image);
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(null);
+      };
+      image.src = url;
+    });
+  }
+
+  const logoImage = await loadPdfImage("./icons/backpacker-logo-transparent.png");
+  const statusImages = {};
+  await Promise.all(["paid", "fixed", "want", "maybe", "backup"].map(async (status) => {
+    statusImages[status] = await loadPdfImage(`./assets/status-${status}.png`);
+  }));
+  const typeImages = {};
+  await Promise.all(Object.keys(typeIcons).map(async (type) => {
+    typeImages[type] = await loadPdfSvgIcon(typeIcons[type], "#ffffff");
+  }));
+
   function startPage() {
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
     ctx.clearRect(0, 0, pageWidth, pageHeight);
@@ -2981,26 +3023,76 @@ async function buildTripPdfBlob(options) {
     y += 46;
   }
 
-  function drawHeader() {
+  function drawPdfMetricCard(x, cardY, width, height, label, value, variant = "") {
+    ctx.fillStyle = variant === "paid" ? "#eff8f1" : "#fffdf8";
+    roundRect(ctx, x, cardY, width, height, 6);
+    ctx.fill();
+    ctx.strokeStyle = variant === "paid" ? "rgba(45, 123, 82, 0.3)" : "#ded8cc";
+    ctx.stroke();
+    ctx.fillStyle = variant === "paid" ? "#2d7b52" : "#66716f";
+    ctx.font = "800 11px Arial, sans-serif";
+    drawPdfWrappedText(ctx, label, x + 8, cardY + 17, width - 16, 13, 2);
     ctx.fillStyle = "#1f2423";
-    ctx.font = "800 15px Arial, sans-serif";
-    ctx.fillText("Backpacker", margin, y);
-    y += 26;
-    ctx.font = "800 27px Arial, sans-serif";
-    drawPdfWrappedText(ctx, state.trip.title || "Поездка", margin, y, contentWidth, 31, 2);
-    y += 64;
-    ctx.font = "700 13px Arial, sans-serif";
+    ctx.font = "800 16px Arial, sans-serif";
+    ctx.fillText(value, x + 8, cardY + height - 12);
+  }
+
+  function drawHeader() {
+    const totals = getTotals();
+    const hasGroupParticipants = state.trip.participants.length > 1;
+    const headerHeight = hasGroupParticipants ? 184 : 164;
+    ctx.fillStyle = "#eef3ef";
+    roundRect(ctx, margin, y, contentWidth, headerHeight, 8);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(222, 216, 204, 0.8)";
+    ctx.stroke();
+
+    if (logoImage) {
+      ctx.fillStyle = "rgba(255, 255, 255, 0.48)";
+      roundRect(ctx, margin + 10, y + 12, 46, 46, 8);
+      ctx.fill();
+      ctx.drawImage(logoImage, margin + 14, y + 16, 38, 38);
+    }
+    ctx.fillStyle = "#1f2423";
+    ctx.font = "800 22px Arial, sans-serif";
+    drawPdfWrappedText(ctx, state.trip.title || "Поездка", margin + 66, y + 31, contentWidth - 76, 25, 1);
+    ctx.font = "700 12px Arial, sans-serif";
     ctx.fillStyle = "#66716f";
-    drawPdfWrappedText(
-      ctx,
-      `${state.trip.destination || "Направление не задано"} · ${formatDate(state.trip.startDate)}-${formatDate(state.trip.endDate)}`,
-      margin,
-      y,
-      contentWidth,
-      18,
-      2,
-    );
-    y += 30;
+    const meta = `${state.trip.destination || "Направление не задано"} · ${formatDate(state.trip.startDate)}-${formatDate(state.trip.endDate)} · ${formatTripDayCount(state.trip)}`;
+    drawPdfWrappedText(ctx, meta, margin + 66, y + 56, contentWidth - 76, 15, 1);
+
+    ctx.fillStyle = "rgba(255, 253, 248, 0.78)";
+    roundRect(ctx, margin + 180, y + 74, contentWidth - 190, 30, 6);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(18, 54, 61, 0.18)";
+    ctx.stroke();
+    ctx.fillStyle = "#12363d";
+    ctx.font = "800 13px Arial, sans-serif";
+    ctx.fillText(`Бюджет ${formatMoney(state.trip.budgetLimit)}`, margin + 194, y + 94);
+
+    const cardGap = 8;
+    const cardWidth = (contentWidth - cardGap * 2) / 3;
+    const cardY = y + 114;
+    drawPdfMetricCard(margin, cardY, cardWidth, 42, "Оплачено", formatMoney(totals.paid), "paid");
+    drawPdfMetricCard(margin + cardWidth + cardGap, cardY, cardWidth, 42, "Уже распределено", formatMoney(totals.possible));
+    drawPdfMetricCard(margin + (cardWidth + cardGap) * 2, cardY, cardWidth, 42, "Осталось распределить", formatMoney(totals.remaining));
+    if (hasGroupParticipants) {
+      ctx.fillStyle = "#66716f";
+      ctx.font = "800 11px Arial, sans-serif";
+      ctx.fillText("Участники", margin + 8, y + 175);
+      ctx.fillStyle = "#1f2423";
+      ctx.font = "700 11px Arial, sans-serif";
+      drawPdfWrappedText(
+        ctx,
+        state.trip.participants.map((participant) => participant.name).join(" · "),
+        margin + 84,
+        y + 175,
+        contentWidth - 92,
+        13,
+        1,
+      );
+    }
+    y += headerHeight + 16;
   }
 
   async function drawBudget() {
@@ -3085,6 +3177,24 @@ async function buildTripPdfBlob(options) {
     ctx.textBaseline = "alphabetic";
   }
 
+  function drawPdfImageBadge(cx, cy, radius, fill, image, fallbackText, textColor = "#ffffff") {
+    drawPdfBadge(cx, cy, radius, fill, "", textColor);
+    if (image) {
+      ctx.save();
+      ctx.filter = "brightness(0) invert(1)";
+      ctx.drawImage(image, cx - radius * 0.58, cy - radius * 0.58, radius * 1.16, radius * 1.16);
+      ctx.restore();
+      return;
+    }
+    ctx.fillStyle = textColor;
+    ctx.font = `900 ${Math.max(8, radius * 0.7)}px Arial, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(fallbackText, cx, cy + 0.5);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+  }
+
   function drawPdfSlot(x, slotY, width, text, fill) {
     ctx.fillStyle = fill;
     roundRect(ctx, x, slotY, width, 26, 4);
@@ -3139,82 +3249,97 @@ async function buildTripPdfBlob(options) {
   }
 
   function drawPdfItem(item, x, itemY, width) {
+    const baseWidth = 220;
+    const baseHeight = 264;
+    const itemScale = width / baseWidth;
+    ctx.save();
+    ctx.translate(x, itemY);
+    ctx.scale(itemScale, itemScale);
+
     const headerHeight = 44;
     const bodyY = itemY + headerHeight;
-    const bodyHeight = width;
+    const localBodyY = headerHeight;
+    const bodyHeight = 220;
     const height = headerHeight + bodyHeight;
     const padding = 12;
     const participant = getParticipantById(item.participantId);
     const showParticipantBadge = state.trip.participants.length > 1;
-    const badgeX = x + width - padding - 18;
+    const badgeX = baseWidth - padding - 18;
     const accent = getPdfTypeColor(item.type);
     const slotFill = getPdfTypeSlotColor(item.type);
     ctx.fillStyle = getPdfTypeBodyColor(item.type);
-    roundRect(ctx, x, itemY, width, height, 8);
+    roundRect(ctx, 0, 0, baseWidth, height, 6);
     ctx.fill();
     ctx.strokeStyle = "#ded8cc";
     ctx.stroke();
     ctx.save();
-    roundRect(ctx, x, itemY, width, height, 8);
+    roundRect(ctx, 0, 0, baseWidth, height, 6);
     ctx.clip();
     ctx.fillStyle = accent;
-    ctx.fillRect(x, itemY, width, headerHeight);
+    ctx.fillRect(0, 0, baseWidth, headerHeight);
     ctx.restore();
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "800 23px Arial, sans-serif";
-    ctx.fillText(getPdfTypeMark(item.type), x + padding + 2, itemY + 29);
+    const typeImage = typeImages[item.type] || typeImages.other;
+    if (typeImage) {
+      ctx.drawImage(typeImage, padding + 2, 8, 28, 28);
+    } else {
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "800 23px Arial, sans-serif";
+      ctx.fillText(getPdfTypeMark(item.type), padding + 2, 29);
+    }
     const typeLabel = getTypeLabel(item.type).toUpperCase();
     ctx.font = "800 18px Arial, sans-serif";
+    ctx.fillStyle = "#ffffff";
     ctx.textAlign = "right";
-    ctx.fillText(typeLabel, x + width - padding, itemY + 28);
+    ctx.fillText(typeLabel, baseWidth - padding, 28);
     ctx.textAlign = "left";
 
     const price = options.includeBudget && parseMoney(item.price) ? formatMoney(item.price) : "--";
     const priceWidth = Math.max(78, Math.min(100, ctx.measureText(price).width + 20));
-    drawPdfPricePill(price, x + width - padding - priceWidth, bodyY + 17, priceWidth);
+    drawPdfPricePill(price, baseWidth - padding - priceWidth, localBodyY + 17, priceWidth);
 
     ctx.fillStyle = "#1f2423";
     ctx.font = "800 14px Arial, sans-serif";
-    drawPdfWrappedText(ctx, item.title, x + padding, bodyY + 22, width - padding * 2 - priceWidth - 10, 17, 2);
+    drawPdfWrappedText(ctx, item.title, padding, localBodyY + 22, baseWidth - padding * 2 - priceWidth - 10, 17, 2);
     ctx.fillStyle = accent;
     ctx.font = "900 italic 13px Arial, sans-serif";
-    ctx.fillText(formatDurationText(item.durationMinutes), x + padding, bodyY + 64);
-    drawPdfTimeSlots(item, x + padding, bodyY + 73, slotFill);
+    ctx.fillText(formatDurationText(item.durationMinutes), padding, localBodyY + 64);
+    drawPdfTimeSlots(item, padding, localBodyY + 73, slotFill);
     ctx.fillStyle = accent;
     ctx.font = "900 italic 13px Arial, sans-serif";
-    ctx.fillText("Дата", x + padding, bodyY + 124);
-    drawPdfDateSlots(item, x + padding, bodyY + 133, slotFill);
+    ctx.fillText("Дата", padding, localBodyY + 124);
+    drawPdfDateSlots(item, padding, localBodyY + 133, slotFill);
 
-    drawPdfBadge(badgeX, bodyY + 87, 18, accent, getPdfStatusMark(item.status));
+    drawPdfImageBadge(badgeX, localBodyY + 87, 18, accent, statusImages[item.status], getPdfStatusMark(item.status));
     if (showParticipantBadge) {
-      drawPdfBadge(badgeX, bodyY + 134, 18, getPdfParticipantColor(participant), participant.initials, "#1f2423");
+      drawPdfBadge(badgeX, localBodyY + 134, 18, getPdfParticipantColor(participant), participant.initials, "#1f2423");
     }
     if (options.includeNotes && item.notes) {
       ctx.font = "400 10px Arial, sans-serif";
       ctx.fillStyle = "#1f2423";
-      drawPdfWrappedText(ctx, item.notes, x + padding, bodyY + 182, width - padding * 2, 13, 4);
+      drawPdfWrappedText(ctx, item.notes, padding, localBodyY + 182, baseWidth - padding * 2, 13, 3);
     }
+    ctx.restore();
+    return baseHeight * itemScale;
   }
 
   async function drawItemGrid(items) {
-    const gap = 12;
-    const cardWidth = Math.floor((contentWidth - gap) / 2);
-    const cardHeight = cardWidth + 44;
+    const columns = 4;
+    const gap = 8;
+    const cardWidth = Math.floor((contentWidth - gap * (columns - 1)) / columns);
+    const cardHeight = cardWidth * (264 / 220);
     let index = 0;
     while (index < items.length) {
-      const first = items[index];
-      const second = items[index + 1];
       await ensureSpace(cardHeight + 12);
-      drawPdfItem(first, margin, y, cardWidth);
-      if (second) drawPdfItem(second, margin + cardWidth + gap, y, cardWidth);
+      items.slice(index, index + columns).forEach((item, offset) => {
+        drawPdfItem(item, margin + offset * (cardWidth + gap), y, cardWidth);
+      });
       y += cardHeight + 12;
-      index += 2;
+      index += columns;
     }
   }
 
   startPage();
   drawHeader();
-  await drawBudget();
 
   for (const [index, date] of getTripDates().entries()) {
     const items = state.items.filter((item) => item.date === date && item.status !== "skipped").sort(sortItems);
