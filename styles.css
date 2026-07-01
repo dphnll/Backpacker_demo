@@ -2867,6 +2867,64 @@ textarea:focus {
   margin-bottom: 12px;
 }
 
+.share-secondary-actions {
+  margin-top: 8px;
+}
+
+.trip-pdf-options {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.trip-pdf-options.hidden {
+  display: none;
+}
+
+.trip-pdf-toggle {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 1px solid rgba(18, 54, 61, 0.12);
+  border-radius: 8px;
+  background:
+    var(--app-gradient),
+    var(--panel);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.trip-pdf-toggle input {
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  min-height: 20px;
+  margin: 0;
+  accent-color: var(--brand);
+}
+
+.trip-pdf-options .primary-button {
+  display: grid;
+  width: min(260px, 100%);
+  min-height: 45px;
+  justify-self: center;
+  place-items: center;
+  border-color: rgba(18, 54, 61, 0.34);
+  background: var(--active-button-gradient);
+  color: #fff;
+  box-shadow: var(--active-button-shadow);
+  line-height: 1;
+  text-align: center;
+}
+
 #homeShareSheet .sheet-panel {
   min-height: min(50vh, 360px);
   padding-bottom: calc(34px + env(safe-area-inset-bottom));

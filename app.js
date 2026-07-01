@@ -14,8 +14,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.1.0";
-const APP_RELEASE_SUMMARY = "мини-фича первой стабильной версии: карточку можно скопировать в другой день, в «Без даты» или в другую поездку; исходная карточка остается без изменений.";
+const APP_VERSION = "1.1.2.0";
+const APP_RELEASE_SUMMARY = "мини-фича первой стабильной версии: поездкой можно поделиться текстом или собрать локальный PDF с планом, сметой, заметками и элементами без даты.";
 const DONATION_FLOW_ENABLED = false;
 const DONATION_URL = ANALYTICS_CONFIG.donationUrl || "https://t.me/bckpckrbot?start=donate";
 const DEFAULT_ITEM_STATUS = "want";
@@ -51,6 +51,7 @@ let cardCopyState = {
   targetDate: null,
   isSubmitting: false,
 };
+let tripPdfGenerating = false;
 
 const itemTypes = [
   ["ticket", "Билет"],
@@ -2336,8 +2337,9 @@ function openHomeShareSheet() {
 
 function openShareSheet() {
   renderSharePreview();
+  $("#tripPdfOptions")?.classList.add("hidden");
   openSheet("shareSheet");
-  trackEvent("share_opened", getTripAnalyticsContext());
+  trackEvent("trip_share_opened", getTripAnalyticsContext());
 }
 
 function renderSharePreview() {
@@ -2488,6 +2490,10 @@ function slugifyFileName(value = "backpacker") {
 
 function downloadTextFile(fileName, content, mimeType = "text/plain;charset=utf-8") {
   const blob = new Blob([content], { type: mimeType });
+  downloadBlobFile(fileName, blob);
+}
+
+function downloadBlobFile(fileName, blob) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -2495,7 +2501,7 @@ function downloadTextFile(fileName, content, mimeType = "text/plain;charset=utf-
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function escapeSpreadsheetValue(value = "") {
@@ -2780,6 +2786,360 @@ async function chooseAndDownloadPlan() {
   }
 }
 
+function showTripPdfOptions() {
+  const options = $("#tripPdfOptions");
+  options?.classList.toggle("hidden");
+}
+
+function getTripPdfOptions() {
+  return {
+    includeBudget: $("#tripPdfIncludeBudget")?.checked ?? true,
+    includeNotes: $("#tripPdfIncludeNotes")?.checked ?? false,
+    includeUndated: $("#tripPdfIncludeUndated")?.checked ?? true,
+  };
+}
+
+function getTripPdfItemCount(options) {
+  const datedCount = state.items.filter((item) => item.date && item.status !== "skipped").length;
+  const undatedCount = options.includeUndated
+    ? state.items.filter((item) => !item.date && item.status !== "skipped").length
+    : 0;
+  return datedCount + undatedCount;
+}
+
+function getTripPdfFileName() {
+  const start = state.trip.startDate ? state.trip.startDate.replaceAll("-", "") : "trip";
+  const end = state.trip.endDate ? state.trip.endDate.replaceAll("-", "") : "";
+  const range = end && end !== start ? `${start}-${end}` : start;
+  return `backpacker-${slugifyFileName(state.trip.title)}-${range}.pdf`;
+}
+
+function drawPdfWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines = Infinity) {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  words.forEach((word) => {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  });
+  if (line) lines.push(line);
+  const visibleLines = lines.slice(0, maxLines);
+  visibleLines.forEach((item, index) => {
+    const suffix = index === maxLines - 1 && lines.length > maxLines ? "..." : "";
+    ctx.fillText(`${item}${suffix}`, x, y + index * lineHeight);
+  });
+  return visibleLines.length * lineHeight;
+}
+
+async function buildTripPdfBlob(options) {
+  if (!window.PDFLib?.PDFDocument) throw new Error("pdf-lib unavailable");
+  const { PDFDocument } = window.PDFLib;
+  const pdfDoc = await PDFDocument.create();
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const scale = 2;
+  const margin = 34;
+  const contentWidth = pageWidth - margin * 2;
+  const canvas = document.createElement("canvas");
+  canvas.width = pageWidth * scale;
+  canvas.height = pageHeight * scale;
+  const ctx = canvas.getContext("2d");
+  const pages = [];
+  let y = margin;
+
+  function startPage() {
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    ctx.clearRect(0, 0, pageWidth, pageHeight);
+    ctx.fillStyle = "#fbf8f0";
+    ctx.fillRect(0, 0, pageWidth, pageHeight);
+    y = margin;
+  }
+
+  async function commitPage() {
+    const pngBytes = await new Promise((resolve) => canvas.toBlob((blob) => blob.arrayBuffer().then(resolve), "image/png"));
+    pages.push(pngBytes);
+  }
+
+  async function ensureSpace(height) {
+    if (y + height <= pageHeight - margin) return;
+    await commitPage();
+    startPage();
+  }
+
+  function drawSectionTitle(title, meta = "") {
+    ctx.fillStyle = "#dfe9e5";
+    roundRect(ctx, margin, y, contentWidth, 34, 8);
+    ctx.fill();
+    ctx.fillStyle = "#1f2423";
+    ctx.font = "700 15px Arial, sans-serif";
+    ctx.fillText(title, margin + 12, y + 22);
+    if (meta) {
+      ctx.font = "700 11px Arial, sans-serif";
+      ctx.fillStyle = "#66716f";
+      ctx.fillText(meta, margin + contentWidth - ctx.measureText(meta).width - 12, y + 22);
+    }
+    y += 46;
+  }
+
+  function drawHeader() {
+    ctx.fillStyle = "#1f2423";
+    ctx.font = "800 15px Arial, sans-serif";
+    ctx.fillText("Backpacker", margin, y);
+    y += 26;
+    ctx.font = "800 27px Arial, sans-serif";
+    drawPdfWrappedText(ctx, state.trip.title || "Поездка", margin, y, contentWidth, 31, 2);
+    y += 64;
+    ctx.font = "700 13px Arial, sans-serif";
+    ctx.fillStyle = "#66716f";
+    drawPdfWrappedText(
+      ctx,
+      `${state.trip.destination || "Направление не задано"} · ${formatDate(state.trip.startDate)}-${formatDate(state.trip.endDate)}`,
+      margin,
+      y,
+      contentWidth,
+      18,
+      2,
+    );
+    y += 30;
+  }
+
+  async function drawBudget() {
+    if (!options.includeBudget) return;
+    const totals = getTotals();
+    const participantTotals = state.trip.participants.length > 1 ? getParticipantTotals() : [];
+    const height = participantTotals.length ? 112 + participantTotals.length * 18 : 104;
+    await ensureSpace(height);
+    ctx.fillStyle = "#ffffff";
+    roundRect(ctx, margin, y, contentWidth, height - 12, 8);
+    ctx.fill();
+    ctx.strokeStyle = "#ded8cc";
+    ctx.stroke();
+    ctx.fillStyle = "#1f2423";
+    ctx.font = "800 15px Arial, sans-serif";
+    ctx.fillText("Смета", margin + 14, y + 24);
+    const budgetRows = [
+      ["Бюджет", formatMoney(state.trip.budgetLimit)],
+      ["Оплачено", formatMoney(totals.paid)],
+      ["Запланировано", formatMoney(totals.fixed + totals.optional)],
+      ["Потенциально", formatMoney(totals.possible)],
+    ];
+    ctx.font = "700 11px Arial, sans-serif";
+    budgetRows.forEach((row, index) => {
+      const rowY = y + 48 + index * 18;
+      ctx.fillStyle = "#66716f";
+      ctx.fillText(row[0], margin + 14, rowY);
+      ctx.fillStyle = "#1f2423";
+      ctx.fillText(row[1], margin + 150, rowY);
+    });
+    participantTotals.forEach(({ participant, total }, index) => {
+      const rowY = y + 48 + budgetRows.length * 18 + 8 + index * 18;
+      ctx.fillStyle = "#66716f";
+      ctx.fillText(participant.name, margin + 14, rowY);
+      ctx.fillStyle = "#1f2423";
+      ctx.fillText(formatMoney(total), margin + 150, rowY);
+    });
+    y += height;
+  }
+
+  function getPdfItemHeight(item) {
+    ctx.font = "800 13px Arial, sans-serif";
+    const titleHeight = Math.max(18, drawPdfMeasureLines(ctx, item.title, contentWidth / 2 - 52).length * 16);
+    let height = 66 + titleHeight;
+    if (options.includeNotes && item.notes) {
+      ctx.font = "400 10px Arial, sans-serif";
+      height += Math.min(42, drawPdfMeasureLines(ctx, item.notes, contentWidth / 2 - 26).length * 13) + 8;
+    }
+    return Math.max(96, height);
+  }
+
+  function drawPdfItem(item, x, itemY, width, height) {
+    const participant = getParticipantById(item.participantId);
+    ctx.fillStyle = "#ffffff";
+    roundRect(ctx, x, itemY, width, height, 8);
+    ctx.fill();
+    ctx.strokeStyle = "#ded8cc";
+    ctx.stroke();
+    ctx.fillStyle = getPdfTypeColor(item.type);
+    roundRect(ctx, x + 10, itemY + 10, 34, 34, 8);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "800 17px Arial, sans-serif";
+    ctx.fillText(getTypeLabel(item.type).slice(0, 1), x + 21, itemY + 33);
+    ctx.fillStyle = "#1f2423";
+    ctx.font = "800 13px Arial, sans-serif";
+    drawPdfWrappedText(ctx, item.title, x + 52, itemY + 21, width - 64, 16, 3);
+    ctx.font = "700 10px Arial, sans-serif";
+    ctx.fillStyle = "#66716f";
+    const details = [
+      item.startTime || "без времени",
+      formatDurationText(item.durationMinutes),
+      participant?.name ? `расход: ${participant.name}` : "",
+      options.includeBudget && parseMoney(item.price) ? formatMoney(item.price) : "",
+    ].filter(Boolean).join(" · ");
+    drawPdfWrappedText(ctx, details, x + 12, itemY + 62, width - 24, 13, 2);
+    if (options.includeNotes && item.notes) {
+      ctx.font = "400 10px Arial, sans-serif";
+      ctx.fillStyle = "#1f2423";
+      drawPdfWrappedText(ctx, item.notes, x + 12, itemY + 88, width - 24, 13, 3);
+    }
+  }
+
+  async function drawItemGrid(items) {
+    const gap = 10;
+    const cardWidth = (contentWidth - gap) / 2;
+    let index = 0;
+    while (index < items.length) {
+      const first = items[index];
+      const second = items[index + 1];
+      const firstHeight = getPdfItemHeight(first);
+      const secondHeight = second ? getPdfItemHeight(second) : firstHeight;
+      const rowHeight = Math.max(firstHeight, secondHeight);
+      await ensureSpace(rowHeight + 12);
+      drawPdfItem(first, margin, y, cardWidth, rowHeight);
+      if (second) drawPdfItem(second, margin + cardWidth + gap, y, cardWidth, rowHeight);
+      y += rowHeight + 12;
+      index += 2;
+    }
+  }
+
+  startPage();
+  drawHeader();
+  await drawBudget();
+
+  for (const [index, date] of getTripDates().entries()) {
+    const items = state.items.filter((item) => item.date === date && item.status !== "skipped").sort(sortItems);
+    await ensureSpace(60);
+    drawSectionTitle(`День ${index + 1}`, formatDate(date));
+    if (items.length) {
+      await drawItemGrid(items);
+    } else {
+      ctx.font = "700 12px Arial, sans-serif";
+      ctx.fillStyle = "#66716f";
+      ctx.fillText("Пока пусто", margin, y);
+      y += 28;
+    }
+  }
+
+  const undated = state.items.filter((item) => !item.date && item.status !== "skipped").sort(sortItems);
+  if (options.includeUndated && undated.length) {
+    await ensureSpace(60);
+    drawSectionTitle("Без даты", "Идеи и запасные варианты");
+    await drawItemGrid(undated);
+  }
+
+  await commitPage();
+  for (const pngBytes of pages) {
+    const page = pdfDoc.addPage([pageWidth, pageHeight]);
+    const image = await pdfDoc.embedPng(pngBytes);
+    page.drawImage(image, { x: 0, y: 0, width: pageWidth, height: pageHeight });
+  }
+  const pdfBytes = await pdfDoc.save();
+  return new Blob([pdfBytes], { type: "application/pdf" });
+}
+
+function drawPdfMeasureLines(ctx, text, maxWidth) {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  words.forEach((word) => {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  });
+  if (line) lines.push(line);
+  return lines.length ? lines : [""];
+}
+
+function roundRect(ctx, x, y, width, height, radius) {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + width, y, x + width, y + height, radius);
+  ctx.arcTo(x + width, y + height, x, y + height, radius);
+  ctx.arcTo(x, y + height, x, y, radius);
+  ctx.arcTo(x, y, x + width, y, radius);
+  ctx.closePath();
+}
+
+function getPdfTypeColor(type) {
+  return {
+    ticket: "#4fb986",
+    stay: "#e8a51d",
+    transport: "#1aaec3",
+    excursion: "#e97725",
+    food: "#d94a35",
+    place: "#0c8ca8",
+    spa: "#8f4f6c",
+    shopping: "#689d72",
+    idea: "#d88d22",
+  }[type] || "#d88d22";
+}
+
+async function createAndShareTripPdf() {
+  if (tripPdfGenerating) return;
+  const options = getTripPdfOptions();
+  const itemCount = getTripPdfItemCount(options);
+  if (!itemCount) {
+    showToast("В поездке пока нет элементов для экспорта.");
+    return;
+  }
+  const button = $("#createTripPdfButton");
+  tripPdfGenerating = true;
+  button.disabled = true;
+  button.textContent = "Готовим PDF...";
+  trackEvent("trip_pdf_generation_started", {
+    ...getTripAnalyticsContext(),
+    include_budget: options.includeBudget,
+    include_notes: options.includeNotes,
+    include_undated: options.includeUndated,
+    day_count: getTripDates().length,
+    item_count: itemCount,
+  });
+  try {
+    const blob = await buildTripPdfBlob(options);
+    const fileName = getTripPdfFileName();
+    const file = new File([blob], fileName, { type: "application/pdf" });
+    trackEvent("trip_pdf_generated", {
+      ...getTripAnalyticsContext(),
+      include_budget: options.includeBudget,
+      include_notes: options.includeNotes,
+      include_undated: options.includeUndated,
+      day_count: getTripDates().length,
+      item_count: itemCount,
+    });
+    if (navigator.canShare?.({ files: [file] }) && navigator.share) {
+      await navigator.share({
+        title: `Backpacker: ${state.trip.title}`,
+        text: "План поездки из Backpacker",
+        files: [file],
+      });
+      trackEvent("trip_pdf_shared", { ...getTripAnalyticsContext(), method: "web_share_file" });
+      showToast("PDF отправлен");
+    } else {
+      downloadBlobFile(fileName, blob);
+      trackEvent("trip_pdf_downloaded", { ...getTripAnalyticsContext(), method: "download_fallback" });
+      showToast("PDF сохранён. Его можно отправить из загрузок.");
+    }
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      trackEvent("trip_pdf_generation_failed", { ...getTripAnalyticsContext(), error_name: error?.name || "unknown" });
+      showToast("Не удалось создать PDF. Попробуйте ещё раз.");
+    }
+  } finally {
+    tripPdfGenerating = false;
+    button.disabled = false;
+    button.textContent = "Создать и поделиться";
+  }
+}
+
 async function shareTrip() {
   const text = buildShareText(true);
   const shareData = {
@@ -2790,7 +3150,7 @@ async function shareTrip() {
   if (navigator.share) {
     try {
       await navigator.share(shareData);
-      trackEvent("share_completed", { ...getTripAnalyticsContext(), method: "web_share", result: "success" });
+      trackEvent("trip_shared_as_text", { ...getTripAnalyticsContext(), method: "web_share", result: "success" });
       return;
     } catch (error) {
       if (error?.name === "AbortError") return;
@@ -2798,7 +3158,7 @@ async function shareTrip() {
   }
   await copyText(`${text}\n\n${window.location.href}`);
   showToast("Ссылка и сводка скопированы");
-  trackEvent("share_completed", { ...getTripAnalyticsContext(), method: "copy_fallback", result: "fallback" });
+  trackEvent("trip_shared_as_text", { ...getTripAnalyticsContext(), method: "copy_fallback", result: "fallback" });
 }
 
 async function shareApp() {
@@ -3597,10 +3957,11 @@ function bindEvents() {
   $("#addParticipantButton")?.addEventListener("click", addParticipant);
   $("#resetDemoButton").addEventListener("click", resetDemo);
   $("#shareButton").addEventListener("click", openShareSheet);
-  $("#installAppButton").addEventListener("click", installPwa);
+  $("#shareTripTextButton").addEventListener("click", shareTrip);
+  $("#openTripPdfOptionsButton").addEventListener("click", showTripPdfOptions);
+  $("#createTripPdfButton").addEventListener("click", createAndShareTripPdf);
   $("#downloadEstimateButton").addEventListener("click", chooseAndDownloadEstimate);
   $("#downloadPlanButton").addEventListener("click", chooseAndDownloadPlan);
-  $("#shareTripButton").addEventListener("click", shareTrip);
   $("#copyEstimateButton").addEventListener("click", chooseAndDownloadEstimate);
   $("#refreshRatesButton").addEventListener("click", refreshExchangeRates);
   ["currencyAmount", "currencyFrom", "currencyTo"].forEach((id) => {

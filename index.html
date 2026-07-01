@@ -630,10 +630,27 @@
           <button class="icon-button" data-close="share" type="button" aria-label="Закрыть">×</button>
         </header>
         <div class="share-actions">
-          <button class="ghost-button" id="installAppButton" type="button">Скачать мобильное приложение</button>
-          <button class="primary-button" id="downloadEstimateButton" type="button">Скачать смету</button>
+          <button class="primary-button" id="shareTripTextButton" type="button">Отправить поездку текстом</button>
+          <button class="primary-button" id="openTripPdfOptionsButton" type="button">Отправить поездку в PDF</button>
+        </div>
+        <div class="trip-pdf-options hidden" id="tripPdfOptions">
+          <label class="trip-pdf-toggle">
+            <input id="tripPdfIncludeBudget" type="checkbox" checked />
+            <span>Включить смету</span>
+          </label>
+          <label class="trip-pdf-toggle">
+            <input id="tripPdfIncludeNotes" type="checkbox" />
+            <span>Включить заметки</span>
+          </label>
+          <label class="trip-pdf-toggle">
+            <input id="tripPdfIncludeUndated" type="checkbox" checked />
+            <span>Включить элементы без даты</span>
+          </label>
+          <button class="primary-button" id="createTripPdfButton" type="button">Создать и поделиться</button>
+        </div>
+        <div class="share-actions share-secondary-actions">
+          <button class="ghost-button" id="downloadEstimateButton" type="button">Скачать смету</button>
           <button class="ghost-button" id="downloadPlanButton" type="button">Скачать план по дням</button>
-          <button class="ghost-button" id="shareTripButton" type="button">Поделиться</button>
         </div>
         <pre class="share-preview" id="sharePreview"></pre>
       </section>
