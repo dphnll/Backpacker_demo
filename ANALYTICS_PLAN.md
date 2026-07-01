@@ -53,7 +53,9 @@ Safe properties:
 
 Every event must include:
 
-- `analytics_schema_version`: current value `2026-06-25.1`;
+- `analytics_schema_version`: current value `2026-07-01.1`;
+  the previous value `2026-06-25.1` remains a valid historical value and must not be deleted or overwritten;
+  see "Feature analytics — July observation release" for the migration strategy;
 - `app_version` or `release_id`: current release marker;
 - `environment`: `production | local | preview`;
 - `is_internal_user`: boolean;
@@ -396,6 +398,116 @@ Separate retention into:
 - During-trip usage can only be detected on the device where the trip is stored.
 - Without accounts, we cannot reliably join behavior across devices.
 - Without backend, we cannot know whether a shared trip was opened by another person unless import/export or backend sharing is later added.
+
+## Feature analytics — July observation release
+
+Adds observation coverage for features that already shipped in product (`1.1.1.0` copy, `1.1.2.0` share/PDF) without changing UX or business logic. No new product features, no new milestones, no donation flow instrumentation.
+
+### Schema migration strategy
+
+- New schema version: `analytics_schema_version = 2026-07-01.1`.
+- Previous version `2026-06-25.1` stays valid and is never deleted or rewritten.
+- Core product-health metrics (first value, working plan, trainer, app opens) must keep counting events tagged with either schema version, so the weekly PostHog → Google Sheets sync does not lose data across the switch.
+- Only the new feature events below are expected to appear exclusively under `2026-07-01.1`; do not backfill them into the old schema.
+- PostHog dashboards/insights that hard-filter `analytics_schema_version = '2026-06-25.1'` must be updated to accept both values for core metrics.
+- The Google Sheets integration reads an allow-list of schema versions (`ANALYTICS_SCHEMA_VERSIONS` Script Property, comma-separated; falls back to the single historical value when unset) instead of one exact string. No new feature columns are added to the sheet.
+
+### `item_copy_opened`
+
+- Product question: do people use copy to assemble similar plans faster, and where do they copy cards to?
+- Sent when: the copy interface for an existing card actually opens (not on button hover/render, not on click if the sheet fails to open, not for the regular edit form).
+- Scope: item-scoped.
+- Properties: `trip_id`, `item_id` (source card), `trip_origin`, `item_type`, `item_status`, `source_bucket` (`day | undated`), `available_destination_scope` (`same_trip | other_trip | both`), plus the common safe context.
+- Never sent: source title, date, note or any card content.
+- Cardinality: once per copy-sheet open (no dedup — a user can open it many times).
+- Metrics: unique users opening copy; completion rate against `item_created` with `creation_method=copy`; drop-off (`item_copy_opened` vs. `item_copy_cancelled`).
+
+### `item_copy_cancelled`
+
+- Product question: at what point do people abandon the copy flow?
+- Sent when: the copy sheet is dismissed (backdrop, close button, browser back) without a confirmed copy.
+- Scope: item-scoped. Properties: `trip_id`, `item_id`, `trip_origin`, `method`.
+- Not a required event per the base spec, kept because it already existed in code (renamed from `card_copy_cancelled` for naming consistency) and answers a real drop-off question.
+
+### `item_created` (extended)
+
+- Added properties: `creation_method` (`manual | copy | other`, always required), `copy_destination_type` (`same_trip_other_day | same_trip_undated | other_trip_day | other_trip_undated`, only present when `creation_method = copy`).
+- For copy, `trip_id`/`trip_origin`/`trip_phase`/`days_until_trip_bucket` refer to the **destination** trip, not the source.
+- Historical events without `creation_method` must not be assumed to be manual creations in reports; only analyze `creation_method` breakdowns from `2026-07-01.1` onward.
+- No separate `item_copy_completed` event exists; completion is read from `item_created` with `creation_method = copy`.
+
+### `share_opened` (extended for trip context)
+
+- Product question: how often do people start the "share trip" flow?
+- Sent when: the "Поделиться поездкой" bottom sheet actually opens.
+- Scope: trip-scoped. Added property: `share_context: trip` (the pre-existing app-share entry point keeps sending `share_opened` with `share_target: app` and no `share_context`; both coexist under the same event name, distinguished by these properties).
+- Properties: `share_context`, `trip_id`, `trip_origin`, `trip_phase`, `days_until_trip_bucket`.
+
+### `share_method_selected`
+
+- Product question: which text-share channel does the device actually use?
+- Sent when: the user confirms the "Отправить поездку текстом" action, at the moment the code determines whether the Web Share API is available (`method: web_share`) or not (`method: clipboard`).
+- Scope: trip-scoped. Properties: `share_context: trip`, `share_format: text`, `method`, plus trip context.
+- Not sent for the PDF path (PDF uses `export_started`/`export_completed`, see below).
+
+### `share_completed` (extended for trip context)
+
+- Product question: does the text/PDF share actually finish successfully?
+- Sent when: Web Share Promise resolves, or clipboard write resolves, or (for PDF) the file share Promise resolves.
+- Never sent on cancel (`AbortError`) or on a real API failure.
+- Properties for trip text share: `share_context: trip`, `share_format: text`, `method` (`web_share | clipboard`), trip context.
+- Properties for PDF share: `share_format: pdf`, `method: web_share`, trip context (no `share_context` needed — PDF is inherently trip-scoped).
+- Limitation: this event does not prove the recipient read the message or opened the file — it only confirms the local share/clipboard mechanism completed.
+
+### PDF export: `export_started` / `export_completed` / `export_failed` (`export_type = trip_pdf`)
+
+- Product question: do people generate a trip PDF, does generation succeed, and how do they get it out (share vs. download)?
+- `export_started`: sent once the user confirmed PDF creation and generation actually began. The trip PDF sheet has two explicit actions, "Скачать" and "Поделиться"; `delivery_method` (`download | share`) reflects which one the user pressed. Pressing "Поделиться" on a device without file Web Share support falls back to a download and reports `delivery_method: download` (checked synchronously via file-capability detection before generation starts).
+- `export_completed`: sent once the PDF blob/document was actually built (independent of whether the user later cancels the OS share sheet). For `delivery_method = download` this means the download was initiated, not that the file was confirmed saved on device.
+- `export_failed`: sent only on a real error. `failure_reason_bucket`: `generation` (PDF building failed), `browser` (pdf-lib module unavailable), `share_api` (the share step itself failed, excluding user cancel), `unsupported`, `unknown`.
+- Shared properties: `export_type: trip_pdf`, `delivery_method`, `include_budget`, `include_notes`, `include_undated`, `options_changed`, `changed_options`, trip context.
+- If the generated PDF is then shared successfully via the system share sheet, `share_completed` (`share_format: pdf`) is also sent (see above). Opening a print/preview dialog is not treated as a completed share.
+- Cardinality: once per user-confirmed export attempt for each of started/completed/failed.
+
+### PDF composition properties (`include_budget` / `include_notes` / `include_undated` / `options_changed` / `changed_options`)
+
+- Sent only on `export_started` and `export_completed`, never as separate per-checkbox events.
+- `changed_options` (`none | budget | notes | undated | multiple`) reflects the difference from the default configuration (budget on, notes off, undated on), not just the final checkbox state.
+- Metrics must only use `export_completed` (successful) rows; a default-on option is not treated as a deliberate user choice.
+
+### `item_form_reset`
+
+- Product question: how often do people discard edits, and does that correlate with abandoning the card afterward?
+- Sent only when all are true: form is in `mode=edit`, the form actually differs from the last saved card state, the user pressed reset, and the form was restored to the saved state.
+- Never sent: on a disabled/no-op reset click, or when nothing changed.
+- Properties: `trip_id`, `item_id`, `trip_origin`, `mode: edit`, `had_unsaved_changes: true`, `changed_fields_count`, `time_in_form_bucket` (`under_10s | 10_30s | 31_60s | over_60s`).
+- Never sent: field values, before/after content.
+- No `form_session_id` — reset-to-save/close sequencing is reconstructed from existing events plus timestamps.
+
+### `trip_section_opened` (extended)
+
+- Added property: `navigation_source` (`bottom_bar | internal_link | automatic | other`). Bottom nav clicks send `bottom_bar`; the internal auto-navigation before a (currently disabled) donation prompt sends `automatic`.
+- Existing properties unchanged: `section`, `from_section`, trip context. Still sent only on an actual active-section change, not on re-renders.
+
+### `home_opened` (extended)
+
+- Added optional property `source`. Only `trip_bottom_bar` is currently sent, when the user taps the trip-header logo button to leave a trip back to the trips list. When triggered by onboarding completion or app startup, no `source` is sent.
+- `home_opened` remains a global event: it must never receive `trip_id`, `trip_origin`, `trip_phase`, `days_until_trip_bucket` or `item_count`.
+
+### `product_info_opened`
+
+- Product question: do people look at the "О продукте" section, and is it mostly new or returning users?
+- Sent when: the "О продукте" sheet actually opens (not on version text render).
+- Scope: global. Properties: `entry_source` (only `home` exists today — the sole entry point is the home-screen support button), `is_returning_user` (captured once at app open, reused without re-reading storage). `app_version` is already present on every event via the common analytics context.
+- This is a secondary feature metric; it must not be added to the main Product Health dashboard.
+
+### Explicitly deferred / not tracked
+
+- **Donation flow**: fully deferred. No `donation_offer_opened`, `donation_cta_clicked`, `donation_checkout_opened`, `donation_completed`, or amount properties are sent from production feature analytics while the flow stays behind `DONATION_FLOW_ENABLED = false`.
+- **Disabled-button clicks**: not tracked, and not planned. Disabled affordances are verified through QA/accessibility/user testing, not telemetry.
+- **Sticky edit-form buttons**: no dedicated event. Measured through the existing `item_form_opened` (`mode=edit`) → `item_updated` funnel; compare before/after via `app_version`/release boundary, and state the limitation explicitly if that boundary can't be reconstructed from historical data.
+- **PDF download semantics**: `export_completed` with `delivery_method: download` means the download was initiated, not that the file was confirmed saved to the device.
+- **Share completed semantics**: `share_completed` (text or PDF) never confirms that the recipient opened or read the shared content — only that the local share/clipboard mechanism finished successfully.
 
 ## Files to change during implementation
 

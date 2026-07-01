@@ -110,6 +110,46 @@ function test_buildFilters_noAuthorizationLeak() {
 }
 
 // =============================================================================
+// Multi-version schema support (ANALYTICS_SCHEMA_VERSIONS)
+// =============================================================================
+
+function test_getAllowedSchemaVersions_defaultsToBothVersions() {
+  // No ANALYTICS_SCHEMA_VERSIONS Script Property set in this environment,
+  // so this must fall back to DEFAULT_SCHEMA_VERSIONS.
+  var versions = getAllowedSchemaVersions_();
+  if (versions.indexOf("2026-06-25.1") === -1) {
+    throw new Error("[FAIL] getAllowedSchemaVersions_ dropped the historical schema version");
+  }
+  if (versions.indexOf(SCHEMA_VERSION) === -1) {
+    throw new Error("[FAIL] getAllowedSchemaVersions_ dropped the current schema version");
+  }
+  Logger.log("[PASS] getAllowedSchemaVersions_ returns both default versions");
+}
+
+function test_buildFilters_acceptsAllAllowedSchemaVersions() {
+  var f = buildFilters_("2026-06-19", "2026-06-26");
+  if (f.indexOf("analytics_schema_version IN (") === -1) {
+    throw new Error("[FAIL] buildFilters_ does not use an IN clause for schema versions");
+  }
+  getAllowedSchemaVersions_().forEach(function(v) {
+    if (f.indexOf("'" + v + "'") === -1) {
+      throw new Error("[FAIL] buildFilters_ is missing allowed schema version: " + v);
+    }
+  });
+  Logger.log("[PASS] buildFilters_ accepts every allowed schema version");
+}
+
+function test_buildFilters_excludesUnknownSchemaVersion() {
+  var f = buildFilters_("2026-06-19", "2026-06-26");
+  // An unlisted version must never appear in the IN clause — SQL IN semantics
+  // then exclude any event tagged with it automatically.
+  if (f.indexOf("'2099-01-01.1'") !== -1) {
+    throw new Error("[FAIL] buildFilters_ unexpectedly references an unlisted schema version");
+  }
+  Logger.log("[PASS] buildFilters_ does not reference unknown schema versions");
+}
+
+// =============================================================================
 // inSubquery_
 // =============================================================================
 
@@ -136,6 +176,19 @@ function test_inSubquery_containsEvent() {
     throw new Error("[FAIL] inSubquery_ does not contain the event name");
   }
   Logger.log("[PASS] inSubquery_ contains event name");
+}
+
+function test_inSubquery_acceptsAllAllowedSchemaVersions() {
+  var q = inSubquery_("trip_first_value_reached", "2026-06-19", "2026-06-26");
+  if (q.indexOf("analytics_schema_version IN (") === -1) {
+    throw new Error("[FAIL] inSubquery_ does not use an IN clause for schema versions");
+  }
+  getAllowedSchemaVersions_().forEach(function(v) {
+    if (q.indexOf("'" + v + "'") === -1) {
+      throw new Error("[FAIL] inSubquery_ is missing allowed schema version: " + v);
+    }
+  });
+  Logger.log("[PASS] inSubquery_ accepts every allowed schema version");
 }
 
 // =============================================================================
@@ -232,6 +285,93 @@ function test_findRowByPeriod_returnsMinusOneWhenEmpty() {
 }
 
 // =============================================================================
+// upsertRow_ — no duplicate rows on resync
+// A minimal in-memory fake of the Sheet API surface that upsertRow_ /
+// findRowByPeriod_ / ensurePostHogHeaders_ actually use. No network calls,
+// no real spreadsheet.
+// =============================================================================
+
+function FakeSheet_(headers) {
+  this.rows = [headers.slice()];
+}
+
+FakeSheet_.prototype.getLastRow = function() {
+  return this.rows.length;
+};
+
+FakeSheet_.prototype.getLastColumn = function() {
+  return this.rows[0].length;
+};
+
+FakeSheet_.prototype.setFrozenRows = function() {};
+
+FakeSheet_.prototype.getRange = function(row, col, numRows, numCols) {
+  var sheet = this;
+  return {
+    getValues: function() {
+      var out = [];
+      for (var r = 0; r < numRows; r++) {
+        var line = sheet.rows[row - 1 + r] || [];
+        var slice = [];
+        for (var c = 0; c < numCols; c++) slice.push(line[col - 1 + c]);
+        out.push(slice);
+      }
+      return out;
+    },
+    setValues: function(values) {
+      for (var r = 0; r < values.length; r++) {
+        var rowIndex = row - 1 + r;
+        while (sheet.rows.length <= rowIndex) sheet.rows.push([]);
+        for (var c = 0; c < values[r].length; c++) {
+          sheet.rows[rowIndex][col - 1 + c] = values[r][c];
+        }
+      }
+    },
+  };
+};
+
+FakeSheet_.prototype.appendRow = function(row) {
+  this.rows.push(row.slice());
+};
+
+function buildFakeSyncMetrics_(newAnonUsers) {
+  return {
+    new_anon_users: newAnonUsers, first_value_funnel_started: 1, first_value_funnel_completed: 1,
+    first_value_conversion_7d_pct: 100, working_plan_funnel_started: 1,
+    working_plan_funnel_completed: 0, working_plan_conversion_14d_pct: 0,
+    trainer_users: 0, trainer_action_users: 0, trainer_to_own_trip_7d: 0,
+    users_trip_first_value_reached: 1, users_trip_working_plan_reached: 0,
+    app_versions: "1.1.2.1"
+  };
+}
+
+function test_upsertRow_noDuplicateOnResync() {
+  var sheet = new FakeSheet_(HEADERS);
+  var period = { start: "2026-06-19", end: "2026-06-26", label: "2026-06-19 – 2026-06-25" };
+
+  upsertRow_(sheet, buildFakeSyncMetrics_(10), period);
+  assert_("one data row after first sync", sheet.getLastRow(), 2);
+
+  upsertRow_(sheet, buildFakeSyncMetrics_(15), period);
+  assert_("still one data row after resync (no duplicate)", sheet.getLastRow(), 2);
+
+  var nauIdx = HEADERS.indexOf("new_anon_users");
+  assert_("resync updates the existing row in place", sheet.rows[1][nauIdx], 15);
+  Logger.log("[PASS] upsertRow_ does not duplicate rows on resync");
+}
+
+function test_upsertRow_differentPeriodsAppendSeparateRows() {
+  var sheet = new FakeSheet_(HEADERS);
+  var periodA = { start: "2026-06-19", end: "2026-06-26", label: "2026-06-19 – 2026-06-25" };
+  var periodB = { start: "2026-06-26", end: "2026-07-03", label: "2026-06-26 – 2026-07-02" };
+
+  upsertRow_(sheet, buildFakeSyncMetrics_(10), periodA);
+  upsertRow_(sheet, buildFakeSyncMetrics_(20), periodB);
+  assert_("two distinct periods produce two data rows", sheet.getLastRow(), 3);
+  Logger.log("[PASS] upsertRow_ appends a new row for a different period");
+}
+
+// =============================================================================
 // Security: no credential leakage in SQL helpers
 // =============================================================================
 
@@ -262,13 +402,19 @@ function runAllTests() {
     test_buildFilters_exclusiveEnd();
     test_buildFilters_inclusiveEnd();
     test_buildFilters_noAuthorizationLeak();
+    test_getAllowedSchemaVersions_defaultsToBothVersions();
+    test_buildFilters_acceptsAllAllowedSchemaVersions();
+    test_buildFilters_excludesUnknownSchemaVersion();
     test_inSubquery_noAnonymousIds();
     test_inSubquery_containsEvent();
+    test_inSubquery_acceptsAllAllowedSchemaVersions();
     test_buildRow_lengthMatchesHeaders();
     test_buildRow_preservesManualColumns();
     test_buildRow_overwritesMetricColumns();
     test_buildRow_manualColsEmptyWhenNoExistingRow();
     test_findRowByPeriod_returnsMinusOneWhenEmpty();
+    test_upsertRow_noDuplicateOnResync();
+    test_upsertRow_differentPeriodsAppendSeparateRows();
     test_noCredentialsInSQLHelpers();
     Logger.log("=== ALL TESTS PASSED ===");
   } catch (e) {

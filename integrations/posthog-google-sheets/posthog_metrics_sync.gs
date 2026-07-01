@@ -8,16 +8,25 @@
 //                               NOT the project capture key (phc_...)
 //   POSTHOG_PROJECT_ID        — numeric project ID (visible in PostHog URL)
 //   POSTHOG_HOST              — optional, default: https://eu.posthog.com
+//   ANALYTICS_SCHEMA_VERSIONS — optional, comma-separated allow-list of
+//                               analytics_schema_version values core metrics
+//                               should count, e.g. "2026-06-25.1,2026-07-01.1"
+//                               Falls back to DEFAULT_SCHEMA_VERSIONS when unset.
 // =============================================================================
 
 var SPREADSHEET_ID  = "1jQsMqIkejdyxpD7mHI2IqwViAXUTNVFqqJXRiFM17Hk";
 var METRICS_SHEET   = "PostHog_метрики";
-var SCHEMA_VERSION  = "2026-06-25.1";
+var SCHEMA_VERSION  = "2026-07-01.1"; // current primary schema version
 
-var PROP_API_KEY    = "POSTHOG_PERSONAL_API_KEY";
-var PROP_PROJECT_ID = "POSTHOG_PROJECT_ID";
-var PROP_HOST       = "POSTHOG_HOST";
-var DEFAULT_HOST    = "https://eu.posthog.com";
+var PROP_API_KEY           = "POSTHOG_PERSONAL_API_KEY";
+var PROP_PROJECT_ID        = "POSTHOG_PROJECT_ID";
+var PROP_HOST              = "POSTHOG_HOST";
+var PROP_SCHEMA_VERSIONS   = "ANALYTICS_SCHEMA_VERSIONS";
+var DEFAULT_HOST           = "https://eu.posthog.com";
+// Core metrics must keep counting the historical schema alongside the current
+// one so the transition to a new analytics_schema_version does not drop
+// production events out of the weekly sync.
+var DEFAULT_SCHEMA_VERSIONS = ["2026-06-25.1", "2026-07-01.1"];
 
 var MANUAL_COLS = ["main_observation", "main_problem", "decision_for_next_week"];
 
@@ -127,6 +136,7 @@ function showIntegrationStatus() {
     "  " + PROP_API_KEY    + ": " + (props[PROP_API_KEY]    ? "SET (hidden)" : "⚠ MISSING"),
     "  " + PROP_PROJECT_ID + ": " + (props[PROP_PROJECT_ID] ? "SET"          : "⚠ MISSING"),
     "  " + PROP_HOST       + ": " + (props[PROP_HOST]       || "(default: " + DEFAULT_HOST + ")"),
+    "  " + PROP_SCHEMA_VERSIONS + ": " + getAllowedSchemaVersions_().join(", ") + (props[PROP_SCHEMA_VERSIONS] ? "" : " (default)"),
     "",
     "=== Triggers ==="
   ];
@@ -362,6 +372,26 @@ function fetchAllMetrics_(cfg, start, end) {
   };
 }
 
+// Reads the ANALYTICS_SCHEMA_VERSIONS Script Property (comma-separated) and
+// falls back to DEFAULT_SCHEMA_VERSIONS when unset or empty, so core metrics
+// keep counting both the historical and the current analytics schema.
+function getAllowedSchemaVersions_() {
+  var raw = PropertiesService.getScriptProperties().getProperty(PROP_SCHEMA_VERSIONS);
+  if (!raw) return DEFAULT_SCHEMA_VERSIONS.slice();
+  var versions = raw.split(",")
+    .map(function(v) { return v.trim(); })
+    .filter(Boolean);
+  return versions.length ? versions : DEFAULT_SCHEMA_VERSIONS.slice();
+}
+
+// Builds an `analytics_schema_version IN (...)` clause from the allow-list.
+// Any event tagged with a version outside this list is excluded by normal
+// SQL IN semantics — no separate "unknown version" branch is needed.
+function buildSchemaVersionFilter_() {
+  var quoted = getAllowedSchemaVersions_().map(function(v) { return "'" + v + "'"; });
+  return "properties.analytics_schema_version IN (" + quoted.join(", ") + ")";
+}
+
 // Build a shared filter clause for the primary period window.
 // extendedEnd=true uses inclusive <= instead of exclusive < for the end date.
 function buildFilters_(start, end, extendedEnd) {
@@ -372,7 +402,7 @@ function buildFilters_(start, end, extendedEnd) {
     "properties.environment = 'production'",
     "properties.is_internal_user = false",
     "properties.is_test_user = false",
-    "properties.analytics_schema_version = '" + SCHEMA_VERSION + "'",
+    buildSchemaVersionFilter_(),
     "toDate(timestamp) >= toDate('" + start + "')",
     endClause
   ].join("\n  AND ");
@@ -387,7 +417,7 @@ function inSubquery_(event, start, end) {
     "    AND properties.environment = 'production'",
     "    AND properties.is_internal_user = false",
     "    AND properties.is_test_user = false",
-    "    AND properties.analytics_schema_version = '" + SCHEMA_VERSION + "'",
+    "    AND " + buildSchemaVersionFilter_(),
     "    AND toDate(timestamp) >= toDate('" + start + "')",
     "    AND toDate(timestamp) <= toDate('" + end + "')",
     ""
