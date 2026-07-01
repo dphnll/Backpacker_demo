@@ -371,6 +371,9 @@
       <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="itemSheetTitle">
         <header class="sheet-header">
           <h2 id="itemSheetTitle">Добавить в поездку</h2>
+          <button class="icon-button item-copy-button" id="copyItemButton" type="button" aria-label="Скопировать карточку" hidden>
+            <img src="./icons/card-copy.png" alt="" aria-hidden="true" />
+          </button>
           <button class="icon-button" data-close="item" type="button" aria-label="Закрыть">×</button>
         </header>
         <form id="itemForm" class="sheet-form">
@@ -443,6 +446,26 @@
             <button class="danger-button" id="deleteItemButton" type="button">Удалить</button>
           </div>
         </form>
+      </section>
+    </div>
+
+    <div class="sheet" id="cardCopySheet" aria-hidden="true">
+      <div class="sheet-backdrop" data-card-copy-dismiss="backdrop"></div>
+      <section class="sheet-panel card-copy-panel" role="dialog" aria-modal="true" aria-labelledby="cardCopySheetTitle">
+        <header class="sheet-header">
+          <h2 id="cardCopySheetTitle">Куда скопировать карточку?</h2>
+          <button class="icon-button" data-card-copy-dismiss="close" type="button" aria-label="Закрыть">×</button>
+        </header>
+        <div class="card-copy-body">
+          <div class="card-copy-step" id="cardCopyScopeStep"></div>
+          <div class="card-copy-step hidden" id="cardCopyTripStep"></div>
+          <div class="card-copy-step hidden" id="cardCopyDateStep"></div>
+          <p class="card-copy-warning hidden" id="cardCopyWarning"></p>
+        </div>
+        <div class="card-copy-actions">
+          <button class="ghost-button" id="cardCopyBackButton" type="button">Назад</button>
+          <button class="primary-button" id="cardCopyConfirmButton" type="button" disabled>Скопировать</button>
+        </div>
       </section>
     </div>
 

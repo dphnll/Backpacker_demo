@@ -1973,6 +1973,7 @@ h3 {
 #copyDaysButton,
 #refreshRatesButton,
 #openLinkButton,
+#copyItemButton,
 #tripForm .primary-button[type="submit"] {
   border-color: rgba(18, 54, 61, 0.34);
   background: var(--active-button-gradient);
@@ -2007,6 +2008,7 @@ h3 {
 #copyDaysButton,
 #refreshRatesButton,
 #openLinkButton,
+#copyItemButton,
 #tripForm .primary-button[type="submit"] {
   min-height: 40px;
   border-color: rgba(18, 54, 61, 0.34);
@@ -2017,10 +2019,26 @@ h3 {
 
 .icon-button {
   width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
   padding: 0;
   display: grid;
   place-items: center;
   font-size: 18px;
+  line-height: 1;
+}
+
+.item-copy-button {
+  margin-left: auto;
+}
+
+.item-copy-button img {
+  display: block;
+  width: 25px;
+  height: 25px;
+  object-fit: contain;
+  filter: invert(1) brightness(2);
 }
 
 .link-open-button {
@@ -2856,6 +2874,125 @@ textarea:focus {
 
 #homeShareSheet .share-actions {
   margin-bottom: 0;
+}
+
+.card-copy-panel {
+  display: grid;
+  gap: 12px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom));
+}
+
+.card-copy-body,
+.card-copy-step {
+  display: grid;
+  gap: 10px;
+}
+
+.card-copy-step.hidden,
+.card-copy-warning.hidden {
+  display: none;
+}
+
+.card-copy-option {
+  display: grid;
+  width: 100%;
+  min-height: 58px;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    3px 3px 0 rgba(18, 54, 61, 0.06);
+}
+
+.card-copy-option[aria-pressed="true"] {
+  border-color: rgba(18, 54, 61, 0.34);
+  background: var(--active-button-gradient);
+  color: #fff;
+  box-shadow: var(--active-button-shadow);
+}
+
+.card-copy-option strong {
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-copy-option span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-copy-option[aria-pressed="true"] span {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.card-copy-warning,
+.card-copy-empty {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(153, 72, 43, 0.24);
+  border-radius: 8px;
+  background: #fff4e9;
+  color: #7f3f29;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.card-copy-empty {
+  border-color: var(--line);
+  background: #fff;
+  color: var(--muted);
+}
+
+.card-copy-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  margin: 2px -14px -14px;
+  padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(222, 216, 204, 0.85);
+  background:
+    linear-gradient(180deg, rgba(248, 244, 234, 0), var(--panel) 20%),
+    var(--panel);
+}
+
+.card-copy-actions .ghost-button,
+.card-copy-actions .primary-button {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 45px;
+  place-items: center;
+  line-height: 1;
+  text-align: center;
+}
+
+.card-copy-actions .primary-button {
+  border-color: rgba(18, 54, 61, 0.34);
+  background: var(--active-button-gradient);
+  color: #fff;
+  box-shadow: var(--active-button-shadow);
+}
+
+.card-copy-actions .ghost-button[hidden] {
+  display: none;
+}
+
+.card-copy-actions:has(.ghost-button[hidden]) {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .home-share-hint {

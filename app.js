@@ -14,8 +14,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.0.1";
-const APP_RELEASE_SUMMARY = "патч первой стабильной версии: подготовлен закрытый сценарий поддержки Backpacker с выбором суммы; публичная кнопка остается заблокированной до отдельной команды на активацию.";
+const APP_VERSION = "1.1.1.0";
+const APP_RELEASE_SUMMARY = "мини-фича первой стабильной версии: карточку можно скопировать в другой день, в «Без даты» или в другую поездку; исходная карточка остается без изменений.";
 const DONATION_FLOW_ENABLED = false;
 const DONATION_URL = ANALYTICS_CONFIG.donationUrl || "https://t.me/bckpckrbot?start=donate";
 const DEFAULT_ITEM_STATUS = "want";
@@ -42,6 +42,15 @@ let donationSheetHistoryArmed = false;
 let donationIgnoreNextPop = false;
 let donationDragStartY = 0;
 let donationDragCurrentY = 0;
+let cardCopySheetHistoryArmed = false;
+let cardCopyIgnoreNextPop = false;
+let cardCopyState = {
+  sourceItemId: "",
+  scope: "",
+  targetTripId: "",
+  targetDate: null,
+  isSubmitting: false,
+};
 
 const itemTypes = [
   ["ticket", "Билет"],
@@ -849,9 +858,13 @@ function renderItemDateSlots(item) {
 }
 
 function getTripDates() {
+  return getTripDatesForTrip(state.trip);
+}
+
+function getTripDatesForTrip(trip) {
   const dates = [];
-  const start = new Date(`${state.trip.startDate}T12:00:00`);
-  const end = new Date(`${state.trip.endDate}T12:00:00`);
+  const start = new Date(`${trip?.startDate || ""}T12:00:00`);
+  const end = new Date(`${trip?.endDate || ""}T12:00:00`);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return dates;
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     dates.push(d.toISOString().slice(0, 10));
@@ -1547,6 +1560,7 @@ function openItemSheet(itemId = null) {
   renderParticipantOwnerField();
   $("#deleteItemButton").style.display = itemId ? "inline-flex" : "none";
   $("#resetItemButton").style.display = itemId ? "inline-flex" : "none";
+  $("#copyItemButton").hidden = !itemId;
   $("#itemSheetTitle").textContent = itemId ? "Редактировать элемент" : "Добавить в поездку";
   fillItemForm(itemId ? state.items.find((entry) => entry.id === itemId) : null);
   updateOpenLinkButton();
@@ -1649,12 +1663,290 @@ function resetCurrentItemForm() {
   showToast("Изменения сброшены");
 }
 
-function getNextOrder(date) {
-  const orders = state.items
+function getNextOrderForItems(items, date) {
+  const orders = items
     .filter((item) => (item.date || "") === (date || ""))
     .map((item) => Number(item.order))
     .filter(Number.isFinite);
   return orders.length ? Math.max(...orders) + 1 : 0;
+}
+
+function getNextOrder(date) {
+  return getNextOrderForItems(state.items, date);
+}
+
+function getTripEntry(entryId) {
+  return tripStore.trips.find((entry) => entry.id === entryId);
+}
+
+function getTripState(entryId) {
+  if (entryId === state.trip.id) return state;
+  const entry = getTripEntry(entryId);
+  return entry ? normalizeState(structuredClone(entry.state)) : null;
+}
+
+function getCopyCandidateTrips() {
+  return tripStore.trips.filter((entry) => !entry.isDemo && entry.id !== state.trip.id);
+}
+
+function createTripItemCopy({ sourceItem, sourceTrip, targetState, targetDate }) {
+  const sameCurrency = sourceTrip.currency === targetState.trip.currency;
+  const now = new Date().toISOString();
+  const targetSelf = getSelfParticipant(targetState);
+  const sameTrip = sourceTrip.id === targetState.trip.id;
+  const copiedStatus = sourceItem.status === "paid" ? "fixed" : sourceItem.status;
+  return {
+    ...sourceItem,
+    id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    status: copiedStatus,
+    date: targetDate || "",
+    price: sameCurrency ? parseMoney(sourceItem.price) : 0,
+    paidAmount: 0,
+    participantId: sameTrip ? sourceItem.participantId : targetSelf.id,
+    order: getNextOrderForItems(targetState.items, targetDate),
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function getCardCopySourceItem() {
+  return state.items.find((item) => item.id === cardCopyState.sourceItemId) || null;
+}
+
+function getCardCopyTargetState() {
+  if (!cardCopyState.targetTripId) return null;
+  return getTripState(cardCopyState.targetTripId);
+}
+
+function getCardCopyDateOptions(targetState, { omitSourceBucket = false } = {}) {
+  const sourceItem = getCardCopySourceItem();
+  const dates = getTripDatesForTrip(targetState.trip).map((date, index) => ({
+    value: date,
+    title: `День ${index + 1}`,
+    meta: formatDate(date),
+  }));
+  const options = [
+    ...dates,
+    { value: "", title: "Без даты", meta: "В конец списка идей без даты" },
+  ];
+  if (!omitSourceBucket || !sourceItem) return options;
+  return options.filter((option) => (option.value || "") !== (sourceItem.date || ""));
+}
+
+function openCardCopySheet() {
+  const sourceItemId = $("#itemForm").elements.id.value;
+  const sourceItem = state.items.find((item) => item.id === sourceItemId);
+  if (!sourceItem) return;
+  cardCopyState = {
+    sourceItemId,
+    scope: "",
+    targetTripId: "",
+    targetDate: null,
+    isSubmitting: false,
+  };
+  renderCardCopySheet();
+  openSheet("cardCopySheet");
+  if (!cardCopySheetHistoryArmed) {
+    history.pushState({ backpackerCardCopySheet: true }, "");
+    cardCopySheetHistoryArmed = true;
+  }
+  trackEvent("card_copy_opened", {
+    ...getTripAnalyticsContext(),
+    item_id: sourceItem.id,
+    item_type: sourceItem.type,
+    item_status: sourceItem.status,
+  });
+}
+
+function dismissCardCopySheet(method = "close") {
+  const sourceItem = getCardCopySourceItem();
+  closeSheet("cardCopySheet");
+  if (cardCopySheetHistoryArmed && method !== "back") {
+    cardCopyIgnoreNextPop = true;
+    history.back();
+  }
+  cardCopySheetHistoryArmed = false;
+  trackEvent("card_copy_cancelled", {
+    ...getTripAnalyticsContext(),
+    item_id: sourceItem?.id || null,
+    method,
+  });
+}
+
+function renderCardCopySheet() {
+  renderCardCopyScopeStep();
+  renderCardCopyTripStep();
+  renderCardCopyDateStep();
+  renderCardCopyWarning();
+  renderCardCopyActions();
+}
+
+function renderCardCopyScopeStep() {
+  const container = $("#cardCopyScopeStep");
+  const hasOtherTrips = getCopyCandidateTrips().length > 0;
+  container.classList.toggle("hidden", Boolean(cardCopyState.scope));
+  container.innerHTML = `
+    <button class="card-copy-option" type="button" data-card-copy-scope="same" aria-pressed="${cardCopyState.scope === "same"}">
+      <strong>В эту поездку</strong>
+      <span>Выбрать другой день или «Без даты»</span>
+    </button>
+    ${hasOtherTrips ? `
+      <button class="card-copy-option" type="button" data-card-copy-scope="another" aria-pressed="${cardCopyState.scope === "another"}">
+        <strong>В другую поездку</strong>
+        <span>Сначала выбрать поездку, потом день</span>
+      </button>
+    ` : ""}
+  `;
+}
+
+function renderCardCopyTripStep() {
+  const container = $("#cardCopyTripStep");
+  const isVisible = cardCopyState.scope === "another" && !cardCopyState.targetTripId;
+  container.classList.toggle("hidden", !isVisible);
+  if (!isVisible) {
+    container.innerHTML = "";
+    return;
+  }
+  const trips = getCopyCandidateTrips();
+  container.innerHTML = trips.map((entry) => {
+    const trip = entry.state.trip;
+    return `
+      <button class="card-copy-option" type="button" data-card-copy-trip="${escapeAttr(entry.id)}">
+        <strong>${escapeHtml(trip.title || "Новая поездка")}</strong>
+        <span>${formatDate(trip.startDate)}-${formatDate(trip.endDate)} · ${escapeHtml(trip.destination || "Направление не задано")}</span>
+      </button>
+    `;
+  }).join("");
+}
+
+function renderCardCopyDateStep() {
+  const container = $("#cardCopyDateStep");
+  const targetState = getCardCopyTargetState();
+  const isVisible = Boolean(cardCopyState.scope && targetState);
+  container.classList.toggle("hidden", !isVisible);
+  if (!isVisible) {
+    container.innerHTML = "";
+    return;
+  }
+  const sameTrip = targetState.trip.id === state.trip.id;
+  const options = getCardCopyDateOptions(targetState, { omitSourceBucket: sameTrip });
+  container.innerHTML = options.length
+    ? options.map((option) => `
+      <button class="card-copy-option" type="button" data-card-copy-date="${escapeAttr(option.value)}" aria-pressed="${cardCopyState.targetDate !== null && (cardCopyState.targetDate || "") === (option.value || "")}">
+        <strong>${escapeHtml(option.title)}</strong>
+        <span>${escapeHtml(option.meta)}</span>
+      </button>
+    `).join("")
+    : `<p class="card-copy-empty">В этой поездке нет другого дня или блока для копии.</p>`;
+}
+
+function renderCardCopyWarning() {
+  const warning = $("#cardCopyWarning");
+  const targetState = getCardCopyTargetState();
+  const sourceItem = getCardCopySourceItem();
+  const shouldWarn = Boolean(sourceItem && targetState && targetState.trip.id !== state.trip.id && targetState.trip.currency !== state.trip.currency);
+  warning.classList.toggle("hidden", !shouldWarn);
+  warning.textContent = shouldWarn
+    ? "В выбранной поездке другая валюта. Стоимость карточки не будет скопирована."
+    : "";
+}
+
+function renderCardCopyActions() {
+  const confirmButton = $("#cardCopyConfirmButton");
+  const backButton = $("#cardCopyBackButton");
+  const targetState = getCardCopyTargetState();
+  const options = targetState
+    ? getCardCopyDateOptions(targetState, { omitSourceBucket: targetState.trip.id === state.trip.id })
+    : [];
+  const hasSelectedTarget = Boolean(cardCopyState.scope && targetState && cardCopyState.targetDate !== null && options.some((option) => (option.value || "") === (cardCopyState.targetDate || "")));
+  confirmButton.disabled = !hasSelectedTarget || cardCopyState.isSubmitting;
+  backButton.hidden = !cardCopyState.scope;
+}
+
+function handleCardCopyScope(scope) {
+  cardCopyState.scope = scope;
+  cardCopyState.targetTripId = scope === "same" ? state.trip.id : "";
+  cardCopyState.targetDate = null;
+  renderCardCopySheet();
+}
+
+function handleCardCopyTrip(targetTripId) {
+  cardCopyState.targetTripId = targetTripId;
+  cardCopyState.targetDate = null;
+  renderCardCopySheet();
+}
+
+function handleCardCopyDate(targetDate) {
+  cardCopyState.targetDate = targetDate || "";
+  renderCardCopySheet();
+}
+
+function goBackCardCopyStep() {
+  if (cardCopyState.scope === "another" && cardCopyState.targetTripId) {
+    cardCopyState.targetTripId = "";
+    cardCopyState.targetDate = null;
+  } else {
+    cardCopyState.scope = "";
+    cardCopyState.targetTripId = "";
+    cardCopyState.targetDate = null;
+  }
+  renderCardCopySheet();
+}
+
+function confirmCardCopy() {
+  if (cardCopyState.isSubmitting) return;
+  const sourceItem = getCardCopySourceItem();
+  const targetState = getCardCopyTargetState();
+  if (!sourceItem || !targetState) return;
+  const options = getCardCopyDateOptions(targetState, { omitSourceBucket: targetState.trip.id === state.trip.id });
+  if (cardCopyState.targetDate === null || !options.some((option) => (option.value || "") === (cardCopyState.targetDate || ""))) return;
+  cardCopyState.isSubmitting = true;
+  renderCardCopyActions();
+
+  const copiedItem = createTripItemCopy({
+    sourceItem,
+    sourceTrip: state.trip,
+    targetState,
+    targetDate: cardCopyState.targetDate,
+  });
+  targetState.items.push(copiedItem);
+
+  if (targetState.trip.id === state.trip.id) {
+    state.items = targetState.items;
+    saveState();
+    render();
+    checkTripMilestones();
+  } else {
+    const entryIndex = tripStore.trips.findIndex((entry) => entry.id === targetState.trip.id);
+    if (entryIndex >= 0) {
+      tripStore.trips[entryIndex] = createTripEntry(targetState, {
+        id: tripStore.trips[entryIndex].id,
+        isDemo: tripStore.trips[entryIndex].isDemo,
+        createdAt: tripStore.trips[entryIndex].createdAt,
+        updatedAt: new Date().toISOString(),
+        coverDataUrl: tripStore.trips[entryIndex].coverDataUrl,
+      });
+      persistTripStore(tripStore);
+    }
+  }
+
+  closeSheet("cardCopySheet");
+  if (cardCopySheetHistoryArmed) {
+    cardCopyIgnoreNextPop = true;
+    history.back();
+  }
+  cardCopySheetHistoryArmed = false;
+  const targetText = targetState.trip.id === state.trip.id
+    ? (cardCopyState.targetDate ? formatDate(cardCopyState.targetDate) : "Без даты")
+    : `поездку «${targetState.trip.title || "Новая поездка"}»`;
+  showToast(`Карточка скопирована в ${targetText}`);
+  trackEvent("card_copy_completed", {
+    ...getTripAnalyticsContext(),
+    destination_type: targetState.trip.id === state.trip.id ? "same_trip" : "another_trip",
+    target_has_date: Boolean(cardCopyState.targetDate),
+    currency_matched: state.trip.currency === targetState.trip.currency,
+  });
+  cardCopyState.isSubmitting = false;
 }
 
 function moveItem(itemId, targetDate, beforeItemId = null, method = "drag_desktop") {
@@ -3172,6 +3464,32 @@ function bindEvents() {
       return;
     }
 
+    const cardCopyDismissTarget = event.target.closest("[data-card-copy-dismiss]");
+    if (cardCopyDismissTarget) {
+      event.preventDefault();
+      event.stopPropagation();
+      dismissCardCopySheet(cardCopyDismissTarget.dataset.cardCopyDismiss || "close");
+      return;
+    }
+
+    const cardCopyScopeTarget = event.target.closest("[data-card-copy-scope]");
+    if (cardCopyScopeTarget) {
+      handleCardCopyScope(cardCopyScopeTarget.dataset.cardCopyScope);
+      return;
+    }
+
+    const cardCopyTripTarget = event.target.closest("[data-card-copy-trip]");
+    if (cardCopyTripTarget) {
+      handleCardCopyTrip(cardCopyTripTarget.dataset.cardCopyTrip);
+      return;
+    }
+
+    const cardCopyDateTarget = event.target.closest("[data-card-copy-date]");
+    if (cardCopyDateTarget) {
+      handleCardCopyDate(cardCopyDateTarget.dataset.cardCopyDate || "");
+      return;
+    }
+
     const openTripButton = event.target.closest("[data-open-trip]");
     if (openTripButton) openTrip(openTripButton.dataset.openTrip);
 
@@ -3261,8 +3579,11 @@ function bindEvents() {
   $("#feedbackButton").addEventListener("click", () => trackEvent("feedback_channel_opened", { channel: "telegram" }));
   $("#homeButton").addEventListener("click", showHomeScreen);
   $("#itemForm").addEventListener("submit", saveItem);
+  $("#copyItemButton").addEventListener("click", openCardCopySheet);
   $("#resetItemButton").addEventListener("click", resetCurrentItemForm);
   $("#deleteItemButton").addEventListener("click", deleteCurrentItem);
+  $("#cardCopyBackButton").addEventListener("click", goBackCardCopyStep);
+  $("#cardCopyConfirmButton").addEventListener("click", confirmCardCopy);
   $("#itemForm").elements.link.addEventListener("input", updateOpenLinkButton);
   $("#openLinkButton").addEventListener("click", openItemLink);
   $("#editTripButton").addEventListener("click", openTripSheet);
@@ -3340,6 +3661,14 @@ window.addEventListener("appinstalled", () => {
 });
 
 window.addEventListener("popstate", () => {
+  if (cardCopyIgnoreNextPop) {
+    cardCopyIgnoreNextPop = false;
+    return;
+  }
+  if ($("#cardCopySheet")?.classList.contains("open")) {
+    dismissCardCopySheet("back");
+    return;
+  }
   if (donationIgnoreNextPop) {
     donationIgnoreNextPop = false;
     return;
