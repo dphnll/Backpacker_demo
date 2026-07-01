@@ -11,6 +11,7 @@ Mobile-first prototype of a personal trip basket for independent travelers.
 - Budget summary.
 - Currency calculator for RUB / EUR / SEK with live-rate fallback to demo rates.
 - Telegram-friendly share text.
+- Trip PDF export with separate download/share actions.
 - Local persistence via `localStorage`.
 - No backend, no auth, no maps, no booking integrations.
 
