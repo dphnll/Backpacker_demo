@@ -152,26 +152,37 @@ function showIntegrationStatus() {
 // =============================================================================
 
 function runSync_(previewOnly) {
-  var ui = SpreadsheetApp.getUi();
+  // SpreadsheetApp.getUi() throws when called from a time-based trigger (no UI
+  // context). Detect availability first so the trigger path uses Logger instead.
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (_) {}
+
   try {
     var cfg    = loadConfig_();
     var period = previousISOWeek_();
     var m      = fetchAllMetrics_(cfg, period.start, period.end);
 
     if (previewOnly) {
-      showPreview_(m, period);
+      if (ui) showPreview_(m, period);
       return;
     }
 
     var sheet = getOrCreateMetricsSheet_();
     upsertRow_(sheet, m, period);
-    ui.alert(
-      "Sync complete",
-      "Metrics for " + period.label + " saved to '" + METRICS_SHEET + "'.",
-      ui.ButtonSet.OK
-    );
+
+    var msg = "Metrics for " + period.label + " saved to '" + METRICS_SHEET + "'.";
+    if (ui) {
+      ui.alert("Sync complete", msg, ui.ButtonSet.OK);
+    } else {
+      Logger.log("Sync complete: " + msg);
+    }
   } catch (e) {
-    ui.alert("Sync failed", String(e.message || e), ui.ButtonSet.OK);
+    var err = String(e.message || e);
+    if (ui) {
+      ui.alert("Sync failed", err, ui.ButtonSet.OK);
+    } else {
+      Logger.log("Sync failed: " + err);
+    }
   }
 }
 
