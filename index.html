@@ -631,6 +631,20 @@
         </header>
         <div class="share-actions">
           <button class="primary-button" id="shareTripTextButton" type="button">Отправить поездку текстом</button>
+          <button class="primary-button" id="openTripLinkButton" type="button">Открыть доступ по ссылке</button>
+          <div class="trip-link-options hidden" id="tripLinkOptions">
+            <label class="trip-pdf-toggle">
+              <input id="tripLinkIncludeBudget" type="checkbox" checked />
+              <span>Показывать смету</span>
+            </label>
+            <div class="share-link-box">
+              <input id="tripShareLinkInput" readonly placeholder="Ссылка появится после публикации" />
+              <button class="ghost-button compact" id="copyTripLinkButton" type="button">Скопировать</button>
+            </div>
+            <p class="share-link-status" id="tripShareLinkStatus"></p>
+            <p class="share-link-hint">Управление поездкой - только у автора, гостям доступен просмотр.</p>
+            <button class="danger-button" id="revokeTripLinkButton" type="button">Отозвать доступ</button>
+          </div>
           <button class="primary-button" id="openTripPdfOptionsButton" type="button">Отправить поездку в PDF</button>
         </div>
         <div class="trip-pdf-options hidden" id="tripPdfOptions">
@@ -660,6 +674,8 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./supabase-config.js?v=local"></script>
     <script src="./vendor/pdf-lib.min.js"></script>
     <script src="./app.js"></script>
   </body>

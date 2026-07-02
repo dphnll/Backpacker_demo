@@ -2,6 +2,7 @@ const STORAGE_KEY = "backpacker.mvp.v1";
 const TRIPS_STORAGE_KEY = "backpacker.trips.v1";
 const ACTIVE_TRIP_STORAGE_KEY = "backpacker.activeTrip.v1";
 const VIEW_STORAGE_KEY = "backpacker.currentView.v1";
+const SHARE_RECORDS_STORAGE_KEY = "backpacker.shareRecords.v1";
 const ONBOARDING_STORAGE_KEY = "backpacker.onboarding.v1";
 const HOME_TRAINER_VISIBILITY_KEY = "backpacker.home.trainer.hidden.v1";
 const ANALYTICS_USER_KEY = "backpacker.analytics.user.v1";
@@ -14,8 +15,10 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.6";
-const APP_RELEASE_SUMMARY = "патч PDF поездки: карточки в PDF уменьшены до сетки 4 в ряд, а шапка PDF приближена к мобильной шапке поездки.";
+const APP_VERSION = "1.1.2.7";
+const APP_RELEASE_SUMMARY = "первый шаг активного шаринга: read-only ссылка на поездку, смета по allocations и Excel с долями участников.";
+const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
+const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
 const DONATION_FLOW_ENABLED = false;
 const DONATION_URL = ANALYTICS_CONFIG.donationUrl || "https://t.me/bckpckrbot?start=donate";
 const DEFAULT_ITEM_STATUS = "want";
@@ -214,6 +217,8 @@ const seedState = {
 };
 
 let tripStore = loadTripStore();
+let shareRecords = loadShareRecords();
+let readOnlyShare = null;
 let state = loadState();
 let currentView = loadInitialView();
 let currentScreen = "home";
@@ -226,6 +231,9 @@ let ratesUpdatedAt = null;
 let ratesSource = "demo";
 let coverTargetTripId = null;
 let onboardingExitTracked = false;
+let supabaseClient = null;
+let tripShareSyncTimer = null;
+let tripShareSyncInFlight = false;
 const analyticsSessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const $ = (selector) => document.querySelector(selector);
@@ -479,6 +487,127 @@ function loadTripStore() {
   return store;
 }
 
+function loadShareRecords() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SHARE_RECORDS_STORAGE_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistShareRecords() {
+  localStorage.setItem(SHARE_RECORDS_STORAGE_KEY, JSON.stringify(shareRecords));
+}
+
+function getSupabaseConfig() {
+  return window.BACKPACKER_SUPABASE || {};
+}
+
+function getTripShareFunctionUrl() {
+  const config = getSupabaseConfig();
+  if (config.tripShareFunctionUrl) return config.tripShareFunctionUrl;
+  if (!config.url) return "";
+  return `${String(config.url).replace(/\/+$/, "")}/functions/v1/trip-share`;
+}
+
+function isSupabaseConfigured() {
+  const config = getSupabaseConfig();
+  return Boolean(config.url && config.anonKey && window.supabase?.createClient);
+}
+
+function getSupabaseClient() {
+  if (!isSupabaseConfigured()) return null;
+  if (!supabaseClient) {
+    const config = getSupabaseConfig();
+    supabaseClient = window.supabase.createClient(config.url, config.anonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+    });
+  }
+  return supabaseClient;
+}
+
+function getSharePayloadFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const queryToken = params.get("share");
+  if (queryToken) return queryToken;
+  const hash = window.location.hash || "";
+  if (!hash.startsWith("#share=")) return "";
+  return hash.slice("#share=".length);
+}
+
+async function ensureSupabaseOwnerSession() {
+  const client = getSupabaseClient();
+  if (!client) throw new Error("supabase_not_configured");
+  const current = await client.auth.getSession();
+  if (current.data.session?.access_token) return current.data.session.access_token;
+  const created = await client.auth.signInAnonymously();
+  if (created.error || !created.data.session?.access_token) throw created.error || new Error("anonymous_auth_failed");
+  return created.data.session.access_token;
+}
+
+async function callTripShareFunction(action, payload = {}, { requireOwner = false } = {}) {
+  const config = getSupabaseConfig();
+  const url = getTripShareFunctionUrl();
+  if (!url || !config.anonKey) throw new Error("supabase_not_configured");
+  const headers = {
+    "Content-Type": "application/json",
+    apikey: config.anonKey,
+  };
+  if (requireOwner) {
+    headers.Authorization = `Bearer ${await ensureSupabaseOwnerSession()}`;
+  }
+  const response = await fetch(url, {
+    method: "POST",
+    headers,
+    cache: "no-store",
+    body: JSON.stringify({ action, ...payload }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data.error || `trip_share_${action}_failed`);
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+
+async function loadReadOnlyShareFromUrl() {
+  const token = getSharePayloadFromUrl();
+  if (!token) return null;
+  if (!isSupabaseConfigured()) {
+    return { invalid: true, state: normalizeState(structuredClone(seedState)), options: { includeBudget: false } };
+  }
+  try {
+    const payload = await callTripShareFunction("read", { token });
+    const nextState = normalizeState(payload.state);
+    return {
+      shareId: payload.shareId || "",
+      sourceTripId: payload.tripId || nextState.trip.id,
+      title: nextState.trip.title || "Поездка",
+      destination: nextState.trip.destination || "",
+      updatedAt: payload.updatedAt || new Date().toISOString(),
+      options: {
+        includeBudget: payload.includeBudget !== false,
+      },
+      state: nextState,
+    };
+  } catch {
+    return { invalid: true, state: normalizeState(structuredClone(seedState)), options: { includeBudget: false } };
+  }
+}
+
+function isReadOnlyMode() {
+  return Boolean(readOnlyShare);
+}
+
+function canShowBudget() {
+  return !isReadOnlyMode() || readOnlyShare.options?.includeBudget !== false;
+}
+
 function loadActiveTripId() {
   try {
     return localStorage.getItem(ACTIVE_TRIP_STORAGE_KEY) || tripStore.trips[0]?.id;
@@ -561,15 +690,36 @@ function normalizeState(nextState) {
   normalized.trip.participants = participants;
   const selfParticipant = getSelfParticipant(normalized);
   const participantIds = new Set(participants.map((participant) => participant.id));
-  normalized.items = normalized.items.map((item, index) => ({
-    order: index,
-    ...item,
-    participantId: participantIds.has(item.participantId) ? item.participantId : selfParticipant.id,
-  }));
+  normalized.items = normalized.items.map((item, index) => {
+    const participantId = participantIds.has(item.participantId) ? item.participantId : selfParticipant.id;
+    const price = parseMoney(item.price);
+    const sourceAllocations = Array.isArray(item.allocations) ? item.allocations : [];
+    const allocations = sourceAllocations
+      .map((allocation) => ({
+        participantId: participantIds.has(allocation.participantId) ? allocation.participantId : "",
+        amount: parseMoney(allocation.amount),
+      }))
+      .filter((allocation) => allocation.participantId && allocation.amount > 0);
+    if (!allocations.length && price > 0) allocations.push({ participantId, amount: price });
+    const allocationTotal = allocations.reduce((sum, allocation) => sum + parseMoney(allocation.amount), 0);
+    if (allocations.length && allocationTotal !== price) {
+      const delta = price - allocationTotal;
+      allocations[allocations.length - 1].amount = Math.max(0, allocations[allocations.length - 1].amount + delta);
+    }
+    return {
+      order: index,
+      ...item,
+      price,
+      paidAmount: parseMoney(item.paidAmount),
+      participantId,
+      allocations,
+    };
+  });
   return normalized;
 }
 
 function saveState() {
+  if (isReadOnlyMode()) return;
   const currentId = state.trip.id;
   const now = new Date().toISOString();
   const entryIndex = tripStore.trips.findIndex((entry) => entry.id === currentId);
@@ -585,6 +735,7 @@ function saveState() {
   persistTripStore(tripStore);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   localStorage.setItem(ACTIVE_TRIP_STORAGE_KEY, currentId);
+  schedulePublishedTripSync();
 }
 
 function persistTripStore(store = tripStore) {
@@ -633,6 +784,10 @@ function formatMoney(value = 0) {
   return `${amount.toLocaleString("ru-RU")} ${currencySymbol(state.trip.currency)}`;
 }
 
+function formatBudgetMoney(value = 0) {
+  return canShowBudget() ? formatMoney(value) : "Скрыто";
+}
+
 function currencySymbol(currency) {
   return { RUB: "₽", EUR: "€", SEK: "kr", USD: "$", GEL: "₾", TRY: "₺", RSD: "дин", BAM: "KM" }[currency] || currency;
 }
@@ -651,6 +806,10 @@ function convertTripCurrency(fromCurrency, toCurrency) {
     ...item,
     price: convertMoney(item.price, fromCurrency, toCurrency),
     paidAmount: convertMoney(item.paidAmount, fromCurrency, toCurrency),
+    allocations: getItemAllocations(item).map((allocation) => ({
+      ...allocation,
+      amount: convertMoney(allocation.amount, fromCurrency, toCurrency),
+    })),
   }));
 }
 
@@ -888,6 +1047,35 @@ function getParticipantById(participantId) {
   return state.trip.participants.find((participant) => participant.id === participantId) || getSelfParticipant();
 }
 
+function getParticipantFromList(participants, participantId) {
+  return participants.find((participant) => participant.id === participantId) || participants.find((participant) => participant.isSelf) || participants[0] || null;
+}
+
+function getItemAllocations(item, participants = state.trip.participants) {
+  const participantIds = new Set(participants.map((participant) => participant.id));
+  const price = parseMoney(item.price);
+  const allocations = Array.isArray(item.allocations)
+    ? item.allocations
+        .map((allocation) => ({
+          participantId: participantIds.has(allocation.participantId) ? allocation.participantId : "",
+          amount: parseMoney(allocation.amount),
+        }))
+        .filter((allocation) => allocation.participantId && allocation.amount > 0)
+    : [];
+  if (allocations.length) return allocations;
+  const fallback = getParticipantFromList(participants, item.participantId);
+  return fallback && price > 0 ? [{ participantId: fallback.id, amount: price }] : [];
+}
+
+function getItemAllocationTotal(item, participants = state.trip.participants) {
+  return getItemAllocations(item, participants).reduce((sum, allocation) => sum + parseMoney(allocation.amount), 0);
+}
+
+function getPrimaryParticipantForItem(item, participants = state.trip.participants) {
+  const allocation = getItemAllocations(item, participants)[0];
+  return getParticipantFromList(participants, allocation?.participantId || item.participantId);
+}
+
 function renderParticipantAvatar(participant) {
   return `<span class="participant-avatar participant-${escapeAttr(participant.colorKey)}">${escapeHtml(participant.initials)}</span>`;
 }
@@ -895,8 +1083,9 @@ function renderParticipantAvatar(participant) {
 function getParticipantTotals() {
   const totals = new Map(state.trip.participants.map((participant) => [participant.id, 0]));
   state.items.filter(isActiveCost).forEach((item) => {
-    const participant = getParticipantById(item.participantId);
-    totals.set(participant.id, (totals.get(participant.id) || 0) + parseMoney(item.price));
+    getItemAllocations(item).forEach((allocation) => {
+      totals.set(allocation.participantId, (totals.get(allocation.participantId) || 0) + parseMoney(allocation.amount));
+    });
   });
   return state.trip.participants.map((participant) => ({
     participant,
@@ -1309,10 +1498,10 @@ function renderHeader() {
   const totals = getTotals();
   $("#tripTitle").textContent = state.trip.title || "Новая поездка";
   $("#tripMeta").textContent = `${state.trip.destination || "Направление"} · ${formatDate(state.trip.startDate)}-${formatDate(state.trip.endDate)} · ${dates.length || 1} дня`;
-  $("#tripBudgetMeta").textContent = `Бюджет ${formatMoney(state.trip.budgetLimit)}`;
-  $("#paidTotal").textContent = formatMoney(totals.paid);
-  $("#plannedTotal").textContent = formatMoney(totals.possible);
-  $("#remainingTotal").textContent = formatMoney(totals.remaining);
+  $("#tripBudgetMeta").textContent = canShowBudget() ? `Бюджет ${formatMoney(state.trip.budgetLimit)}` : "Смета скрыта";
+  $("#paidTotal").textContent = formatBudgetMoney(totals.paid);
+  $("#plannedTotal").textContent = formatBudgetMoney(totals.possible);
+  $("#remainingTotal").textContent = formatBudgetMoney(totals.remaining);
   $("#remainingTotal").style.color = totals.remaining < 0 ? "var(--danger)" : "";
 }
 
@@ -1408,7 +1597,7 @@ function renderBudget() {
     .map(({ participant, total }) => `
       <div class="participant-total-row">
         <span>${renderParticipantAvatar(participant)}<span>${escapeHtml(participant.name)}</span>${participant.isSelf ? `<em>Это я</em>` : ""}</span>
-        <strong>${formatMoney(total)}</strong>
+        <strong>${formatBudgetMoney(total)}</strong>
       </div>
     `)
     .join("");
@@ -1417,17 +1606,17 @@ function renderBudget() {
       const total = state.items
         .filter((item) => item.date === date && isActiveCost(item))
         .reduce((sum, item) => sum + parseMoney(item.price), 0);
-      return `<div class="budget-row"><span>День ${index + 1} · ${formatDate(date)}</span><strong>${formatMoney(total)}</strong></div>`;
+      return `<div class="budget-row"><span>День ${index + 1} · ${formatDate(date)}</span><strong>${formatBudgetMoney(total)}</strong></div>`;
     })
     .join("");
   $("#budgetPage").innerHTML = `
     <section class="budget-grid">
-      <div class="metric-card"><span>Бюджет поездки</span><strong>${formatMoney(state.trip.budgetLimit)}</strong></div>
-      <div class="metric-card"><span>Уже оплачено</span><strong>${formatMoney(totals.paid)}</strong></div>
-      <div class="metric-card"><span>Бронь</span><strong>${formatMoney(totals.fixed)}</strong></div>
-      <div class="metric-card"><span>Опционально</span><strong>${formatMoney(totals.optional)}</strong></div>
-      <div class="metric-card service-total"><span>Возможный итог</span><strong>${formatMoney(totals.possible)}</strong></div>
-      <div class="metric-card"><span>Остаток</span><strong style="color:${totals.remaining < 0 ? "var(--danger)" : "var(--green)"}">${formatMoney(totals.remaining)}</strong></div>
+      <div class="metric-card"><span>Бюджет поездки</span><strong>${formatBudgetMoney(state.trip.budgetLimit)}</strong></div>
+      <div class="metric-card"><span>Уже оплачено</span><strong>${formatBudgetMoney(totals.paid)}</strong></div>
+      <div class="metric-card"><span>Бронь</span><strong>${formatBudgetMoney(totals.fixed)}</strong></div>
+      <div class="metric-card"><span>Опционально</span><strong>${formatBudgetMoney(totals.optional)}</strong></div>
+      <div class="metric-card service-total"><span>Возможный итог</span><strong>${formatBudgetMoney(totals.possible)}</strong></div>
+      <div class="metric-card"><span>Остаток</span><strong style="color:${canShowBudget() && totals.remaining < 0 ? "var(--danger)" : "var(--green)"}">${formatBudgetMoney(totals.remaining)}</strong></div>
     </section>
     <section class="card budget-days-card">
       <div class="card-title-row">
@@ -1453,46 +1642,30 @@ function renderBudget() {
 function renderEstimateTable() {
   const table = $("#estimateTable");
   if (!table) return;
-  const rows = [...state.items]
-    .sort((a, b) => (a.date || "9999-99-99").localeCompare(b.date || "9999-99-99") || sortItems(a, b))
-    .map((item) => {
-      const link = item.link
-        ? `<a href="${escapeAttr(item.link)}" target="_blank" rel="noreferrer">открыть</a>`
-        : `<span class="muted">нет</span>`;
-      return `
-        <tr>
-          <td>${escapeHtml(item.title)}</td>
-          <td>${getTypeLabel(item.type)}</td>
-          <td>${getStatusLabel(item.status)}</td>
-          <td>${item.date ? formatDate(item.date) : "без даты"}</td>
-          <td>${item.startTime || ""}</td>
-          <td>${formatMoney(item.price)}</td>
-          <td>${formatMoney(item.paidAmount)}</td>
-          <td>${link}</td>
-        </tr>
-      `;
-    })
-    .join("");
+  if (!canShowBudget()) {
+    table.innerHTML = `
+      <tbody>
+        <tr><td>Автор скрыл смету для этой ссылки.</td></tr>
+      </tbody>
+    `;
+    return;
+  }
+  const { header, rows } = buildEstimateRows();
   table.innerHTML = `
     <thead>
-      <tr>
-        <th>Событие</th>
-        <th>Тип</th>
-        <th>Статус</th>
-        <th>День</th>
-        <th>Время</th>
-        <th>Цена</th>
-        <th>Оплачено</th>
-        <th>Ссылка</th>
-      </tr>
+      <tr>${header.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("")}</tr>
     </thead>
-    <tbody>${rows}</tbody>
+    <tbody>
+      ${rows.map((row) => `
+        <tr>${row.map((cell, index) => `<td>${index >= 3 ? formatMoney(cell) : escapeHtml(cell)}</td>`).join("")}</tr>
+      `).join("")}
+    </tbody>
   `;
 }
 
 function renderItemCard(item) {
-  const price = parseMoney(item.price) ? formatMoney(item.price) : "--";
-  const participant = getParticipantById(item.participantId);
+  const price = canShowBudget() && parseMoney(item.price) ? formatMoney(item.price) : "--";
+  const participant = getPrimaryParticipantForItem(item);
   const participantBadge = state.trip.participants.length > 1
     ? `<span class="item-side-badge item-participant-badge participant-${escapeAttr(participant.colorKey)}" aria-label="Расход назначен участнику ${escapeAttr(participant.name)}">${escapeHtml(participant.initials)}</span>`
     : "";
@@ -1617,11 +1790,16 @@ function getItemAnalyticsFlags(item) {
 
 function saveItem(event) {
   event.preventDefault();
+  if (isReadOnlyMode()) return;
   const form = event.currentTarget;
   const data = Object.fromEntries(new FormData(form).entries());
   const existing = state.items.find((entry) => entry.id === data.id);
   const isNew = !existing;
   const itemDate = parseDateFromInput(data.date);
+  const participantId = state.trip.participants.some((participant) => participant.id === data.participantId)
+    ? data.participantId
+    : getSelfParticipant().id;
+  const price = parseMoney(data.price);
   const item = {
     id: data.id || `item-${Date.now()}`,
     title: data.title.trim(),
@@ -1631,11 +1809,10 @@ function saveItem(event) {
     date: itemDate,
     startTime: data.startTime || "",
     durationMinutes: getDurationFromInput(data.durationHours, data.durationRemainder),
-    price: parseMoney(data.price),
+    price,
     paidAmount: parseMoney(data.paidAmount),
-    participantId: state.trip.participants.some((participant) => participant.id === data.participantId)
-      ? data.participantId
-      : getSelfParticipant().id,
+    participantId,
+    allocations: price > 0 ? [{ participantId, amount: price }] : [],
     link: data.link.trim(),
     locationText: data.locationText.trim(),
     notes: data.notes.trim(),
@@ -1751,14 +1928,17 @@ function createTripItemCopy({ sourceItem, sourceTrip, targetState, targetDate })
   const targetSelf = getSelfParticipant(targetState);
   const sameTrip = sourceTrip.id === targetState.trip.id;
   const copiedStatus = sourceItem.status === "paid" ? "fixed" : sourceItem.status;
+  const price = sameCurrency ? parseMoney(sourceItem.price) : 0;
+  const participantId = sameTrip ? sourceItem.participantId : targetSelf.id;
   return {
     ...sourceItem,
     id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     status: copiedStatus,
     date: targetDate || "",
-    price: sameCurrency ? parseMoney(sourceItem.price) : 0,
+    price,
     paidAmount: 0,
-    participantId: sameTrip ? sourceItem.participantId : targetSelf.id,
+    participantId,
+    allocations: sameTrip ? getItemAllocations(sourceItem) : (price > 0 ? [{ participantId, amount: price }] : []),
     order: getNextOrderForItems(targetState.items, targetDate),
     createdAt: now,
     updatedAt: now,
@@ -2014,6 +2194,7 @@ function confirmCardCopy() {
 }
 
 function moveItem(itemId, targetDate, beforeItemId = null, method = "drag_desktop") {
+  if (isReadOnlyMode()) return;
   const moving = state.items.find((item) => item.id === itemId);
   if (!moving) return;
   const previousDate = moving.date || "";
@@ -2049,6 +2230,7 @@ function moveItem(itemId, targetDate, beforeItemId = null, method = "drag_deskto
 }
 
 function deleteCurrentItem() {
+  if (isReadOnlyMode()) return;
   const id = $("#itemForm").elements.id.value;
   if (!id) return;
   const item = state.items.find((entry) => entry.id === id);
@@ -2068,6 +2250,7 @@ function deleteCurrentItem() {
 }
 
 function openTripSheet() {
+  if (isReadOnlyMode()) return;
   const form = $("#tripForm");
   Object.entries(state.trip).forEach(([key, value]) => {
     if (form.elements[key]) form.elements[key].value = value ?? "";
@@ -2294,7 +2477,14 @@ function deleteParticipant(participantId) {
     ? `На ${participant.name} находится ${assignedItems.length} расход(ов) на сумму ${formatMoney(total)}. Перенести их на вас и удалить участника?`
     : `Участник "${participant.name}" будет удален из этой поездки.`;
   if (!window.confirm(message)) return;
-  state.items = state.items.map((item) => item.participantId === participant.id ? { ...item, participantId: selfParticipant.id } : item);
+  state.items = state.items.map((item) => {
+    const allocations = getItemAllocations(item).map((allocation) => (
+      allocation.participantId === participant.id ? { ...allocation, participantId: selfParticipant.id } : allocation
+    ));
+    return item.participantId === participant.id
+      ? { ...item, participantId: selfParticipant.id, allocations }
+      : { ...item, allocations };
+  });
   state.trip.participants = state.trip.participants.filter((entry) => entry.id !== participant.id);
   saveState();
   renderParticipantsList();
@@ -2343,6 +2533,7 @@ function handleTripEndDateChange() {
 
 function saveTrip(event) {
   event.preventDefault();
+  if (isReadOnlyMode()) return;
   const data = Object.fromEntries(new FormData(event.currentTarget).entries());
   syncTripDateInputs();
   if (!validateTripDateInputs()) {
@@ -2401,6 +2592,11 @@ function openHomeShareSheet() {
 function openShareSheet() {
   renderSharePreview();
   $("#tripPdfOptions")?.classList.add("hidden");
+  $("#tripLinkOptions")?.classList.add("hidden");
+  $("#openTripLinkButton").hidden = isReadOnlyMode();
+  $("#shareTripTextButton").hidden = isReadOnlyMode();
+  $("#downloadEstimateButton").hidden = isReadOnlyMode() && !canShowBudget();
+  $("#openTripPdfOptionsButton").hidden = isReadOnlyMode() && !canShowBudget();
   openSheet("shareSheet");
   trackEvent("share_opened", { ...getTripAnalyticsContext(), share_context: "trip" });
 }
@@ -2410,52 +2606,239 @@ function renderSharePreview() {
   if (target) target.textContent = buildShareText(false);
 }
 
+function getTripShareRecord() {
+  return shareRecords[state.trip.id] || null;
+}
+
+function saveTripShareRecord(record) {
+  shareRecords[state.trip.id] = {
+    ...record,
+    tripId: state.trip.id,
+    updatedAt: new Date().toISOString(),
+  };
+  persistShareRecords();
+}
+
+function removeTripShareRecord() {
+  delete shareRecords[state.trip.id];
+  persistShareRecords();
+}
+
+function buildTripShareUrl(token) {
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = "";
+  url.searchParams.set("share", token);
+  return url.toString();
+}
+
+function buildPublishedTripState() {
+  return normalizeState(structuredClone(state));
+}
+
+async function publishTripShare(options = {}) {
+  const existing = getTripShareRecord();
+  const includeBudget = options.includeBudget !== false;
+  const mustRotateToken = Boolean(existing?.shareId && !existing?.token);
+  if (mustRotateToken) {
+    await callTripShareFunction("revoke", { tripId: state.trip.id }, { requireOwner: true }).catch(() => {});
+    removeTripShareRecord();
+  }
+  const payload = await callTripShareFunction("publish", {
+    tripId: state.trip.id,
+    includeBudget,
+    rotateToken: mustRotateToken,
+    schemaVersion: TRIP_SHARE_SCHEMA_VERSION,
+    state: buildPublishedTripState(),
+  }, { requireOwner: true });
+  const token = payload.token || existing?.token || "";
+  const record = {
+    shareId: payload.shareId || existing?.shareId || "",
+    token,
+    includeBudget,
+    revoked: false,
+    ownerSessionLimitation: "Anonymous Auth: после потери браузерной сессии управление ссылкой не восстанавливается до появления постоянных аккаунтов.",
+  };
+  saveTripShareRecord(record);
+  return record;
+}
+
+async function updatePublishedTripShare(options = {}) {
+  const existing = getTripShareRecord();
+  if (!existing?.shareId || existing.revoked) return null;
+  if (!existing.token) return publishTripShare({ includeBudget: options.includeBudget ?? existing.includeBudget });
+  const includeBudget = options.includeBudget ?? (existing.includeBudget !== false);
+  const payload = await callTripShareFunction("update", {
+    tripId: state.trip.id,
+    includeBudget,
+    schemaVersion: TRIP_SHARE_SCHEMA_VERSION,
+    state: buildPublishedTripState(),
+  }, { requireOwner: true });
+  const record = {
+    ...existing,
+    shareId: payload.shareId || existing.shareId,
+    includeBudget,
+    revoked: false,
+  };
+  saveTripShareRecord(record);
+  return record;
+}
+
+async function ensureTripSharePublished(options = {}) {
+  const existing = getTripShareRecord();
+  if (existing?.shareId && existing.token && !existing.revoked) {
+    return updatePublishedTripShare({ includeBudget: options.includeBudget ?? existing.includeBudget });
+  }
+  return publishTripShare(options);
+}
+
+function schedulePublishedTripSync() {
+  const record = getTripShareRecord();
+  if (!record?.shareId || record.revoked || isReadOnlyMode()) return;
+  window.clearTimeout(tripShareSyncTimer);
+  tripShareSyncTimer = window.setTimeout(async () => {
+    if (tripShareSyncInFlight) {
+      schedulePublishedTripSync();
+      return;
+    }
+    tripShareSyncInFlight = true;
+    try {
+      await updatePublishedTripShare();
+    } catch {
+      showToast("Не удалось обновить опубликованную поездку");
+    } finally {
+      tripShareSyncInFlight = false;
+    }
+  }, TRIP_SHARE_SYNC_DEBOUNCE_MS);
+}
+
+function renderTripLinkOptions(record = getTripShareRecord()) {
+  const panel = $("#tripLinkOptions");
+  if (!panel) return;
+  const includeInput = $("#tripLinkIncludeBudget");
+  if (includeInput && record) includeInput.checked = record.includeBudget !== false;
+  const input = $("#tripShareLinkInput");
+  const status = $("#tripShareLinkStatus");
+  const copyButton = $("#copyTripLinkButton");
+  const revokeButton = $("#revokeTripLinkButton");
+  const hasActiveLink = Boolean(record?.token && !record.revoked);
+  if (input) input.value = hasActiveLink ? buildTripShareUrl(record.token) : "";
+  if (copyButton) copyButton.disabled = !hasActiveLink && !isSupabaseConfigured();
+  if (revokeButton) revokeButton.disabled = !hasActiveLink;
+  if (status) {
+    status.classList.toggle("error", !isSupabaseConfigured());
+    status.textContent = isSupabaseConfigured()
+      ? (hasActiveLink ? "Изменения поездки будут обновляться автоматически." : "Ссылка ещё не создана.")
+      : "Supabase не настроен: ссылка не создана.";
+  }
+}
+
+async function showTripLinkOptions() {
+  if (isReadOnlyMode()) return;
+  const panel = $("#tripLinkOptions");
+  if (panel && !panel.classList.contains("hidden")) {
+    panel.classList.add("hidden");
+    return;
+  }
+  $("#tripPdfOptions")?.classList.add("hidden");
+  panel?.classList.remove("hidden");
+  renderTripLinkOptions();
+  try {
+    const record = await ensureTripSharePublished({ includeBudget: $("#tripLinkIncludeBudget")?.checked ?? true });
+    renderTripLinkOptions(record);
+    showToast("Доступ по ссылке открыт");
+    trackEvent("share_method_selected", { ...getTripAnalyticsContext(), share_context: "trip", share_format: "link", method: "link_access" });
+  } catch {
+    renderTripLinkOptions();
+    showToast(isSupabaseConfigured() ? "Не удалось открыть доступ" : "Supabase не настроен");
+  }
+}
+
+async function copyTripShareLink() {
+  try {
+    let record = getTripShareRecord();
+    if (!record?.token) record = await publishTripShare({ includeBudget: $("#tripLinkIncludeBudget")?.checked ?? true });
+    const url = buildTripShareUrl(record.token);
+    renderTripLinkOptions(record);
+    await copyText(url);
+    showToast("Ссылка скопирована");
+    trackEvent("share_completed", { ...getTripAnalyticsContext(), share_context: "trip", share_format: "link", method: "clipboard" });
+  } catch {
+    renderTripLinkOptions();
+    showToast(isSupabaseConfigured() ? "Не удалось скопировать ссылку" : "Supabase не настроен");
+  }
+}
+
+async function updateTripShareBudgetVisibility() {
+  const record = getTripShareRecord();
+  if (!record?.shareId) return;
+  try {
+    const updated = await updatePublishedTripShare({ includeBudget: $("#tripLinkIncludeBudget")?.checked ?? true });
+    renderTripLinkOptions(updated);
+    showToast("Настройка ссылки обновлена");
+  } catch {
+    showToast("Не удалось обновить ссылку");
+  }
+}
+
+async function revokeTripShareLink() {
+  const record = getTripShareRecord();
+  if (!record?.shareId) return;
+  try {
+    await callTripShareFunction("revoke", { tripId: state.trip.id }, { requireOwner: true });
+  } catch {
+    showToast("Не удалось отозвать доступ");
+    return;
+  }
+  saveTripShareRecord({
+    ...record,
+    revoked: true,
+  });
+  const input = $("#tripShareLinkInput");
+  if (input) input.value = "";
+  showToast("Доступ отозван");
+}
+
 function buildShareText(compact = false) {
   const totals = getTotals();
   const lines = [
     `Backpacker: ${state.trip.title}`,
     `${formatDate(state.trip.startDate)}-${formatDate(state.trip.endDate)} · ${state.trip.destination}`,
     "",
-    "Бюджет:",
-    `Оплачено: ${formatMoney(totals.paid)}`,
-    `План: ${formatMoney(totals.possible)}`,
-    `Остаток: ${formatMoney(totals.remaining)}`,
-    "",
   ];
+  if (canShowBudget()) {
+    lines.push(
+      "Бюджет:",
+      `Оплачено: ${formatMoney(totals.paid)}`,
+      `План: ${formatMoney(totals.possible)}`,
+      `Остаток: ${formatMoney(totals.remaining)}`,
+      "",
+    );
+  }
   getTripDates().forEach((date, index) => {
     const items = state.items.filter((item) => item.date === date && item.status !== "skipped").sort(sortItems);
     lines.push(`День ${index + 1} · ${formatDate(date)}`);
     if (!items.length) lines.push("- пока пусто");
     items.forEach((item) => {
-      lines.push(`- ${item.startTime ? `${item.startTime} ` : ""}${item.title} · ${getStatusLabel(item.status)} · ${formatMoney(item.price)}`);
+      const priceText = canShowBudget() ? ` · ${formatMoney(item.price)}` : "";
+      lines.push(`- ${item.startTime ? `${item.startTime} ` : ""}${item.title} · ${getStatusLabel(item.status)}${priceText}`);
     });
     lines.push("");
   });
   const unscheduled = state.items.filter((item) => !item.date && item.status !== "skipped");
   if (unscheduled.length) {
     lines.push("Без даты:");
-    unscheduled.forEach((item) => lines.push(`- ${item.title} · ${getStatusLabel(item.status)} · ${formatMoney(item.price)}`));
+    unscheduled.forEach((item) => {
+      const priceText = canShowBudget() ? ` · ${formatMoney(item.price)}` : "";
+      lines.push(`- ${item.title} · ${getStatusLabel(item.status)}${priceText}`);
+    });
   }
   return compact ? lines.filter(Boolean).join("\n") : lines.join("\n");
 }
 
 function buildEstimateText() {
-  const header = ["Событие", "Тип", "Статус", "День", "Время", "Цена", "Оплачено", "Ссылка"].join("\t");
-  const rows = [...state.items]
-    .sort((a, b) => (a.date || "9999-99-99").localeCompare(b.date || "9999-99-99") || sortItems(a, b))
-    .map((item) =>
-      [
-        item.title,
-        getTypeLabel(item.type),
-        getStatusLabel(item.status),
-        item.date ? formatDate(item.date) : "без даты",
-        item.startTime || "",
-        parseMoney(item.price),
-        parseMoney(item.paidAmount),
-        item.link || "",
-      ].join("\t"),
-    );
-  return [header, ...rows].join("\n");
+  const { header, rows } = buildEstimateRows();
+  return [header.join("\t"), ...rows.map((row) => row.join("\t"))].join("\n");
 }
 
 function buildDaysText() {
@@ -2474,22 +2857,24 @@ function escapeCsvValue(value = "") {
 }
 
 function buildEstimateRows() {
-  const header = ["Событие", "Тип", "Статус", "День", "Время", "Цена", "Оплачено", "Ссылка"];
+  const participants = state.trip.participants;
+  const header = ["День", "Статья", "Категория", "Всего", ...participants.map((participant) => participant.name)];
   const rows = [...state.items]
+    .filter(isActiveCost)
     .sort((a, b) => (a.date || "9999-99-99").localeCompare(b.date || "9999-99-99") || sortItems(a, b))
-    .map((item) => [
-      item.title,
-      getTypeLabel(item.type),
-      getStatusLabel(item.status),
-      item.date ? formatDate(item.date) : "без даты",
-      item.startTime || "",
-      parseMoney(item.price),
-      parseMoney(item.paidAmount),
-      item.link || "",
-    ]);
-  const totalPrice = rows.reduce((sum, row) => sum + parseMoney(row[5]), 0);
-  const totalPaid = rows.reduce((sum, row) => sum + parseMoney(row[6]), 0);
-  rows.push(["Итого", "", "", "", "", totalPrice, totalPaid, ""]);
+    .map((item) => {
+      const allocations = getItemAllocations(item);
+      const allocationByParticipant = new Map(allocations.map((allocation) => [allocation.participantId, parseMoney(allocation.amount)]));
+      return [
+        item.date ? formatDate(item.date) : "без даты",
+        item.title,
+        getTypeLabel(item.type),
+        getItemAllocationTotal(item),
+        ...participants.map((participant) => allocationByParticipant.get(participant.id) || 0),
+      ];
+    });
+  const totals = participants.map((participant, index) => rows.reduce((sum, row) => sum + parseMoney(row[index + 4]), 0));
+  rows.push(["Итого", "", "", rows.reduce((sum, row) => sum + parseMoney(row[3]), 0), ...totals]);
   return { header, rows };
 }
 
@@ -2619,6 +3004,10 @@ function downloadSpreadsheet(fileName, title, table) {
 }
 
 function downloadEstimate() {
+  if (!canShowBudget()) {
+    showToast("Автор скрыл смету");
+    return;
+  }
   const name = `${slugifyFileName(state.trip.title)}-estimate.xls`;
   downloadSpreadsheet(name, "Смета поездки", buildEstimateRows());
   showToast("Смета скачана");
@@ -2824,6 +3213,10 @@ async function downloadPdfFile(fileName, title, table, previewWindow = null) {
 }
 
 async function chooseAndDownloadEstimate() {
+  if (!canShowBudget()) {
+    showToast("Автор скрыл смету");
+    return;
+  }
   const format = await chooseExportFormat();
   if (!format) return;
   if (format === "xls") {
@@ -2856,7 +3249,7 @@ function showTripPdfOptions() {
 
 function getTripPdfOptions() {
   return {
-    includeBudget: $("#tripPdfIncludeBudget")?.checked ?? true,
+    includeBudget: canShowBudget() && ($("#tripPdfIncludeBudget")?.checked ?? true),
     includeNotes: $("#tripPdfIncludeNotes")?.checked ?? false,
     includeUndated: $("#tripPdfIncludeUndated")?.checked ?? true,
   };
@@ -3262,7 +3655,7 @@ async function buildTripPdfBlob(options) {
     const bodyHeight = 220;
     const height = headerHeight + bodyHeight;
     const padding = 12;
-    const participant = getParticipantById(item.participantId);
+    const participant = getPrimaryParticipantForItem(item);
     const showParticipantBadge = state.trip.participants.length > 1;
     const badgeX = baseWidth - padding - 18;
     const accent = getPdfTypeColor(item.type);
@@ -3717,9 +4110,16 @@ function trackOnboardingExit() {
   trackEvent("onboarding_finished", { onboarding_version: ONBOARDING_VERSION, outcome: "exited" });
 }
 
-function startApp() {
+async function startApp() {
   hideAppSplash();
   trackAppOpen();
+  readOnlyShare = await loadReadOnlyShareFromUrl();
+  if (readOnlyShare) {
+    if (readOnlyShare.invalid) showToast("Ссылка недействительна");
+    state = readOnlyShare.state;
+    showTripScreen();
+    return;
+  }
   const params = new URLSearchParams(window.location.search);
   const forceIntro = params.get("intro") === "1" || params.get(ONBOARDING_PREVIEW_PARAM) === "1";
   let onboardingSeen = false;
@@ -3751,12 +4151,16 @@ function showTripScreen() {
   $("#introScreen").classList.add("hidden");
   $("#homeScreen").classList.add("hidden");
   $(".app-shell").classList.remove("hidden");
+  $("#editTripButton").hidden = isReadOnlyMode();
+  $("#shareButton").hidden = false;
+  $$("[data-action='add']").forEach((button) => { button.hidden = isReadOnlyMode(); });
   render();
 }
 
 function openTrip(tripId) {
   const entry = tripStore.trips.find((trip) => trip.id === tripId);
   if (!entry) return;
+  readOnlyShare = null;
   state = normalizeState(structuredClone(entry.state));
   try {
     localStorage.setItem(ACTIVE_TRIP_STORAGE_KEY, tripId);
@@ -4017,6 +4421,10 @@ function bindDesktopDrag() {
   document.addEventListener("dragstart", (event) => {
     const card = event.target.closest("[data-drag-id]");
     if (!card) return;
+    if (isReadOnlyMode()) {
+      event.preventDefault();
+      return;
+    }
     if (card.getAttribute("draggable") === "false") {
       event.preventDefault();
       return;
@@ -4119,6 +4527,7 @@ function bindPointerDrag() {
 
   document.addEventListener("pointerdown", (event) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (isReadOnlyMode()) return;
     const card = event.target.closest("[data-drag-id]");
     if (!card || event.target.closest("a, input, textarea, select, button:not(.item-card)")) return;
     cleanupPointerDrag();
@@ -4218,10 +4627,10 @@ function bindEvents() {
     }
 
     const addButton = event.target.closest("[data-action='add']");
-    if (addButton) openItemSheet();
+    if (addButton && !isReadOnlyMode()) openItemSheet();
 
     const editButton = event.target.closest("[data-edit]");
-    if (editButton) openItemSheet(editButton.dataset.edit);
+    if (editButton && !isReadOnlyMode()) openItemSheet(editButton.dataset.edit);
 
     const navButton = event.target.closest(".nav-button");
     if (navButton) switchView(navButton.dataset.view, "bottom_bar");
@@ -4377,6 +4786,10 @@ function bindEvents() {
   $("#resetDemoButton").addEventListener("click", resetDemo);
   $("#shareButton").addEventListener("click", openShareSheet);
   $("#shareTripTextButton").addEventListener("click", shareTrip);
+  $("#openTripLinkButton").addEventListener("click", showTripLinkOptions);
+  $("#tripLinkIncludeBudget").addEventListener("change", updateTripShareBudgetVisibility);
+  $("#copyTripLinkButton").addEventListener("click", copyTripShareLink);
+  $("#revokeTripLinkButton").addEventListener("click", revokeTripShareLink);
   $("#openTripPdfOptionsButton").addEventListener("click", showTripPdfOptions);
   $("#downloadTripPdfButton").addEventListener("click", downloadTripPdf);
   $("#shareTripPdfButton").addEventListener("click", shareTripPdf);

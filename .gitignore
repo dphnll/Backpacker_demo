@@ -4,6 +4,8 @@
 client_secret*.json
 *.oauth-token.json
 *credentials*.json
+supabase-config.js
+supabase/.temp/
 
 # temporary clasp pull backups (see integrations/posthog-google-sheets/.remote-backup/)
 .remote-backup/

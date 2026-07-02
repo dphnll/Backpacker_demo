@@ -345,6 +345,8 @@ Recommended stack:
 - simple CSS or Tailwind, depending on developer preference;
 - deploy later via GitHub Pages.
 
+Current product note: this section describes the original MVP boundary. The active stable line has one narrow backend exception: read-only public trip sharing via Supabase for trips explicitly published by the author. Unshared personal trips still remain local.
+
 Design / platform priority:
 - mobile-first responsive web app;
 - consider Telegram Mini App constraints from the beginning: narrow viewport, touch controls, quick actions, compact editing;

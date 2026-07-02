@@ -2886,6 +2886,71 @@ textarea:focus {
   background: #fff;
 }
 
+.trip-link-options {
+  display: grid;
+  gap: 10px;
+  margin: -2px 0 2px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.trip-link-options.hidden {
+  display: none;
+}
+
+.share-link-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.share-link-box input {
+  min-width: 0;
+  height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  font: inherit;
+}
+
+#copyTripLinkButton {
+  min-height: 42px;
+  border-color: rgba(18, 54, 61, 0.34);
+  background: var(--active-button-gradient);
+  color: #fff;
+  box-shadow: var(--active-button-shadow);
+  font-weight: 900;
+}
+
+#copyTripLinkButton:disabled {
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+.share-link-hint {
+  margin: -2px 2px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.share-link-status {
+  min-height: 17px;
+  margin: -2px 2px 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.share-link-status.error {
+  color: var(--danger);
+}
+
 .trip-pdf-options.hidden {
   display: none;
 }

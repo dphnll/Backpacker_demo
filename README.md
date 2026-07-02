@@ -12,8 +12,10 @@ Mobile-first prototype of a personal trip basket for independent travelers.
 - Currency calculator for RUB / EUR / SEK with live-rate fallback to demo rates.
 - Telegram-friendly share text.
 - Trip PDF export with separate download/share actions.
+- Read-only trip sharing by link via Supabase, enabled only for trips the author publishes.
 - Local persistence via `localStorage`.
-- No backend, no auth, no maps, no booking integrations.
+- Unshared personal trips stay local. Shared-link management uses Supabase Anonymous Auth without a registration screen.
+- No permanent accounts, collaborative editing, maps, booking integrations, or full multi-device sync.
 
 ## Demo
 
@@ -29,6 +31,7 @@ The prototype is static and does not require a build step.
 
 ## Product docs
 
+- `CHANGELOG.md`
 - `BACKPACKER_MVP_SCOPE.md`
 - `BACKPACKER_WIREFRAMES.md`
 - `BACKPACKER_STABLE_V1_1_0_0.md`
