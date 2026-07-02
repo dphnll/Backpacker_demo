@@ -13,6 +13,7 @@ Mobile-first prototype of a personal trip basket for independent travelers.
 - Telegram-friendly share text.
 - Trip PDF export with separate download/share actions.
 - Read-only trip sharing by link via Supabase, enabled only for trips the author publishes.
+- Separate `Со мной поделились` list for read-only trips saved from public links.
 - iPhone PWA install readiness: Home Screen launch in standalone mode.
 - Local persistence via `localStorage`.
 - Unshared personal trips stay local. Shared-link management uses Supabase Anonymous Auth without a registration screen.

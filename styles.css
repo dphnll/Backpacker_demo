@@ -1025,6 +1025,54 @@ button[aria-disabled="true"] .home-support-icon {
   left: 12px;
 }
 
+.received-trips-section {
+  margin-top: 4px;
+}
+
+.received-trip-card .trip-card-open {
+  padding-right: 12px;
+}
+
+.received-trip-card .home-card-kicker {
+  background: rgba(18, 54, 61, 0.88);
+  color: #fff;
+}
+
+.received-trip-card-closed {
+  opacity: 0.78;
+}
+
+.received-trip-card-closed .trip-card-open {
+  cursor: default;
+}
+
+.received-trip-card-closed strong,
+.received-trip-card-closed .trip-card-open > span:not(.home-card-kicker) {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.received-trip-remove-button {
+  max-width: calc(100% - 24px);
+}
+
+.save-received-button {
+  display: inline-grid;
+  min-height: 38px;
+  width: fit-content;
+  max-width: 100%;
+  place-items: center;
+  margin: 8px 0 0;
+  padding: 0 12px;
+  border: 1px solid rgba(18, 54, 61, 0.22);
+  border-radius: 8px;
+  background: var(--active-button-gradient);
+  color: #fff;
+  box-shadow: var(--active-button-shadow);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
 .cover-trip-button,
 .delete-trip-button {
   position: absolute;

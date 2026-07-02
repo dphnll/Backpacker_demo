@@ -15,8 +15,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.8";
-const APP_RELEASE_SUMMARY = "iPhone PWA readiness: установка на экран Домой, standalone-режим и подсказка до первой поездки.";
+const APP_VERSION = "1.1.2.9";
+const APP_RELEASE_SUMMARY = "раздел «Со мной поделились»: сохранение read-only поездки без raw token и открытие с главной.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -219,6 +219,9 @@ const seedState = {
 
 let tripStore = loadTripStore();
 let shareRecords = loadShareRecords();
+let receivedShareCards = [];
+let receivedSharesLoaded = false;
+let receivedSharesLoading = false;
 let readOnlyShare = null;
 let state = loadState();
 let currentView = loadInitialView();
@@ -579,7 +582,14 @@ async function ensureSupabaseOwnerSession() {
   return created.data.session.access_token;
 }
 
-async function callTripShareFunction(action, payload = {}, { requireOwner = false } = {}) {
+async function getExistingSupabaseAccessToken() {
+  const client = getSupabaseClient();
+  if (!client) return "";
+  const current = await client.auth.getSession();
+  return current.data.session?.access_token || "";
+}
+
+async function callTripShareFunction(action, payload = {}, { requireOwner = false, useExistingSession = false } = {}) {
   const config = getSupabaseConfig();
   const url = getTripShareFunctionUrl();
   if (!url || !config.anonKey) throw new Error("supabase_not_configured");
@@ -589,6 +599,9 @@ async function callTripShareFunction(action, payload = {}, { requireOwner = fals
   };
   if (requireOwner) {
     headers.Authorization = `Bearer ${await ensureSupabaseOwnerSession()}`;
+  } else if (useExistingSession) {
+    const token = await getExistingSupabaseAccessToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
   }
   const response = await fetch(url, {
     method: "POST",
@@ -612,7 +625,7 @@ async function loadReadOnlyShareFromUrl() {
     return { invalid: true, state: normalizeState(structuredClone(seedState)), options: { includeBudget: false } };
   }
   try {
-    const payload = await callTripShareFunction("read", { token });
+    const payload = await callTripShareFunction("read", { token }, { useExistingSession: true });
     const nextState = normalizeState(payload.state);
     return {
       shareId: payload.shareId || "",
@@ -623,6 +636,9 @@ async function loadReadOnlyShareFromUrl() {
       options: {
         includeBudget: payload.includeBudget !== false,
       },
+      isOwner: Boolean(payload.isOwner),
+      isSaved: Boolean(payload.isSaved),
+      source: "public_link",
       state: nextState,
     };
   } catch {
@@ -1482,6 +1498,7 @@ function renderHome() {
   const list = $("#tripList");
   if (!list) return;
   renderHomeSupport();
+  renderReceivedTrips();
   const trips = tripStore.trips
     .filter((entry) => !entry.isDemo)
     .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
@@ -1521,6 +1538,144 @@ function renderHome() {
       </article>
     `;
   }).join("");
+}
+
+function renderReceivedTrips() {
+  const section = $("#receivedTripsSection");
+  const list = $("#receivedTripList");
+  if (!section || !list) return;
+  const shouldShow = receivedSharesLoading || receivedShareCards.length > 0;
+  section.classList.toggle("hidden", !shouldShow);
+  if (receivedSharesLoading && !receivedShareCards.length) {
+    list.innerHTML = `<p class="empty-trips"><span>Обновляем сохраненные ссылки...</span></p>`;
+    return;
+  }
+  list.innerHTML = receivedShareCards.map((entry) => {
+    const dateText = [formatDate(entry.startDate), formatDate(entry.endDate)].filter(Boolean).join("-");
+    const meta = entry.revoked ? "Доступ закрыт" : [dateText, entry.destination || ""].filter(Boolean).join(" · ");
+    const badge = entry.revoked ? "Доступ закрыт" : "Просмотр";
+    return `
+      <article class="home-card trip-list-card received-trip-card${entry.revoked ? " received-trip-card-closed" : ""}">
+        <button class="trip-card-open" data-open-received-trip="${escapeAttr(entry.shareId)}" type="button" ${entry.revoked ? "disabled aria-disabled=\"true\"" : ""}>
+          <span class="home-card-kicker">${escapeHtml(badge)}</span>
+          <strong>${escapeHtml(entry.title || "Поездка")}</strong>
+          <span>${escapeHtml(meta || "Автор поездки")}</span>
+          <div class="home-card-meta">
+            <span>Автор поездки</span>
+            <span>${entry.revoked ? "Закрыто" : "Read-only"}</span>
+          </div>
+        </button>
+        <button class="delete-trip-button received-trip-remove-button" data-remove-received-trip="${escapeAttr(entry.shareId)}" type="button">Удалить из списка</button>
+      </article>
+    `;
+  }).join("");
+}
+
+async function refreshReceivedTrips({ silent = true } = {}) {
+  if (!isSupabaseConfigured()) {
+    receivedShareCards = [];
+    receivedSharesLoaded = true;
+    renderReceivedTrips();
+    return;
+  }
+  const token = await getExistingSupabaseAccessToken().catch(() => "");
+  if (!token) {
+    receivedShareCards = [];
+    receivedSharesLoaded = true;
+    renderReceivedTrips();
+    return;
+  }
+  receivedSharesLoading = true;
+  renderReceivedTrips();
+  try {
+    const payload = await callTripShareFunction("list_received", {}, { useExistingSession: true });
+    receivedShareCards = Array.isArray(payload.trips) ? payload.trips : [];
+    receivedSharesLoaded = true;
+  } catch {
+    if (!silent) showToast("Не удалось обновить «Со мной поделились»");
+  } finally {
+    receivedSharesLoading = false;
+    renderReceivedTrips();
+  }
+}
+
+function renderSaveReceivedTripButton() {
+  const button = $("#saveReceivedTripButton");
+  if (!button) return;
+  const canSave = Boolean(readOnlyShare?.shareId && !readOnlyShare.invalid && !readOnlyShare.isOwner && !readOnlyShare.isSaved && readOnlyShare.source === "public_link");
+  button.classList.toggle("hidden", !canSave);
+  button.disabled = !canSave;
+}
+
+async function saveReceivedTrip() {
+  if (!readOnlyShare?.shareId || readOnlyShare.invalid || readOnlyShare.isOwner || readOnlyShare.isSaved) return;
+  const button = $("#saveReceivedTripButton");
+  if (button) button.disabled = true;
+  try {
+    await callTripShareFunction("save_received", { shareId: readOnlyShare.shareId }, { requireOwner: true });
+    readOnlyShare.isSaved = true;
+    renderSaveReceivedTripButton();
+    await refreshReceivedTrips();
+    showToast("Поездка добавлена в «Со мной поделились»");
+  } catch (error) {
+    if (error.status === 409) {
+      readOnlyShare.isOwner = true;
+      renderSaveReceivedTripButton();
+      showToast("Это ваша ссылка");
+    } else if (error.status === 410) {
+      readOnlyShare.invalid = true;
+      renderSaveReceivedTripButton();
+      showToast("Доступ закрыт");
+    } else {
+      showToast(isSupabaseConfigured() ? "Не удалось добавить поездку" : "Supabase не настроен");
+    }
+  } finally {
+    renderSaveReceivedTripButton();
+  }
+}
+
+async function openReceivedTrip(shareId) {
+  if (!shareId) return;
+  try {
+    const payload = await callTripShareFunction("read_received", { shareId }, { requireOwner: true });
+    const nextState = normalizeState(payload.state);
+    readOnlyShare = {
+      shareId: payload.shareId || shareId,
+      sourceTripId: payload.tripId || nextState.trip.id,
+      title: nextState.trip.title || "Поездка",
+      destination: nextState.trip.destination || "",
+      updatedAt: payload.updatedAt || new Date().toISOString(),
+      options: {
+        includeBudget: payload.includeBudget !== false,
+      },
+      isOwner: false,
+      isSaved: true,
+      source: "received_list",
+      state: nextState,
+    };
+    state = nextState;
+    showTripScreen();
+    trackEvent("received_trip_opened", { share_id: shareId });
+  } catch (error) {
+    if (error.status === 410) {
+      showToast("Доступ закрыт");
+      await refreshReceivedTrips();
+      return;
+    }
+    showToast("Не удалось открыть поездку");
+  }
+}
+
+async function removeReceivedTrip(shareId) {
+  if (!shareId) return;
+  try {
+    await callTripShareFunction("remove_received", { shareId }, { requireOwner: true });
+    receivedShareCards = receivedShareCards.filter((entry) => entry.shareId !== shareId);
+    renderReceivedTrips();
+    showToast("Удалено из «Со мной поделились»");
+  } catch {
+    showToast("Не удалось удалить из списка");
+  }
 }
 
 function renderHeader() {
@@ -4181,6 +4336,7 @@ function showHomeScreen(source = null) {
   $(".app-shell").classList.add("hidden");
   renderHome();
   renderIosInstallOnboarding();
+  refreshReceivedTrips();
   trackEvent("home_opened", { trip_count: getUserTripCount(), ...(source ? { source } : {}) });
 }
 
@@ -4192,6 +4348,7 @@ function showTripScreen() {
   $("#editTripButton").hidden = isReadOnlyMode();
   $("#shareButton").hidden = false;
   $$("[data-action='add']").forEach((button) => { button.hidden = isReadOnlyMode(); });
+  renderSaveReceivedTripButton();
   render();
 }
 
@@ -4722,6 +4879,12 @@ function bindEvents() {
     const deleteTripButton = event.target.closest("[data-delete-trip]");
     if (deleteTripButton) deleteTrip(deleteTripButton.dataset.deleteTrip);
 
+    const openReceivedTripButton = event.target.closest("[data-open-received-trip]");
+    if (openReceivedTripButton && !openReceivedTripButton.disabled) openReceivedTrip(openReceivedTripButton.dataset.openReceivedTrip);
+
+    const removeReceivedTripButton = event.target.closest("[data-remove-received-trip]");
+    if (removeReceivedTripButton) removeReceivedTrip(removeReceivedTripButton.dataset.removeReceivedTrip);
+
     const coverTripButton = event.target.closest("[data-cover-trip]");
     if (coverTripButton) selectTripCover(coverTripButton.dataset.coverTrip);
 
@@ -4765,6 +4928,7 @@ function bindEvents() {
   $("#homeShareButton").addEventListener("click", openHomeShareSheet);
   $("#homeInstallAppButton").addEventListener("click", installPwa);
   $("#iosInstallCloseButton")?.addEventListener("click", dismissIosInstallOnboarding);
+  $("#saveReceivedTripButton")?.addEventListener("click", saveReceivedTrip);
   $("#shareAppButton").addEventListener("click", shareApp);
   $("#donationPigButton")?.addEventListener("click", () => {
     if (!DONATION_FLOW_ENABLED) return;
