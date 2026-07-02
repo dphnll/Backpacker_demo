@@ -1,4 +1,4 @@
-const CACHE_NAME = "backpacker-pwa-v37";
+const CACHE_NAME = "backpacker-pwa-v38";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -15,6 +15,7 @@ const APP_SHELL = [
   "./assets/status-want.png",
   "./icons/backpacker-192.png",
   "./icons/backpacker-512.png",
+  "./icons/apple-touch-icon.png",
   "./icons/card-copy.png",
   "./icons/backpacker-logo-transparent.png",
   "./icons/backpacker-logo.svg"

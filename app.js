@@ -15,8 +15,9 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.7";
-const APP_RELEASE_SUMMARY = "первый шаг активного шаринга: read-only ссылка на поездку, смета по allocations и Excel с долями участников.";
+const APP_VERSION = "1.1.2.8";
+const APP_RELEASE_SUMMARY = "iPhone PWA readiness: установка на экран Домой, standalone-режим и подсказка до первой поездки.";
+const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
 const DONATION_FLOW_ENABLED = false;
@@ -254,6 +255,35 @@ function getOrCreateAnalyticsUserId() {
 function getDisplayMode() {
   if (window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone) return "pwa";
   return "browser";
+}
+
+function isAppleMobileBrowser() {
+  const ua = window.navigator.userAgent || "";
+  const platform = window.navigator.platform || "";
+  return /iPhone|iPad|iPod/i.test(ua) || (platform === "MacIntel" && window.navigator.maxTouchPoints > 1);
+}
+
+function shouldShowIosInstallOnboarding() {
+  if (!isAppleMobileBrowser() || getDisplayMode() !== "browser") return false;
+  try {
+    return localStorage.getItem(IOS_INSTALL_DISMISS_KEY) !== "true";
+  } catch {
+    return true;
+  }
+}
+
+function renderIosInstallOnboarding() {
+  const card = $("#iosInstallCard");
+  if (!card) return;
+  card.classList.toggle("hidden", !shouldShowIosInstallOnboarding());
+}
+
+function dismissIosInstallOnboarding() {
+  try {
+    localStorage.setItem(IOS_INSTALL_DISMISS_KEY, "true");
+  } catch {}
+  $("#iosInstallCard")?.classList.add("hidden");
+  trackEvent("ios_install_onboarding_dismissed", { app_version: APP_VERSION });
 }
 
 function getActiveTripEntry(tripId = state?.trip?.id) {
@@ -4023,6 +4053,13 @@ async function installPwa() {
     return;
   }
 
+  if (isAppleMobileBrowser()) {
+    renderIosInstallOnboarding();
+    showToast("На iPhone: Safari → Поделиться → На экран Домой");
+    trackEvent("pwa_install_clicked", { prompt_available: false, platform: "ios" });
+    return;
+  }
+
   if (deferredInstallPrompt) {
     trackEvent("pwa_install_clicked", { prompt_available: true });
     deferredInstallPrompt.prompt();
@@ -4143,6 +4180,7 @@ function showHomeScreen(source = null) {
   $("#homeScreen").classList.remove("hidden");
   $(".app-shell").classList.add("hidden");
   renderHome();
+  renderIosInstallOnboarding();
   trackEvent("home_opened", { trip_count: getUserTripCount(), ...(source ? { source } : {}) });
 }
 
@@ -4726,6 +4764,7 @@ function bindEvents() {
   $("#coverInput").addEventListener("change", saveSelectedCover);
   $("#homeShareButton").addEventListener("click", openHomeShareSheet);
   $("#homeInstallAppButton").addEventListener("click", installPwa);
+  $("#iosInstallCloseButton")?.addEventListener("click", dismissIosInstallOnboarding);
   $("#shareAppButton").addEventListener("click", shareApp);
   $("#donationPigButton")?.addEventListener("click", () => {
     if (!DONATION_FLOW_ENABLED) return;

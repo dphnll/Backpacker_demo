@@ -1,4 +1,5 @@
 {
+  "id": "./",
   "name": "Backpacker",
   "short_name": "Backpacker",
   "description": "Корзина самостоятельной поездки: план, бюджет, ссылки и идеи в одном месте.",
@@ -22,6 +23,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "./icons/backpacker-logo.svg",

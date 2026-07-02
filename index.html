@@ -2,15 +2,17 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#3f494b" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Backpacker" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="format-detection" content="telephone=no" />
     <title>Backpacker</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icons/backpacker-192.png" type="image/png" />
-    <link rel="apple-touch-icon" href="./icons/backpacker-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
     <link rel="stylesheet" href="./styles.css?v=onboard-20260625-11" />
     <script src="./analytics-config.js?v=1"></script>
   </head>
@@ -158,6 +160,18 @@
             <h2>Лента поездок</h2>
           </div>
           <div class="trip-list" id="tripList"></div>
+        </section>
+
+        <section class="ios-install-card hidden" id="iosInstallCard" aria-label="Установить Backpacker">
+          <button class="ios-install-close" id="iosInstallCloseButton" type="button" aria-label="Скрыть">×</button>
+          <h2>Установить Backpacker</h2>
+          <p>Лучше установить приложение до создания первой поездки: на iPhone версия с домашнего экрана хранит данные отдельно от Safari.</p>
+          <ol>
+            <li>Откройте Backpacker в Safari.</li>
+            <li>Нажмите «Поделиться».</li>
+            <li>Выберите «На экран Домой».</li>
+            <li>Включите «Открывать как веб-приложение» и нажмите «Добавить».</li>
+          </ol>
         </section>
 
         <section class="home-support" aria-label="Информация и помощь">
@@ -580,7 +594,7 @@
           <button class="icon-button" data-close="homeShare" type="button" aria-label="Закрыть">×</button>
         </header>
         <div class="share-actions">
-          <button class="ghost-button" id="homeInstallAppButton" type="button">Скачать мобильное приложение</button>
+          <button class="ghost-button" id="homeInstallAppButton" type="button">Установить Backpacker</button>
           <button class="primary-button" id="shareAppButton" type="button">Поделиться Backpacker</button>
         </div>
         <p class="home-share-hint">
