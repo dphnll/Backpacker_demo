@@ -114,6 +114,9 @@
           <img src="./icons/backpacker-logo-transparent.png" alt="" aria-hidden="true" />
           <div>
             <h1>BACKPACKER</h1>
+            <button class="home-profile-card hidden" id="homeProfileButton" type="button">
+              <strong id="homeProfileName">Добавьте имя или ник</strong>
+            </button>
           </div>
         </div>
         <button class="icon-button share-icon-button home-share-button" id="homeShareButton" type="button" title="Поделиться Backpacker" aria-label="Поделиться Backpacker">
@@ -236,7 +239,10 @@
         </div>
         <button class="save-received-button hidden" id="saveReceivedTripButton" type="button">Добавить в «Со мной поделились»</button>
         <button class="trip-meta" id="tripMeta" type="button">Казань · 12 июля-15 июля · 4 дня</button>
-        <button class="trip-budget-meta" id="tripBudgetMeta" type="button">Бюджет 45 000 ₽</button>
+        <div class="trip-summary-row">
+          <p class="share-role-banner hidden" id="shareRoleBanner"></p>
+          <button class="trip-budget-meta" id="tripBudgetMeta" type="button">Бюджет 45 000 ₽</button>
+        </div>
         <section class="budget-strip" aria-label="Бюджет поездки">
           <div class="paid-card">
             <span>Оплачено</span>
@@ -254,6 +260,14 @@
       </header>
 
       <main class="main-content">
+        <section class="card proposal-inbox-card hidden" id="proposalInboxSection" aria-label="Предложения участников">
+          <div class="card-title-row">
+            <h3 id="proposalInboxTitle">Предложения · 0</h3>
+            <button class="ghost-button compact" id="refreshProposalsButton" type="button">Обновить</button>
+          </div>
+          <div class="proposal-inbox-list" id="proposalInboxList"></div>
+        </section>
+
         <section class="view active" id="planView" aria-label="План поездки">
           <div class="section-heading">
             <div>
@@ -468,6 +482,17 @@
             <button class="danger-button" id="deleteItemButton" type="button">Удалить</button>
           </div>
         </form>
+      </section>
+    </div>
+
+    <div class="sheet" id="expenseProposalSheet" aria-hidden="true">
+      <div class="sheet-backdrop" data-close="expenseProposal"></div>
+      <section class="sheet-panel expense-proposal-panel" role="dialog" aria-modal="true" aria-labelledby="expenseProposalTitle">
+        <header class="sheet-header">
+          <h2 id="expenseProposalTitle">Предложить свою долю</h2>
+          <button class="icon-button" data-close="expenseProposal" type="button" aria-label="Закрыть">×</button>
+        </header>
+        <div class="expense-proposal-body" id="expenseProposalBody"></div>
       </section>
     </div>
 
@@ -692,6 +717,26 @@
           <button class="ghost-button" id="downloadPlanButton" type="button">Скачать план по дням</button>
         </div>
         <pre class="share-preview" id="sharePreview"></pre>
+      </section>
+    </div>
+
+    <div class="sheet" id="profileSheet" aria-hidden="true">
+      <div class="sheet-backdrop" data-close="profile"></div>
+      <section class="sheet-panel profile-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="profileSheetTitle">
+        <header class="sheet-header">
+          <h2 id="profileSheetTitle">Как вас показывать в Backpacker?</h2>
+          <button class="icon-button" data-close="profile" type="button" aria-label="Закрыть">×</button>
+        </header>
+        <form class="sheet-form profile-form" id="profileForm">
+          <p class="profile-copy">Это имя увидят авторы поездок и другие участники. Можно указать имя или ник.</p>
+          <label class="field wide">
+            Имя или ник
+            <input id="profileDisplayNameInput" name="displayName" maxlength="40" autocomplete="nickname" placeholder="Например, Ирина или backpacker_ira" />
+          </label>
+          <p class="profile-error" id="profileError" aria-live="polite"></p>
+          <button class="primary-button" id="profileSaveButton" type="submit">Сохранить и продолжить</button>
+          <p class="field-hint">Имя не является логином и не меняет доступ к поездкам.</p>
+        </form>
       </section>
     </div>
 

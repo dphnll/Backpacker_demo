@@ -15,8 +15,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.10";
-const APP_RELEASE_SUMMARY = "публичная PWA-сборка умеет создавать и копировать Supabase-ссылки без локального конфига.";
+const APP_VERSION = "1.1.2.12";
+const APP_RELEASE_SUMMARY = "минимальный профиль показывает имя или ник в shared-сценариях без смены anonymous-сессии.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -58,6 +58,13 @@ let cardCopyState = {
   isSubmitting: false,
 };
 let tripPdfGenerating = false;
+let shareProposalContext = null;
+let expenseProposalDraft = { itemId: "", participantMode: "", participantId: "", proposedParticipantName: "", amount: 0 };
+let authorExpenseProposals = [];
+let userProfile = { loaded: false, loading: false, displayName: "", error: "" };
+let pendingProfileAction = null;
+let profileSaving = false;
+const resolvingExpenseProposalIds = new Set();
 
 const itemTypes = [
   ["ticket", "Билет"],
@@ -618,6 +625,134 @@ async function callTripShareFunction(action, payload = {}, { requireOwner = fals
   return data;
 }
 
+function normalizeDisplayName(value = "") {
+  return String(value || "")
+    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getDisplayNameError(value = "") {
+  const displayName = normalizeDisplayName(value);
+  if (!displayName) return "Введите имя или ник";
+  if (displayName.length > 40) return "Имя или ник должны быть не длиннее 40 символов";
+  return "";
+}
+
+async function loadMyProfile({ createSession = false } = {}) {
+  if (!isSupabaseConfigured()) return null;
+  if (userProfile.loading) return userProfile.displayName ? { displayName: userProfile.displayName } : null;
+  userProfile.loading = true;
+  try {
+    const payload = await callTripShareFunction("get_my_profile", {}, createSession ? { requireOwner: true } : { useExistingSession: true });
+    userProfile = {
+      loaded: true,
+      loading: false,
+      displayName: payload.profile?.displayName || "",
+      error: "",
+    };
+    renderHomeProfile();
+    renderShareRoleBanner();
+    return payload.profile || null;
+  } catch {
+    userProfile = { ...userProfile, loaded: false, loading: false, error: "Не удалось загрузить имя пользователя" };
+    renderHomeProfile();
+    return null;
+  }
+}
+
+async function saveMyProfile(displayName) {
+  const normalized = normalizeDisplayName(displayName);
+  const error = getDisplayNameError(normalized);
+  if (error) throw new Error(error);
+  const payload = await callTripShareFunction("upsert_my_profile", { displayName: normalized }, { requireOwner: true });
+  userProfile = {
+    loaded: true,
+    loading: false,
+    displayName: payload.profile?.displayName || normalized,
+    error: "",
+  };
+  renderHomeProfile();
+  renderShareRoleBanner();
+  return userProfile;
+}
+
+function renderHomeProfile() {
+  const button = $("#homeProfileButton");
+  const name = $("#homeProfileName");
+  if (!button || !name) return;
+  const shouldShow = isSupabaseConfigured() && currentScreen === "home";
+  button.classList.toggle("hidden", !shouldShow);
+  name.textContent = userProfile.displayName || "Добавьте имя или ник";
+}
+
+function renderProfileSheet() {
+  const input = $("#profileDisplayNameInput");
+  const error = $("#profileError");
+  const button = $("#profileSaveButton");
+  if (input && document.activeElement !== input) input.value = userProfile.displayName || input.value || "";
+  if (error) error.textContent = userProfile.error || "";
+  if (button) {
+    button.disabled = profileSaving;
+    button.textContent = profileSaving ? "Сохраняем..." : (pendingProfileAction ? "Сохранить и продолжить" : "Сохранить");
+  }
+}
+
+function openProfileSheet(action = null) {
+  pendingProfileAction = action;
+  userProfile.error = "";
+  renderProfileSheet();
+  openSheet("profileSheet");
+  window.setTimeout(() => $("#profileDisplayNameInput")?.focus(), 80);
+}
+
+async function requireProfileForSharedAction(entryPoint, action) {
+  if (!isSupabaseConfigured()) {
+    await action();
+    return;
+  }
+  if (userProfile.displayName) {
+    await action();
+    return;
+  }
+  const profile = await loadMyProfile({ createSession: true });
+  if (profile?.displayName) {
+    await action();
+    return;
+  }
+  openProfileSheet({ entryPoint, action });
+}
+
+async function submitProfileForm(event) {
+  event.preventDefault();
+  if (profileSaving) return;
+  const input = $("#profileDisplayNameInput");
+  const value = input?.value || "";
+  const validationError = getDisplayNameError(value);
+  if (validationError) {
+    userProfile.error = validationError;
+    renderProfileSheet();
+    return;
+  }
+  profileSaving = true;
+  userProfile.error = "";
+  renderProfileSheet();
+  try {
+    await saveMyProfile(value);
+    closeSheet("profileSheet");
+    showToast("Имя обновлено");
+    const action = pendingProfileAction?.action;
+    pendingProfileAction = null;
+    if (typeof action === "function") await action();
+  } catch {
+    userProfile.error = "Не удалось сохранить имя. Проверьте соединение и попробуйте ещё раз.";
+    renderProfileSheet();
+  } finally {
+    profileSaving = false;
+    renderProfileSheet();
+  }
+}
+
 async function loadReadOnlyShareFromUrl() {
   const token = getSharePayloadFromUrl();
   if (!token) return null;
@@ -637,7 +772,11 @@ async function loadReadOnlyShareFromUrl() {
         includeBudget: payload.includeBudget !== false,
       },
       isOwner: Boolean(payload.isOwner),
+      isAuthor: Boolean(payload.isAuthor ?? payload.isOwner),
       isSaved: Boolean(payload.isSaved),
+      authorDisplayName: payload.authorDisplayName || "",
+      currentUserDisplayName: payload.currentUserDisplayName || "",
+      profileRequired: Boolean(payload.profileRequired),
       source: "public_link",
       state: nextState,
     };
@@ -1321,6 +1460,8 @@ function checkTripMilestones() {
 function render() {
   renderHome();
   renderHeader();
+  renderShareRoleBanner();
+  renderProposalInbox();
   renderPlan();
   renderBasket();
   renderBudget();
@@ -1513,6 +1654,7 @@ function renderHome() {
   const list = $("#tripList");
   if (!list) return;
   renderHomeSupport();
+  renderHomeProfile();
   renderReceivedTrips();
   const trips = tripStore.trips
     .filter((entry) => !entry.isDemo)
@@ -1622,8 +1764,12 @@ function renderSaveReceivedTripButton() {
   button.disabled = !canSave;
 }
 
-async function saveReceivedTrip() {
+async function saveReceivedTrip(profileReady = false) {
   if (!readOnlyShare?.shareId || readOnlyShare.invalid || readOnlyShare.isOwner || readOnlyShare.isSaved) return;
+  if (!profileReady) {
+    await requireProfileForSharedAction("save_received", () => saveReceivedTrip(true));
+    return;
+  }
   const button = $("#saveReceivedTripButton");
   if (button) button.disabled = true;
   try {
@@ -1690,6 +1836,346 @@ async function removeReceivedTrip(shareId) {
     showToast("Удалено из «Со мной поделились»");
   } catch {
     showToast("Не удалось удалить из списка");
+  }
+}
+
+function getAuthorAllocationForItem(item) {
+  const selfParticipant = getSelfParticipant();
+  const allocation = getItemAllocations(item).find((entry) => entry.participantId === selfParticipant?.id);
+  return allocation?.amount || 0;
+}
+
+function getOwnProposalForItem(itemId) {
+  return (shareProposalContext?.proposals || []).find((proposal) => proposal.itemId === itemId && ["pending", "accepted", "rejected", "withdrawn", "stale"].includes(proposal.status));
+}
+
+async function refreshShareProposalContext() {
+  if (!readOnlyShare?.shareId || readOnlyShare.invalid) return null;
+  try {
+    shareProposalContext = await callTripShareFunction("get_share_context", { shareId: readOnlyShare.shareId }, { requireOwner: true });
+    readOnlyShare.isOwner = Boolean(shareProposalContext.isOwner ?? readOnlyShare.isOwner);
+    readOnlyShare.isAuthor = Boolean(shareProposalContext.isAuthor ?? readOnlyShare.isAuthor);
+    readOnlyShare.authorDisplayName = shareProposalContext.authorDisplayName || readOnlyShare.authorDisplayName || "";
+    readOnlyShare.currentUserDisplayName = shareProposalContext.currentUserDisplayName || readOnlyShare.currentUserDisplayName || "";
+    readOnlyShare.profileRequired = Boolean(shareProposalContext.profileRequired);
+    if (shareProposalContext.currentUserDisplayName) {
+      userProfile = { loaded: true, loading: false, displayName: shareProposalContext.currentUserDisplayName, error: "" };
+    }
+    renderShareRoleBanner();
+    return shareProposalContext;
+  } catch {
+    shareProposalContext = null;
+    return null;
+  }
+}
+
+function formatProposalStatus(status) {
+  return {
+    pending: "На рассмотрении",
+    accepted: "Принято",
+    rejected: "Отклонено",
+    withdrawn: "Отозвано",
+    stale: "Неактуально",
+  }[status] || status;
+}
+
+function resetExpenseProposalDraft(itemId = "") {
+  expenseProposalDraft = { itemId, participantMode: "", participantId: "", proposedParticipantName: "", amount: 0 };
+}
+
+async function openExpenseProposalSheet(itemId, profileReady = false) {
+  if (!isReadOnlyMode()) return;
+  if (readOnlyShare?.isOwner || readOnlyShare?.isAuthor) {
+    showToast("Это ваша поездка");
+    return;
+  }
+  if (!profileReady) {
+    await requireProfileForSharedAction("expense_proposal", () => openExpenseProposalSheet(itemId, true));
+    return;
+  }
+  resetExpenseProposalDraft(itemId);
+  await refreshShareProposalContext();
+  renderExpenseProposalSheet();
+  openSheet("expenseProposalSheet");
+}
+
+function renderExpenseProposalSheet() {
+  const item = state.items.find((entry) => entry.id === expenseProposalDraft.itemId);
+  const body = $("#expenseProposalBody");
+  if (!item) {
+    body.innerHTML = `<p class="field-hint">Расход не найден.</p>`;
+    return;
+  }
+  const existingProposal = getOwnProposalForItem(item.id);
+  const authorAmount = getAuthorAllocationForItem(item);
+  const userParticipant = shareProposalContext?.userParticipantId
+    ? getParticipantById(shareProposalContext.userParticipantId)
+    : null;
+  const availableParticipants = shareProposalContext?.availableParticipants || [];
+  const currentUserAmount = userParticipant
+    ? getItemAllocations(item).find((allocation) => allocation.participantId === userParticipant.id)?.amount || 0
+    : 0;
+
+  if (!canShowBudget() || shareProposalContext?.includeBudget === false) {
+    body.innerHTML = `<p class="field-hint">Автор скрыл смету. Предложения по расходам недоступны.</p>`;
+    return;
+  }
+  if (shareProposalContext?.isOwner) {
+    body.innerHTML = `<p class="field-hint">Автор управляет расходами напрямую.</p>`;
+    return;
+  }
+  if (existingProposal?.status === "pending") {
+    body.innerHTML = `
+      <section class="proposal-summary">
+        <h3>${escapeHtml(item.title)}</h3>
+        <p>Ваше предложение: <strong>${formatMoney(existingProposal.amount)}</strong> · ${formatProposalStatus(existingProposal.status)}</p>
+        <button class="ghost-button" type="button" data-withdraw-expense-proposal="${escapeAttr(existingProposal.id)}">Отозвать предложение</button>
+      </section>
+    `;
+    return;
+  }
+  if (existingProposal && existingProposal.status !== "withdrawn") {
+    body.innerHTML = `
+      <section class="proposal-summary">
+        <h3>${escapeHtml(item.title)}</h3>
+        <p>Ваше предложение: <strong>${formatMoney(existingProposal.amount)}</strong> · ${formatProposalStatus(existingProposal.status)}</p>
+        <button class="primary-button" type="button" data-new-expense-proposal>Создать новое предложение</button>
+      </section>
+    `;
+    return;
+  }
+  if (authorAmount <= 0) {
+    body.innerHTML = `<p class="field-hint">Автор уже распределил весь расход между участниками.</p>`;
+    return;
+  }
+
+  if (!expenseProposalDraft.participantMode && userParticipant) {
+    expenseProposalDraft.participantMode = "existing";
+    expenseProposalDraft.participantId = userParticipant.id;
+  }
+
+  if (!expenseProposalDraft.participantMode) {
+    const existingOptions = availableParticipants.length
+      ? `
+        <button class="primary-button" type="button" data-proposal-mode="existing">Я уже есть среди участников</button>
+        <button class="ghost-button" type="button" data-proposal-mode="new">Добавить меня как нового участника</button>
+      `
+      : `
+        <p class="field-hint">Вас пока нет среди участников. Добавить себя вместе с предложением доли?</p>
+        <button class="primary-button" type="button" data-proposal-mode="new">Добавить меня</button>
+      `;
+    body.innerHTML = `
+      <section class="proposal-summary">
+        <h3>${escapeHtml(item.title)}</h3>
+        <p>Доступно из доли автора: <strong>${formatMoney(authorAmount)}</strong></p>
+      </section>
+      <section class="proposal-choice">
+        <h3>Как вы участвуете в поездке?</h3>
+        ${existingOptions}
+      </section>
+    `;
+    return;
+  }
+
+  if (expenseProposalDraft.participantMode === "existing" && !expenseProposalDraft.participantId) {
+    body.innerHTML = `
+      <section class="proposal-choice">
+        <h3>Кто вы в списке участников?</h3>
+        ${availableParticipants.map((participant) => `
+          <button class="ghost-button" type="button" data-proposal-participant="${escapeAttr(participant.id)}">${escapeHtml(participant.name)}</button>
+        `).join("")}
+        <button class="ghost-button" type="button" data-proposal-back>Назад</button>
+      </section>
+    `;
+    return;
+  }
+
+  if (expenseProposalDraft.participantMode === "new" && !expenseProposalDraft.proposedParticipantName) {
+    const suggestedName = userProfile.displayName || shareProposalContext?.currentUserDisplayName || "";
+    body.innerHTML = `
+      <section class="proposal-choice">
+        <h3>Как вас показать автору?</h3>
+        <label class="field wide">
+          Имя
+          <input id="proposalParticipantNameInput" maxlength="40" placeholder="Например, Ваня" value="${escapeAttr(suggestedName)}" />
+        </label>
+        <button class="primary-button" type="button" data-save-proposal-name>Продолжить</button>
+        <button class="ghost-button" type="button" data-proposal-back>Назад</button>
+      </section>
+    `;
+    return;
+  }
+
+  const selectedParticipantId = expenseProposalDraft.participantMode === "existing" ? expenseProposalDraft.participantId : "";
+  const selectedParticipant = selectedParticipantId ? getParticipantById(selectedParticipantId) : null;
+  const displayName = selectedParticipant?.name || expenseProposalDraft.proposedParticipantName;
+  const futureAmount = currentUserAmount + (expenseProposalDraft.amount || authorAmount);
+  body.innerHTML = `
+    <section class="proposal-summary">
+      <h3>${escapeHtml(item.title)}</h3>
+      <p>Общая стоимость: <strong>${formatMoney(item.price)}</strong></p>
+      <p>Текущая доля автора: <strong>${formatMoney(authorAmount)}</strong></p>
+      ${currentUserAmount ? `<p>Ваша текущая доля: <strong>${formatMoney(currentUserAmount)}</strong></p>` : ""}
+      <p>Участник: <strong>${escapeHtml(displayName)}</strong></p>
+    </section>
+    <section class="proposal-choice">
+      <h3>Сколько вы готовы взять на себя?</h3>
+      <button class="primary-button" type="button" data-proposal-full-amount="${authorAmount}">Весь доступный остаток — ${formatMoney(authorAmount)}</button>
+      <label class="field wide">
+        Другая сумма
+        <input id="proposalAmountInput" inputmode="numeric" placeholder="0" />
+      </label>
+      <p class="field-hint">После принятия ваша доля составит ${formatMoney(futureAmount)}.</p>
+      <button class="primary-button" type="button" data-submit-expense-proposal>Отправить предложение</button>
+      <button class="ghost-button" type="button" data-proposal-back>Назад</button>
+    </section>
+  `;
+}
+
+async function submitExpenseProposal(profileReady = false) {
+  const item = state.items.find((entry) => entry.id === expenseProposalDraft.itemId);
+  if (!item || !readOnlyShare?.shareId) return;
+  if (!profileReady) {
+    await requireProfileForSharedAction("expense_proposal_submit", () => submitExpenseProposal(true));
+    return;
+  }
+  const manualAmount = parseMoney($("#proposalAmountInput")?.value);
+  const amount = expenseProposalDraft.amount || manualAmount;
+  if (amount <= 0) {
+    showToast("Укажите сумму");
+    return;
+  }
+  try {
+    const payload = await callTripShareFunction("create_expense_proposal", {
+      shareId: readOnlyShare.shareId,
+      itemId: item.id,
+      participantMode: expenseProposalDraft.participantMode,
+      participantId: expenseProposalDraft.participantId,
+      proposedParticipantName: expenseProposalDraft.proposedParticipantName,
+      amount,
+    }, { requireOwner: true });
+    shareProposalContext ||= {};
+    shareProposalContext.proposals = [payload.proposal, ...(shareProposalContext.proposals || [])];
+    showToast("Предложение отправлено автору");
+    renderExpenseProposalSheet();
+  } catch (error) {
+    showToast(error?.message === "pending_proposal_exists" ? "У вас уже есть предложение по этому расходу" : "Не удалось отправить предложение");
+  }
+}
+
+async function withdrawExpenseProposal(proposalId) {
+  try {
+    const payload = await callTripShareFunction("withdraw_expense_proposal", { proposalId }, { requireOwner: true });
+    if (shareProposalContext?.proposals) {
+      shareProposalContext.proposals = shareProposalContext.proposals.map((proposal) => (
+        proposal.id === proposalId ? payload.proposal : proposal
+      ));
+    }
+    showToast("Предложение отозвано");
+    renderExpenseProposalSheet();
+  } catch {
+    showToast("Не удалось отозвать предложение");
+  }
+}
+
+function renderProposalInbox() {
+  const section = $("#proposalInboxSection");
+  if (!section) return;
+  const pendingCount = authorExpenseProposals.filter((proposal) => proposal.status === "pending").length;
+  section.classList.toggle("hidden", isReadOnlyMode() || !authorExpenseProposals.length);
+  $("#proposalInboxTitle").textContent = `Предложения · ${pendingCount}`;
+  $("#proposalInboxList").innerHTML = authorExpenseProposals.map((proposal) => `
+    <article class="proposal-card proposal-${escapeAttr(proposal.status)}">
+      <div>
+        <strong>${escapeHtml(proposal.requesterDisplayName || proposal.requesterName || "Пользователь Backpacker")}</strong>
+        <p>${proposal.participantMode === "new" ? "хочет присоединиться и взять" : "предлагает взять"} ${formatMoney(proposal.amount)} в расходе «${escapeHtml(proposal.itemTitle)}».</p>
+        ${proposal.participantName ? `<p class="proposal-account-link">Участник поездки: ${escapeHtml(proposal.participantName)} · аккаунт ${escapeHtml(proposal.requesterDisplayName || proposal.requesterName || "Пользователь Backpacker")}</p>` : ""}
+        <span>${formatProposalStatus(proposal.status)}</span>
+      </div>
+      ${proposal.status === "pending" ? `
+        <div class="proposal-actions">
+          <button class="ghost-button compact" type="button" data-reject-expense-proposal="${escapeAttr(proposal.id)}" ${resolvingExpenseProposalIds.has(proposal.id) ? "disabled" : ""}>Отклонить</button>
+          <button class="primary-button compact" type="button" data-accept-expense-proposal="${escapeAttr(proposal.id)}" ${resolvingExpenseProposalIds.has(proposal.id) ? "disabled" : ""}>${resolvingExpenseProposalIds.has(proposal.id) ? "Применяем..." : (proposal.participantMode === "new" ? "Добавить и принять" : "Принять")}</button>
+        </div>
+      ` : ""}
+    </article>
+  `).join("");
+}
+
+function renderShareRoleBanner() {
+  const banner = $("#shareRoleBanner");
+  if (!banner) return;
+  if (!isReadOnlyMode() || readOnlyShare?.invalid || readOnlyShare?.isOwner || readOnlyShare?.isAuthor) {
+    banner.classList.add("hidden");
+    banner.textContent = "";
+    return;
+  }
+  const authorName = readOnlyShare.authorDisplayName || "Автор поездки";
+  banner.classList.remove("hidden");
+  banner.textContent = `Автор — ${authorName}`;
+}
+
+async function refreshAuthorExpenseProposals() {
+  if (isReadOnlyMode() || !state?.trip?.id) {
+    authorExpenseProposals = [];
+    renderProposalInbox();
+    return;
+  }
+  try {
+    const payload = await callTripShareFunction("list_expense_proposals", { tripId: state.trip.id }, { requireOwner: true });
+    authorExpenseProposals = payload.proposals || [];
+  } catch {
+    authorExpenseProposals = [];
+  }
+  renderProposalInbox();
+}
+
+async function syncCurrentTripShareBeforeAccept() {
+  const record = getTripShareRecord();
+  await callTripShareFunction("update", {
+    tripId: state.trip.id,
+    includeBudget: record?.includeBudget !== false,
+    schemaVersion: TRIP_SHARE_SCHEMA_VERSION,
+    state: buildPublishedTripState(),
+  }, { requireOwner: true });
+}
+
+async function acceptExpenseProposal(proposalId) {
+  if (resolvingExpenseProposalIds.has(proposalId)) return;
+  resolvingExpenseProposalIds.add(proposalId);
+  renderProposalInbox();
+  try {
+    await syncCurrentTripShareBeforeAccept();
+    const payload = await callTripShareFunction("accept_expense_proposal", { proposalId }, { requireOwner: true });
+    if (payload.state) {
+      state = normalizeState(payload.state);
+      saveState();
+    }
+    await refreshAuthorExpenseProposals();
+    render();
+    showToast(payload.status === "stale" ? "Предложение стало неактуальным" : "Предложение принято");
+  } catch {
+    showToast("Не удалось принять предложение");
+  } finally {
+    resolvingExpenseProposalIds.delete(proposalId);
+    renderProposalInbox();
+  }
+}
+
+async function rejectExpenseProposal(proposalId) {
+  if (resolvingExpenseProposalIds.has(proposalId)) return;
+  resolvingExpenseProposalIds.add(proposalId);
+  renderProposalInbox();
+  try {
+    await callTripShareFunction("reject_expense_proposal", { proposalId }, { requireOwner: true });
+    await refreshAuthorExpenseProposals();
+    render();
+    showToast("Предложение отклонено");
+  } catch {
+    showToast("Не удалось отклонить предложение");
+  } finally {
+    resolvingExpenseProposalIds.delete(proposalId);
+    renderProposalInbox();
   }
 }
 
@@ -2935,8 +3421,12 @@ function renderTripLinkOptions(record = getTripShareRecord()) {
   }
 }
 
-async function showTripLinkOptions() {
+async function showTripLinkOptions(profileReady = false) {
   if (isReadOnlyMode()) return;
+  if (!profileReady) {
+    await requireProfileForSharedAction("publish_link", () => showTripLinkOptions(true));
+    return;
+  }
   const panel = $("#tripLinkOptions");
   if (panel && !panel.classList.contains("hidden")) {
     panel.classList.add("hidden");
@@ -2956,7 +3446,11 @@ async function showTripLinkOptions() {
   }
 }
 
-async function copyTripShareLink() {
+async function copyTripShareLink(profileReady = false) {
+  if (!profileReady) {
+    await requireProfileForSharedAction("copy_link", () => copyTripShareLink(true));
+    return;
+  }
   try {
     let record = getTripShareRecord();
     if (!record?.token) record = await publishTripShare({ includeBudget: $("#tripLinkIncludeBudget")?.checked ?? true });
@@ -2971,9 +3465,13 @@ async function copyTripShareLink() {
   }
 }
 
-async function updateTripShareBudgetVisibility() {
+async function updateTripShareBudgetVisibility(profileReady = false) {
   const record = getTripShareRecord();
   if (!record?.shareId) return;
+  if (!profileReady) {
+    await requireProfileForSharedAction("update_link", () => updateTripShareBudgetVisibility(true));
+    return;
+  }
   try {
     const updated = await updatePublishedTripShare({ includeBudget: $("#tripLinkIncludeBudget")?.checked ?? true });
     renderTripLinkOptions(updated);
@@ -2983,9 +3481,13 @@ async function updateTripShareBudgetVisibility() {
   }
 }
 
-async function revokeTripShareLink() {
+async function revokeTripShareLink(profileReady = false) {
   const record = getTripShareRecord();
   if (!record?.shareId) return;
+  if (!profileReady) {
+    await requireProfileForSharedAction("revoke_link", () => revokeTripShareLink(true));
+    return;
+  }
   try {
     await callTripShareFunction("revoke", { tripId: state.trip.id }, { requireOwner: true });
   } catch {
@@ -4352,6 +4854,7 @@ function showHomeScreen(source = null) {
   $("#homeScreen").classList.remove("hidden");
   $(".app-shell").classList.add("hidden");
   renderHome();
+  loadMyProfile({ createSession: false }).catch(() => {});
   renderIosInstallOnboarding();
   refreshReceivedTrips();
   trackEvent("home_opened", { trip_count: getUserTripCount(), ...(source ? { source } : {}) });
@@ -4367,6 +4870,8 @@ function showTripScreen() {
   $$("[data-action='add']").forEach((button) => { button.hidden = isReadOnlyMode(); });
   renderSaveReceivedTripButton();
   render();
+  refreshAuthorExpenseProposals();
+  if (isReadOnlyMode()) refreshShareProposalContext();
 }
 
 function openTrip(tripId) {
@@ -4855,7 +5360,14 @@ function bindEvents() {
     if (addButton && !isReadOnlyMode()) openItemSheet();
 
     const editButton = event.target.closest("[data-edit]");
-    if (editButton && !isReadOnlyMode()) openItemSheet(editButton.dataset.edit);
+    if (editButton && isReadOnlyMode()) {
+      openExpenseProposalSheet(editButton.dataset.edit);
+      return;
+    }
+    if (editButton) {
+      openItemSheet(editButton.dataset.edit);
+      return;
+    }
 
     const navButton = event.target.closest(".nav-button");
     if (navButton) switchView(navButton.dataset.view, "bottom_bar");
@@ -4867,7 +5379,10 @@ function bindEvents() {
     }
 
     const closeTarget = event.target.closest("[data-close]");
-    if (closeTarget) closeSheet(`${closeTarget.dataset.close}Sheet`);
+    if (closeTarget) {
+      if (closeTarget.dataset.close === "profile") pendingProfileAction = null;
+      closeSheet(`${closeTarget.dataset.close}Sheet`);
+    }
 
     const donationDismissTarget = event.target.closest("[data-donation-dismiss]");
     if (donationDismissTarget) {
@@ -4929,6 +5444,83 @@ function bindEvents() {
 
     const cancelParticipantButton = event.target.closest("[data-cancel-participant]");
     if (cancelParticipantButton) closeParticipantEditor();
+
+    const proposalModeButton = event.target.closest("[data-proposal-mode]");
+    if (proposalModeButton) {
+      expenseProposalDraft.participantMode = proposalModeButton.dataset.proposalMode;
+      expenseProposalDraft.participantId = "";
+      expenseProposalDraft.proposedParticipantName = "";
+      renderExpenseProposalSheet();
+      return;
+    }
+
+    const proposalParticipantButton = event.target.closest("[data-proposal-participant]");
+    if (proposalParticipantButton) {
+      expenseProposalDraft.participantId = proposalParticipantButton.dataset.proposalParticipant;
+      renderExpenseProposalSheet();
+      return;
+    }
+
+    const proposalBackButton = event.target.closest("[data-proposal-back]");
+    if (proposalBackButton) {
+      expenseProposalDraft.participantMode = "";
+      expenseProposalDraft.participantId = "";
+      expenseProposalDraft.proposedParticipantName = "";
+      expenseProposalDraft.amount = 0;
+      renderExpenseProposalSheet();
+      return;
+    }
+
+    const saveProposalNameButton = event.target.closest("[data-save-proposal-name]");
+    if (saveProposalNameButton) {
+      const name = normalizeParticipantName($("#proposalParticipantNameInput")?.value);
+      if (!name) {
+        showToast("Введите имя");
+        return;
+      }
+      expenseProposalDraft.proposedParticipantName = name;
+      renderExpenseProposalSheet();
+      return;
+    }
+
+    const proposalFullAmountButton = event.target.closest("[data-proposal-full-amount]");
+    if (proposalFullAmountButton) {
+      expenseProposalDraft.amount = parseMoney(proposalFullAmountButton.dataset.proposalFullAmount);
+      renderExpenseProposalSheet();
+      return;
+    }
+
+    const submitProposalButton = event.target.closest("[data-submit-expense-proposal]");
+    if (submitProposalButton) {
+      submitExpenseProposal();
+      return;
+    }
+
+    const withdrawProposalButton = event.target.closest("[data-withdraw-expense-proposal]");
+    if (withdrawProposalButton) {
+      withdrawExpenseProposal(withdrawProposalButton.dataset.withdrawExpenseProposal);
+      return;
+    }
+
+    const newProposalButton = event.target.closest("[data-new-expense-proposal]");
+    if (newProposalButton) {
+      shareProposalContext.proposals = (shareProposalContext.proposals || []).filter((proposal) => proposal.itemId !== expenseProposalDraft.itemId || proposal.status === "pending");
+      resetExpenseProposalDraft(expenseProposalDraft.itemId);
+      renderExpenseProposalSheet();
+      return;
+    }
+
+    const acceptProposalButton = event.target.closest("[data-accept-expense-proposal]");
+    if (acceptProposalButton) {
+      acceptExpenseProposal(acceptProposalButton.dataset.acceptExpenseProposal);
+      return;
+    }
+
+    const rejectProposalButton = event.target.closest("[data-reject-expense-proposal]");
+    if (rejectProposalButton) {
+      rejectExpenseProposal(rejectProposalButton.dataset.rejectExpenseProposal);
+      return;
+    }
   });
 
   document.addEventListener("keydown", (event) => {
@@ -4951,11 +5543,14 @@ function bindEvents() {
     }
   });
   $("#createTripButton").addEventListener("click", createNewTrip);
+  $("#refreshProposalsButton").addEventListener("click", refreshAuthorExpenseProposals);
   $("#introNextButton").addEventListener("click", () => showIntroSlide(1));
   $("#introSecondNextButton").addEventListener("click", () => showIntroSlide(2));
   $("#introStartButton").addEventListener("click", finishIntro);
   $("#coverInput").addEventListener("change", saveSelectedCover);
   $("#homeShareButton").addEventListener("click", openHomeShareSheet);
+  $("#homeProfileButton")?.addEventListener("click", () => openProfileSheet(null));
+  $("#profileForm")?.addEventListener("submit", submitProfileForm);
   $("#homeInstallAppButton").addEventListener("click", installPwa);
   $("#iosInstallCloseButton")?.addEventListener("click", dismissIosInstallOnboarding);
   $("#saveReceivedTripButton")?.addEventListener("click", saveReceivedTrip);

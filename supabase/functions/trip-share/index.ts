@@ -9,6 +9,7 @@ const corsHeaders = {
 
 const SCHEMA_VERSION = "trip_share.v1";
 const FINANCIAL_FIELDS = new Set(["price", "paidAmount", "budgetLimit", "allocations"]);
+const PARTICIPANT_COLORS = ["orange", "yellow", "blue", "teal", "purple", "pink"];
 
 function json(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -27,6 +28,162 @@ function createToken() {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function parseMoney(value: unknown) {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? Math.round(amount * 100) / 100 : 0;
+}
+
+function normalizeParticipantName(value: unknown) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, 40);
+}
+
+function normalizeDisplayName(value: unknown) {
+  return String(value || "")
+    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function validateDisplayName(value: unknown) {
+  const displayName = normalizeDisplayName(value);
+  if (!displayName) return { displayName, error: "display_name_required" };
+  if (displayName.length > 40) return { displayName, error: "display_name_too_long" };
+  return { displayName, error: "" };
+}
+
+async function getProfileDisplayName(serviceClient: ReturnType<typeof createClient>, userId: string) {
+  if (!userId) return "";
+  const { data } = await serviceClient
+    .from("user_profiles")
+    .select("display_name")
+    .eq("user_id", userId)
+    .maybeSingle();
+  return String(data?.display_name || "");
+}
+
+async function getProfileDisplayNames(serviceClient: ReturnType<typeof createClient>, userIds: string[]) {
+  const uniqueIds = Array.from(new Set(userIds.filter(Boolean)));
+  if (!uniqueIds.length) return new Map<string, string>();
+  const { data } = await serviceClient
+    .from("user_profiles")
+    .select("user_id, display_name")
+    .in("user_id", uniqueIds);
+  return new Map((data || []).map((profile: Record<string, unknown>) => [
+    String(profile.user_id || ""),
+    String(profile.display_name || ""),
+  ]));
+}
+
+function getTrip(state: Record<string, unknown>) {
+  return (state.trip || {}) as Record<string, unknown>;
+}
+
+function getParticipants(state: Record<string, unknown>) {
+  const trip = getTrip(state);
+  return Array.isArray(trip.participants) ? trip.participants as Array<Record<string, unknown>> : [];
+}
+
+function getItems(state: Record<string, unknown>) {
+  return Array.isArray(state.items) ? state.items as Array<Record<string, unknown>> : [];
+}
+
+function getSelfParticipant(state: Record<string, unknown>) {
+  const participants = getParticipants(state);
+  return participants.find((participant) => Boolean(participant.isSelf)) || participants[0] || null;
+}
+
+function getParticipant(state: Record<string, unknown>, participantId: string) {
+  return getParticipants(state).find((participant) => String(participant.id || "") === participantId) || null;
+}
+
+function getItem(state: Record<string, unknown>, itemId: string) {
+  return getItems(state).find((item) => String(item.id || "") === itemId) || null;
+}
+
+function getItemAllocations(item: Record<string, unknown>) {
+  return Array.isArray(item.allocations)
+    ? (item.allocations as Array<Record<string, unknown>>)
+        .map((allocation) => ({
+          participantId: String(allocation.participantId || ""),
+          amount: parseMoney(allocation.amount),
+        }))
+        .filter((allocation) => allocation.participantId && allocation.amount > 0)
+        .sort((a, b) => a.participantId.localeCompare(b.participantId))
+    : [];
+}
+
+async function getParticipantLinkUser(serviceClient: ReturnType<typeof createClient>, shareId: string, participantId: string) {
+  if (!participantId) return "";
+  const { data } = await serviceClient
+    .from("trip_share_participant_links")
+    .select("user_id")
+    .eq("trip_share_id", shareId)
+    .eq("participant_id", participantId)
+    .maybeSingle();
+  return data?.user_id || "";
+}
+
+async function getFinancialVersion(
+  serviceClient: ReturnType<typeof createClient>,
+  shareId: string,
+  state: Record<string, unknown>,
+  itemId: string,
+  participantId: string,
+) {
+  const currency = String(getTrip(state).currency || "");
+  const { data, error } = await serviceClient.rpc("trip_share_expense_financial_version", {
+    p_trip_share_id: shareId,
+    p_state: state,
+    p_item_id: itemId,
+    p_participant_id: participantId,
+    p_currency: currency,
+  });
+  if (error) return "";
+  return String(data || "");
+}
+
+function getAuthorAllocation(state: Record<string, unknown>, item: Record<string, unknown>) {
+  const selfParticipant = getSelfParticipant(state);
+  const selfId = String(selfParticipant?.id || "");
+  if (!selfId) return 0;
+  const allocation = getItemAllocations(item).find((entry) => entry.participantId === selfId);
+  return allocation?.amount || 0;
+}
+
+function getRequesterProposalCard(proposal: Record<string, unknown>) {
+  return {
+    id: proposal.id,
+    shareId: proposal.trip_share_id,
+    itemId: proposal.item_id,
+    participantMode: proposal.participant_mode,
+    participantId: proposal.participant_id || "",
+    proposedParticipantName: proposal.proposed_participant_name || "",
+    amount: parseMoney(proposal.amount),
+    currency: proposal.currency,
+    status: proposal.status,
+    createdAt: proposal.created_at,
+    updatedAt: proposal.updated_at,
+    resolvedAt: proposal.resolved_at || "",
+  };
+}
+
+function getAuthorProposalCard(proposal: Record<string, unknown>, share: Record<string, unknown>, profileNames = new Map<string, string>()) {
+  const state = (share.state || {}) as Record<string, unknown>;
+  const item = getItem(state, String(proposal.item_id || ""));
+  const participant = getParticipant(state, String(proposal.participant_id || ""));
+  const requesterDisplayName = profileNames.get(String(proposal.requester_user_id || "")) || "Пользователь Backpacker";
+  return {
+    ...getRequesterProposalCard(proposal),
+    requesterName: requesterDisplayName,
+    requesterDisplayName,
+    participantName: String(participant?.name || proposal.proposed_participant_name || ""),
+    tripId: share.trip_id,
+    itemTitle: String(item?.title || "Расход"),
+    itemPrice: parseMoney(item?.price),
+    authorAmount: item ? getAuthorAllocation(state, item) : 0,
+  };
 }
 
 function stripBudget(value: unknown): unknown {
@@ -94,6 +251,10 @@ Deno.serve(async (req) => {
     if (data.revoked_at) return json({ error: "share_revoked" }, 410);
     const currentUser = await getRequestUser(req, supabaseUrl, anonKey);
     const isOwner = Boolean(currentUser && currentUser.id === data.owner_user_id);
+    const profileNames = await getProfileDisplayNames(serviceClient, [
+      String(data.owner_user_id || ""),
+      ...(currentUser ? [currentUser.id] : []),
+    ]);
     let isSaved = false;
     if (currentUser && !isOwner) {
       const { data: recipient } = await serviceClient
@@ -112,13 +273,253 @@ Deno.serve(async (req) => {
       includeBudget: data.include_budget,
       updatedAt: data.updated_at,
       isOwner,
+      isAuthor: isOwner,
       isSaved,
+      authorDisplayName: profileNames.get(String(data.owner_user_id || "")) || "",
+      currentUserDisplayName: currentUser ? (profileNames.get(currentUser.id) || "") : "",
+      profileRequired: Boolean(currentUser && !profileNames.get(currentUser.id)),
       state: data.include_budget ? data.state : stripBudget(data.state),
     });
   }
 
   const user = await getRequestUser(req, supabaseUrl, anonKey);
   if (!user) return json({ error: "owner_jwt_required" }, 401);
+
+  if (action === "get_my_profile") {
+    const displayName = await getProfileDisplayName(serviceClient, user.id);
+    return json({
+      ok: true,
+      profile: displayName ? { displayName } : null,
+    });
+  }
+
+  if (action === "upsert_my_profile") {
+    const { displayName, error } = validateDisplayName(body.displayName);
+    if (error) return json({ error }, 400);
+    const { data, error: upsertError } = await serviceClient
+      .from("user_profiles")
+      .upsert({
+        user_id: user.id,
+        display_name: displayName,
+      }, { onConflict: "user_id" })
+      .select("display_name")
+      .single();
+    if (upsertError) return json({ error: "profile_save_failed" }, 500);
+    return json({
+      ok: true,
+      profile: { displayName: String(data.display_name || displayName) },
+    });
+  }
+
+  if (action === "get_share_context") {
+    const shareId = String(body.shareId || "");
+    if (!shareId) return json({ error: "share_id_required" }, 400);
+    const { data: share, error: shareError } = await serviceClient
+      .from("trip_shares")
+      .select("id, trip_id, owner_user_id, include_budget, state, revoked_at")
+      .eq("id", shareId)
+      .maybeSingle();
+    if (shareError) return json({ error: "share_context_failed" }, 500);
+    if (!share) return json({ error: "share_not_found" }, 404);
+    if (share.revoked_at) return json({ error: "share_revoked" }, 410);
+
+    const { data: links } = await serviceClient
+      .from("trip_share_participant_links")
+      .select("participant_id, user_id")
+      .eq("trip_share_id", shareId);
+    const { data: proposals } = await serviceClient
+      .from("trip_share_expense_proposals")
+      .select("*")
+      .eq("trip_share_id", shareId)
+      .eq("requester_user_id", user.id)
+      .order("created_at", { ascending: false });
+    const profileNames = await getProfileDisplayNames(serviceClient, [
+      user.id,
+      String(share.owner_user_id || ""),
+      ...(links || []).map((link) => String(link.user_id || "")),
+    ]);
+    const ownLink = (links || []).find((link) => link.user_id === user.id);
+    const linkedParticipantIds = new Set((links || []).filter((link) => link.user_id !== user.id).map((link) => link.participant_id));
+    const state = (share.state || {}) as Record<string, unknown>;
+    const availableParticipants = getParticipants(state)
+      .filter((participant) => !Boolean(participant.isSelf))
+      .filter((participant) => !linkedParticipantIds.has(String(participant.id || "")))
+      .map((participant) => ({
+        id: participant.id,
+        name: participant.name,
+        initials: participant.initials,
+        colorKey: participant.colorKey,
+      }));
+    return json({
+      shareId,
+      tripId: share.trip_id,
+      includeBudget: share.include_budget,
+      isOwner: share.owner_user_id === user.id,
+      isAuthor: share.owner_user_id === user.id,
+      authorDisplayName: profileNames.get(String(share.owner_user_id || "")) || "",
+      currentUserDisplayName: profileNames.get(user.id) || "",
+      profileRequired: !profileNames.get(user.id),
+      userParticipantId: ownLink?.participant_id || "",
+      availableParticipants,
+      proposals: (proposals || []).map(getRequesterProposalCard),
+    });
+  }
+
+  if (action === "create_expense_proposal") {
+    const shareId = String(body.shareId || "");
+    const itemId = String(body.itemId || "");
+    const participantMode = String(body.participantMode || "");
+    const requestedParticipantId = String(body.participantId || "");
+    const proposedParticipantName = normalizeParticipantName(body.proposedParticipantName);
+    const amount = parseMoney(body.amount);
+    if (!shareId || !itemId) return json({ error: "proposal_target_required" }, 400);
+    if (!["existing", "new"].includes(participantMode)) return json({ error: "participant_mode_invalid" }, 400);
+    if (amount <= 0) return json({ error: "amount_invalid" }, 400);
+    if (participantMode === "new" && !proposedParticipantName) return json({ error: "participant_name_required" }, 400);
+
+    const { data: share, error: shareError } = await serviceClient
+      .from("trip_shares")
+      .select("id, trip_id, owner_user_id, include_budget, state, revoked_at")
+      .eq("id", shareId)
+      .maybeSingle();
+    if (shareError) return json({ error: "proposal_failed" }, 500);
+    if (!share) return json({ error: "share_not_found" }, 404);
+    if (share.revoked_at) return json({ error: "share_revoked" }, 410);
+    if (share.owner_user_id === user.id) return json({ error: "owner_cannot_propose" }, 409);
+    if (!share.include_budget) return json({ error: "budget_hidden" }, 403);
+
+    const state = (share.state || {}) as Record<string, unknown>;
+    const item = getItem(state, itemId);
+    if (!item) return json({ error: "item_not_found" }, 404);
+    const currency = String(getTrip(state).currency || "");
+    const authorAmount = getAuthorAllocation(state, item);
+    if (authorAmount <= 0) return json({ error: "author_allocation_empty" }, 409);
+    if (amount > authorAmount) return json({ error: "amount_exceeds_author_allocation" }, 409);
+
+    let participantId = "";
+    const { data: existingUserLink } = await serviceClient
+      .from("trip_share_participant_links")
+      .select("participant_id")
+      .eq("trip_share_id", shareId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (participantMode === "existing") {
+      participantId = requestedParticipantId;
+      if (existingUserLink?.participant_id && existingUserLink.participant_id !== participantId) {
+        return json({ error: "account_already_linked" }, 409);
+      }
+      const participant = getParticipant(state, participantId);
+      if (!participant || Boolean(participant.isSelf)) return json({ error: "participant_not_available" }, 409);
+      const linkedUserId = await getParticipantLinkUser(serviceClient, shareId, participantId);
+      if (linkedUserId && linkedUserId !== user.id) return json({ error: "participant_already_linked" }, 409);
+    } else if (existingUserLink?.participant_id) {
+      return json({ error: "account_already_linked" }, 409);
+    }
+
+    const financialVersion = await getFinancialVersion(serviceClient, shareId, state, itemId, participantId);
+    const { data, error } = await serviceClient
+      .from("trip_share_expense_proposals")
+      .insert({
+        trip_share_id: shareId,
+        trip_id: share.trip_id,
+        item_id: itemId,
+        requester_user_id: user.id,
+        participant_mode: participantMode,
+        participant_id: participantMode === "existing" ? participantId : null,
+        proposed_participant_name: participantMode === "new" ? proposedParticipantName : null,
+        amount,
+        currency,
+        financial_version: financialVersion,
+        status: "pending",
+      })
+      .select("*")
+      .single();
+    if (error?.code === "23505") return json({ error: "pending_proposal_exists" }, 409);
+    if (error) return json({ error: "proposal_failed" }, 500);
+    return json({ proposal: getRequesterProposalCard(data) });
+  }
+
+  if (action === "withdraw_expense_proposal") {
+    const proposalId = String(body.proposalId || "");
+    if (!proposalId) return json({ error: "proposal_id_required" }, 400);
+    const { data, error } = await serviceClient
+      .from("trip_share_expense_proposals")
+      .update({ status: "withdrawn", resolved_at: new Date().toISOString() })
+      .eq("id", proposalId)
+      .eq("requester_user_id", user.id)
+      .eq("status", "pending")
+      .select("*")
+      .maybeSingle();
+    if (error) return json({ error: "withdraw_failed" }, 500);
+    if (!data) return json({ error: "proposal_not_found" }, 404);
+    return json({ proposal: getRequesterProposalCard(data) });
+  }
+
+  if (action === "list_expense_proposals") {
+    const tripId = String(body.tripId || "");
+    if (!tripId) return json({ error: "trip_id_required" }, 400);
+    const { data: share, error: shareError } = await serviceClient
+      .from("trip_shares")
+      .select("id, trip_id, state")
+      .eq("owner_user_id", user.id)
+      .eq("trip_id", tripId)
+      .maybeSingle();
+    if (shareError) return json({ error: "list_proposals_failed" }, 500);
+    if (!share) return json({ proposals: [], pendingCount: 0 });
+    const { data: proposals, error } = await serviceClient
+      .from("trip_share_expense_proposals")
+      .select("*")
+      .eq("trip_share_id", share.id)
+      .order("created_at", { ascending: false });
+    if (error) return json({ error: "list_proposals_failed" }, 500);
+    const profileNames = await getProfileDisplayNames(serviceClient, (proposals || []).map((proposal) => String(proposal.requester_user_id || "")));
+    const cards = (proposals || []).map((proposal) => getAuthorProposalCard(proposal, share, profileNames));
+    return json({ proposals: cards, pendingCount: cards.filter((proposal) => proposal.status === "pending").length });
+  }
+
+  if (action === "reject_expense_proposal") {
+    const proposalId = String(body.proposalId || "");
+    if (!proposalId) return json({ error: "proposal_id_required" }, 400);
+    const { data: proposal, error: proposalError } = await serviceClient
+      .from("trip_share_expense_proposals")
+      .select("id, trip_share_id, status")
+      .eq("id", proposalId)
+      .maybeSingle();
+    if (proposalError) return json({ error: "reject_failed" }, 500);
+    if (!proposal) return json({ error: "proposal_not_found" }, 404);
+    const { data: share } = await serviceClient
+      .from("trip_shares")
+      .select("id")
+      .eq("id", proposal.trip_share_id)
+      .eq("owner_user_id", user.id)
+      .maybeSingle();
+    if (!share) return json({ error: "share_not_found" }, 404);
+    if (proposal.status !== "pending") return json({ ok: true, status: proposal.status });
+    const { error } = await serviceClient
+      .from("trip_share_expense_proposals")
+      .update({ status: "rejected", resolved_at: new Date().toISOString() })
+      .eq("id", proposalId)
+      .eq("status", "pending");
+    if (error) return json({ error: "reject_failed" }, 500);
+    return json({ ok: true, status: "rejected" });
+  }
+
+  if (action === "accept_expense_proposal") {
+    const proposalId = String(body.proposalId || "");
+    if (!proposalId) return json({ error: "proposal_id_required" }, 400);
+    const authorization = req.headers.get("Authorization") || "";
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authorization } },
+      auth: { persistSession: false },
+    });
+    const { data, error } = await userClient.rpc("accept_expense_proposal", {
+      p_proposal_id: proposalId,
+    });
+    if (error) return json({ error: "accept_failed" }, 500);
+    const result = (data || {}) as Record<string, unknown>;
+    if (result.error) return json({ error: result.error }, 404);
+    return json(result);
+  }
 
   if (action === "save_received") {
     const shareId = String(body.shareId || "");
