@@ -942,14 +942,29 @@ function formatDate(dateString, options = {}) {
 
 function formatDateForInput(dateString) {
   if (!dateString) return "";
-  const [year, month, day] = dateString.split("-");
+  const [year, month, day] = String(dateString).split("-");
   if (!year || !month || !day) return "";
-  return `${day}.${month}.${year}`;
+  return `${year}-${month}-${day}`;
 }
 
 function parseDateFromInput(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const [year, month, day] = raw.split("-");
+    const date = new Date(`${year}-${month}-${day}T12:00:00`);
+    if (
+      Number.isNaN(date.getTime()) ||
+      date.getFullYear() !== Number(year) ||
+      date.getMonth() + 1 !== Number(month) ||
+      date.getDate() !== Number(day)
+    ) {
+      return "";
+    }
+    if (state.trip.startDate && raw < state.trip.startDate) return "";
+    if (state.trip.endDate && raw > state.trip.endDate) return "";
+    return raw;
+  }
   const normalized = raw.replace(/[^\d]/g, "");
   if (normalized.length !== 8) return "";
   const day = normalized.slice(0, 2);
@@ -1903,6 +1918,8 @@ function sortItems(a, b) {
 function fillItemForm(item = null) {
   const form = $("#itemForm");
   form.reset();
+  form.elements.date.min = state.trip.startDate || "";
+  form.elements.date.max = state.trip.endDate || "";
   if (item) {
     Object.entries(item).forEach(([key, value]) => {
       if (form.elements[key]) form.elements[key].value = value ?? "";
@@ -4814,7 +4831,20 @@ function escapeAttr(value = "") {
   return escapeHtml(value).replaceAll("'", "&#039;");
 }
 
+function handleNativeDateTimeClear(event) {
+  if (event.key !== "Backspace" && event.key !== "Delete") return;
+  const input = event.target.closest?.("#itemForm input[name='date'], #itemForm input[name='startTime']");
+  if (!input || input.disabled || input.readOnly || !input.value) return;
+
+  event.preventDefault();
+  input.value = "";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
 function bindEvents() {
+  document.addEventListener("keydown", handleNativeDateTimeClear);
+
   document.addEventListener("click", (event) => {
     if (dragJustHappened) {
       event.preventDefault();
