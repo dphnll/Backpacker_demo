@@ -2,6 +2,13 @@
 
 История пользовательских релизов Backpacker. Формат версий: `super-release.major-epic.minor-feature.patch`.
 
+## 1.1.2.10 - 2026-07-03
+
+- Добавлен публичный frontend Supabase config для PWA-сборки: `project URL` и publishable anon key доступны приложению без локального `supabase-config.js`.
+- Локальный `supabase-config.js` остаётся в `.gitignore` и может переопределять публичный config при разработке.
+- Service worker cache поднят до `backpacker-pwa-v40`, чтобы установленная iPhone PWA получила сборку, в которой можно создавать и копировать share-ссылки.
+- Service-role key по-прежнему не попадает во frontend; он используется только внутри Supabase Edge Function.
+
 ## 1.1.2.9 - 2026-07-02
 
 - Добавлен Step 1.1 `Со мной поделились`: получатель может вручную сохранить публичную read-only поездку в отдельный список на главной.
