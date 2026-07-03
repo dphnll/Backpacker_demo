@@ -15,8 +15,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.12";
-const APP_RELEASE_SUMMARY = "минимальный профиль показывает имя или ник в shared-сценариях без смены anonymous-сессии.";
+const APP_VERSION = "1.1.2.13";
+const APP_RELEASE_SUMMARY = "гости могут предложить новую идею автору расшаренной поездки.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -60,11 +60,15 @@ let cardCopyState = {
 let tripPdfGenerating = false;
 let shareProposalContext = null;
 let expenseProposalDraft = { itemId: "", participantMode: "", participantId: "", proposedParticipantName: "", amount: 0 };
+let itemProposalDraft = { title: "", itemType: "idea", link: "", price: "", notes: "" };
 let authorExpenseProposals = [];
+let authorItemProposals = [];
 let userProfile = { loaded: false, loading: false, displayName: "", error: "" };
 let pendingProfileAction = null;
 let profileSaving = false;
 const resolvingExpenseProposalIds = new Set();
+const resolvingItemProposalIds = new Set();
+let itemProposalSubmitting = false;
 
 const itemTypes = [
   ["ticket", "Билет"],
@@ -1462,6 +1466,7 @@ function render() {
   renderHeader();
   renderShareRoleBanner();
   renderProposalInbox();
+  renderMyItemProposals();
   renderPlan();
   renderBasket();
   renderBudget();
@@ -2078,13 +2083,161 @@ async function withdrawExpenseProposal(proposalId) {
   }
 }
 
+function resetItemProposalDraft() {
+  itemProposalDraft = { title: "", itemType: "idea", link: "", price: "", notes: "" };
+}
+
+async function refreshItemProposalContext() {
+  if (!readOnlyShare?.shareId || readOnlyShare.invalid || readOnlyShare.isOwner || readOnlyShare.isAuthor) return null;
+  try {
+    const payload = await callTripShareFunction("get_item_proposal_context", { shareId: readOnlyShare.shareId }, { requireOwner: true });
+    readOnlyShare.currentUserDisplayName = payload.currentUserDisplayName || readOnlyShare.currentUserDisplayName || "";
+    readOnlyShare.profileRequired = Boolean(payload.profileRequired);
+    if (payload.currentUserDisplayName) {
+      userProfile = { loaded: true, loading: false, displayName: payload.currentUserDisplayName, error: "" };
+    }
+    shareProposalContext ||= {};
+    shareProposalContext.itemProposals = payload.proposals || [];
+    renderMyItemProposals();
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+async function openItemProposalSheet(profileReady = false) {
+  if (!isReadOnlyMode() || readOnlyShare?.invalid || readOnlyShare?.isOwner || readOnlyShare?.isAuthor) return;
+  if (!profileReady) {
+    await requireProfileForSharedAction("item_proposal", () => openItemProposalSheet(true));
+    return;
+  }
+  resetItemProposalDraft();
+  renderItemProposalSheet();
+  openSheet("itemProposalSheet");
+  await refreshItemProposalContext();
+  window.setTimeout(() => $("#itemProposalTitleInput")?.focus(), 80);
+}
+
+function renderItemProposalSheet() {
+  const form = $("#itemProposalForm");
+  if (!form) return;
+  form.elements.itemType.innerHTML = itemTypes.map(([key, label]) => `<option value="${key}">${label}</option>`).join("");
+  form.elements.title.value = itemProposalDraft.title || "";
+  form.elements.itemType.value = itemProposalDraft.itemType || "idea";
+  form.elements.link.value = itemProposalDraft.link || "";
+  form.elements.price.value = itemProposalDraft.price || "";
+  form.elements.notes.value = itemProposalDraft.notes || "";
+  $("#itemProposalSubmitButton").disabled = itemProposalSubmitting;
+  $("#itemProposalSubmitButton").textContent = itemProposalSubmitting ? "Отправляем..." : "Отправить автору";
+}
+
+function getItemProposalFormData(form) {
+  const data = Object.fromEntries(new FormData(form).entries());
+  const title = String(data.title || "").replace(/[\u0000-\u001F\u007F]/g, "").trim();
+  const itemType = itemTypes.some(([key]) => key === data.itemType) ? data.itemType : "idea";
+  const link = String(data.link || "").trim();
+  const priceRaw = String(data.price || "").trim();
+  const price = priceRaw ? parseMoney(priceRaw) : "";
+  const notes = String(data.notes || "").replace(/[\u0000-\u001F\u007F]/g, "").trim();
+  return { title, itemType, link, price, notes };
+}
+
+async function submitItemProposal(event) {
+  event.preventDefault();
+  if (itemProposalSubmitting || !readOnlyShare?.shareId) return;
+  const formData = getItemProposalFormData(event.currentTarget);
+  if (!formData.title) {
+    showToast("Введите название идеи");
+    return;
+  }
+  if (formData.price !== "" && formData.price < 0) {
+    showToast("Цена не может быть отрицательной");
+    return;
+  }
+  itemProposalSubmitting = true;
+  renderItemProposalSheet();
+  try {
+    const payload = await callTripShareFunction("create_item_proposal", {
+      shareId: readOnlyShare.shareId,
+      ...formData,
+      idempotencyKey: crypto.randomUUID?.() || `proposal-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    }, { requireOwner: true });
+    shareProposalContext ||= {};
+    shareProposalContext.itemProposals = [payload.proposal, ...(shareProposalContext.itemProposals || [])];
+    closeSheet("itemProposalSheet");
+    showToast("Идея отправлена автору");
+    renderMyItemProposals();
+  } catch (error) {
+    showToast(error?.message === "profile_required" ? "Сначала добавьте имя или ник" : "Не удалось отправить идею");
+  } finally {
+    itemProposalSubmitting = false;
+    renderItemProposalSheet();
+  }
+}
+
+async function withdrawItemProposal(proposalId) {
+  try {
+    const payload = await callTripShareFunction("withdraw_item_proposal", { proposalId }, { requireOwner: true });
+    shareProposalContext ||= {};
+    shareProposalContext.itemProposals = (shareProposalContext.itemProposals || []).map((proposal) => (
+      proposal.id === proposalId ? payload.proposal : proposal
+    ));
+    showToast("Идея отозвана");
+    renderMyItemProposals();
+  } catch {
+    showToast("Не удалось отозвать идею");
+  }
+}
+
+function renderMyItemProposals() {
+  const section = $("#myItemProposalsSection");
+  const list = $("#myItemProposalsList");
+  if (!section || !list) return;
+  const proposals = shareProposalContext?.itemProposals || [];
+  section.classList.toggle("hidden", !isReadOnlyMode() || readOnlyShare?.isOwner || readOnlyShare?.isAuthor || !proposals.length);
+  list.innerHTML = proposals.map((proposal) => `
+    <article class="proposal-card proposal-${escapeAttr(proposal.status)}">
+      <div>
+        <strong>${escapeHtml(proposal.title || "Идея")}</strong>
+        <p>${escapeHtml(getTypeLabel(proposal.itemType || "idea"))} · ${formatProposalStatus(proposal.status)}</p>
+      </div>
+      ${proposal.status === "pending" ? `
+        <div class="proposal-actions">
+          <button class="ghost-button compact" type="button" data-withdraw-item-proposal="${escapeAttr(proposal.id)}">Отозвать идею</button>
+        </div>
+      ` : ""}
+    </article>
+  `).join("");
+}
+
 function renderProposalInbox() {
   const section = $("#proposalInboxSection");
   if (!section) return;
-  const pendingCount = authorExpenseProposals.filter((proposal) => proposal.status === "pending").length;
-  section.classList.toggle("hidden", isReadOnlyMode() || !authorExpenseProposals.length);
+  const proposals = [
+    ...authorExpenseProposals.map((proposal) => ({ ...proposal, proposalType: "expense" })),
+    ...authorItemProposals.map((proposal) => ({ ...proposal, proposalType: "item" })),
+  ].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  const pendingCount = proposals.filter((proposal) => proposal.status === "pending").length;
+  section.classList.toggle("hidden", isReadOnlyMode() || !proposals.length);
   $("#proposalInboxTitle").textContent = `Предложения · ${pendingCount}`;
-  $("#proposalInboxList").innerHTML = authorExpenseProposals.map((proposal) => `
+  $("#proposalInboxList").innerHTML = proposals.map((proposal) => proposal.proposalType === "item" ? `
+    <article class="proposal-card proposal-${escapeAttr(proposal.status)}">
+      <div>
+        <strong>${escapeHtml(proposal.requesterDisplayName || proposal.requesterName || "Пользователь Backpacker")}</strong>
+        <p>предлагает добавить «${escapeHtml(proposal.title || "Идея")}».</p>
+        <p class="proposal-account-link">Новая идея · ${escapeHtml(getTypeLabel(proposal.itemType || "idea"))}${proposal.price ? ` · ${formatMoney(proposal.price)}` : ""}</p>
+        ${proposal.link ? `<a class="item-link" href="${escapeAttr(proposal.link)}" target="_blank" rel="noreferrer" onclick="event.stopPropagation()">открыть ссылку</a>` : ""}
+        ${proposal.notes ? `<p class="item-note">${escapeHtml(proposal.notes)}</p>` : ""}
+        <span>${formatProposalStatus(proposal.status)}</span>
+      </div>
+      ${proposal.status === "pending" ? `
+        <div class="proposal-actions">
+          <button class="ghost-button compact" type="button" data-reject-item-proposal="${escapeAttr(proposal.id)}" ${resolvingItemProposalIds.has(proposal.id) ? "disabled" : ""}>Отклонить</button>
+          <button class="primary-button compact" type="button" data-accept-item-proposal="${escapeAttr(proposal.id)}" ${resolvingItemProposalIds.has(proposal.id) ? "disabled" : ""}>${resolvingItemProposalIds.has(proposal.id) ? "Добавляем..." : "Принять идею"}</button>
+        </div>
+      ` : ""}
+    </article>
+  ` : `
     <article class="proposal-card proposal-${escapeAttr(proposal.status)}">
       <div>
         <strong>${escapeHtml(proposal.requesterDisplayName || proposal.requesterName || "Пользователь Backpacker")}</strong>
@@ -2118,15 +2271,16 @@ function renderShareRoleBanner() {
 async function refreshAuthorExpenseProposals() {
   if (isReadOnlyMode() || !state?.trip?.id) {
     authorExpenseProposals = [];
+    authorItemProposals = [];
     renderProposalInbox();
     return;
   }
-  try {
-    const payload = await callTripShareFunction("list_expense_proposals", { tripId: state.trip.id }, { requireOwner: true });
-    authorExpenseProposals = payload.proposals || [];
-  } catch {
-    authorExpenseProposals = [];
-  }
+  const [expenseResult, itemResult] = await Promise.allSettled([
+    callTripShareFunction("list_expense_proposals", { tripId: state.trip.id }, { requireOwner: true }),
+    callTripShareFunction("list_item_proposals", { tripId: state.trip.id }, { requireOwner: true }),
+  ]);
+  authorExpenseProposals = expenseResult.status === "fulfilled" ? (expenseResult.value.proposals || []) : [];
+  authorItemProposals = itemResult.status === "fulfilled" ? (itemResult.value.proposals || []) : [];
   renderProposalInbox();
 }
 
@@ -2175,6 +2329,45 @@ async function rejectExpenseProposal(proposalId) {
     showToast("Не удалось отклонить предложение");
   } finally {
     resolvingExpenseProposalIds.delete(proposalId);
+    renderProposalInbox();
+  }
+}
+
+async function acceptItemProposal(proposalId) {
+  if (resolvingItemProposalIds.has(proposalId)) return;
+  resolvingItemProposalIds.add(proposalId);
+  renderProposalInbox();
+  try {
+    await syncCurrentTripShareBeforeAccept();
+    const payload = await callTripShareFunction("accept_item_proposal", { proposalId }, { requireOwner: true });
+    if (payload.state) {
+      state = normalizeState(payload.state);
+      saveState();
+    }
+    await refreshAuthorExpenseProposals();
+    render();
+    showToast(payload.status === "stale" ? "Идея стала неактуальной" : "Идея добавлена в «Без даты»");
+  } catch {
+    showToast("Не удалось принять идею");
+  } finally {
+    resolvingItemProposalIds.delete(proposalId);
+    renderProposalInbox();
+  }
+}
+
+async function rejectItemProposal(proposalId) {
+  if (resolvingItemProposalIds.has(proposalId)) return;
+  resolvingItemProposalIds.add(proposalId);
+  renderProposalInbox();
+  try {
+    await callTripShareFunction("reject_item_proposal", { proposalId }, { requireOwner: true });
+    await refreshAuthorExpenseProposals();
+    render();
+    showToast("Идея отклонена");
+  } catch {
+    showToast("Не удалось отклонить идею");
+  } finally {
+    resolvingItemProposalIds.delete(proposalId);
     renderProposalInbox();
   }
 }
@@ -2359,6 +2552,9 @@ function renderItemCard(item) {
   const link = item.link
     ? `<a class="item-link" href="${escapeAttr(item.link)}" target="_blank" rel="noreferrer" onclick="event.stopPropagation()">открыть ссылку</a>`
     : "";
+  const sourceMarker = item.creationSource === "accepted_proposal" && item.proposedByDisplayName
+    ? `<p class="item-source-marker" title="${escapeAttr(`Предложено: ${item.proposedByDisplayName}`)}">Предложено: ${escapeHtml(item.proposedByDisplayName)}</p>`
+    : "";
   return `
     <button class="item-card type-${item.type}" data-edit="${item.id}" data-drag-id="${item.id}" draggable="false" type="button">
       <span class="tile-icon" aria-hidden="true">
@@ -2370,6 +2566,7 @@ function renderItemCard(item) {
           <span class="item-title">${escapeHtml(item.title)}</span>
           <span class="price-pill">${price}</span>
         </div>
+        ${sourceMarker}
         <div class="item-content-grid">
           <div class="item-main-flow">
             <p class="item-duration">${formatDurationText(item.durationMinutes)}</p>
@@ -2506,6 +2703,10 @@ function saveItem(event) {
     notes: data.notes.trim(),
     order: existing && (existing.date || "") === (itemDate || "") ? existing.order : getNextOrder(itemDate),
   };
+  if (existing?.creationSource) item.creationSource = existing.creationSource;
+  if (existing?.sourceProposalId) item.sourceProposalId = existing.sourceProposalId;
+  if (existing?.proposedByUserId) item.proposedByUserId = existing.proposedByUserId;
+  if (existing?.proposedByDisplayName) item.proposedByDisplayName = existing.proposedByDisplayName;
   if (!item.title) return;
   const existingIndex = state.items.findIndex((entry) => entry.id === item.id);
   if (existingIndex >= 0) state.items[existingIndex] = item;
@@ -4867,11 +5068,16 @@ function showTripScreen() {
   $(".app-shell").classList.remove("hidden");
   $("#editTripButton").hidden = isReadOnlyMode();
   $("#shareButton").hidden = false;
-  $$("[data-action='add']").forEach((button) => { button.hidden = isReadOnlyMode(); });
+  $$("[data-action='add']").forEach((button) => {
+    button.hidden = Boolean(isReadOnlyMode() && (readOnlyShare?.invalid || readOnlyShare?.isOwner || readOnlyShare?.isAuthor));
+  });
   renderSaveReceivedTripButton();
   render();
   refreshAuthorExpenseProposals();
-  if (isReadOnlyMode()) refreshShareProposalContext();
+  if (isReadOnlyMode()) {
+    refreshShareProposalContext();
+    refreshItemProposalContext();
+  }
 }
 
 function openTrip(tripId) {
@@ -5357,7 +5563,11 @@ function bindEvents() {
     }
 
     const addButton = event.target.closest("[data-action='add']");
-    if (addButton && !isReadOnlyMode()) openItemSheet();
+    if (addButton) {
+      if (isReadOnlyMode()) openItemProposalSheet();
+      else openItemSheet();
+      return;
+    }
 
     const editButton = event.target.closest("[data-edit]");
     if (editButton && isReadOnlyMode()) {
@@ -5521,6 +5731,24 @@ function bindEvents() {
       rejectExpenseProposal(rejectProposalButton.dataset.rejectExpenseProposal);
       return;
     }
+
+    const withdrawItemProposalButton = event.target.closest("[data-withdraw-item-proposal]");
+    if (withdrawItemProposalButton) {
+      withdrawItemProposal(withdrawItemProposalButton.dataset.withdrawItemProposal);
+      return;
+    }
+
+    const acceptItemProposalButton = event.target.closest("[data-accept-item-proposal]");
+    if (acceptItemProposalButton) {
+      acceptItemProposal(acceptItemProposalButton.dataset.acceptItemProposal);
+      return;
+    }
+
+    const rejectItemProposalButton = event.target.closest("[data-reject-item-proposal]");
+    if (rejectItemProposalButton) {
+      rejectItemProposal(rejectItemProposalButton.dataset.rejectItemProposal);
+      return;
+    }
   });
 
   document.addEventListener("keydown", (event) => {
@@ -5595,6 +5823,7 @@ function bindEvents() {
   $("#feedbackButton").addEventListener("click", () => trackEvent("feedback_channel_opened", { channel: "telegram" }));
   $("#homeButton").addEventListener("click", () => showHomeScreen("trip_bottom_bar"));
   $("#itemForm").addEventListener("submit", saveItem);
+  $("#itemProposalForm")?.addEventListener("submit", submitItemProposal);
   $("#copyItemButton").addEventListener("click", openCardCopySheet);
   $("#resetItemButton").addEventListener("click", resetCurrentItemForm);
   $("#deleteItemButton").addEventListener("click", deleteCurrentItem);

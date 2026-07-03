@@ -10,6 +10,7 @@ const corsHeaders = {
 const SCHEMA_VERSION = "trip_share.v1";
 const FINANCIAL_FIELDS = new Set(["price", "paidAmount", "budgetLimit", "allocations"]);
 const PARTICIPANT_COLORS = ["orange", "yellow", "blue", "teal", "purple", "pink"];
+const ITEM_TYPES = new Set(["ticket", "stay", "transport", "excursion", "food", "place", "spa", "shopping", "idea", "other"]);
 
 function json(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -35,6 +36,13 @@ function parseMoney(value: unknown) {
   return Number.isFinite(amount) ? Math.round(amount * 100) / 100 : 0;
 }
 
+function parseOptionalMoney(value: unknown) {
+  if (value === null || value === undefined || value === "") return { amount: null, error: "" };
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) return { amount: null, error: "price_invalid" };
+  return { amount: Math.round(amount * 100) / 100, error: "" };
+}
+
 function normalizeParticipantName(value: unknown) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, 40);
 }
@@ -51,6 +59,26 @@ function validateDisplayName(value: unknown) {
   if (!displayName) return { displayName, error: "display_name_required" };
   if (displayName.length > 40) return { displayName, error: "display_name_too_long" };
   return { displayName, error: "" };
+}
+
+function normalizeProposalText(value: unknown, maxLength: number) {
+  return String(value || "")
+    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function normalizeProposalLink(value: unknown) {
+  const link = normalizeProposalText(value, 500);
+  if (!link) return "";
+  try {
+    const url = new URL(link);
+    if (!["http:", "https:"].includes(url.protocol)) return "";
+    return url.href;
+  } catch {
+    return "";
+  }
 }
 
 async function getProfileDisplayName(serviceClient: ReturnType<typeof createClient>, userId: string) {
@@ -183,6 +211,40 @@ function getAuthorProposalCard(proposal: Record<string, unknown>, share: Record<
     itemTitle: String(item?.title || "Расход"),
     itemPrice: parseMoney(item?.price),
     authorAmount: item ? getAuthorAllocation(state, item) : 0,
+  };
+}
+
+function getRequesterItemProposalCard(proposal: Record<string, unknown>) {
+  return {
+    id: proposal.id,
+    proposalType: "item",
+    shareId: proposal.trip_share_id,
+    tripId: proposal.trip_id,
+    title: proposal.title,
+    itemType: proposal.item_type,
+    hasPrice: proposal.price !== null && proposal.price !== undefined && parseMoney(proposal.price) > 0,
+    hasLink: Boolean(proposal.link),
+    hasNote: Boolean(proposal.notes),
+    status: proposal.status,
+    acceptedItemId: proposal.accepted_item_id || "",
+    createdAt: proposal.created_at,
+    updatedAt: proposal.updated_at,
+    resolvedAt: proposal.resolved_at || "",
+  };
+}
+
+function getAuthorItemProposalCard(proposal: Record<string, unknown>, profileNames = new Map<string, string>()) {
+  const requesterDisplayName = profileNames.get(String(proposal.requester_user_id || "")) || "Пользователь Backpacker";
+  return {
+    ...getRequesterItemProposalCard(proposal),
+    requesterName: requesterDisplayName,
+    requesterDisplayName,
+    title: String(proposal.title || ""),
+    itemType: String(proposal.item_type || "idea"),
+    link: String(proposal.link || ""),
+    price: proposal.price === null || proposal.price === undefined ? null : parseMoney(proposal.price),
+    currency: String(proposal.currency || ""),
+    notes: String(proposal.notes || ""),
   };
 }
 
@@ -513,6 +575,179 @@ Deno.serve(async (req) => {
       auth: { persistSession: false },
     });
     const { data, error } = await userClient.rpc("accept_expense_proposal", {
+      p_proposal_id: proposalId,
+    });
+    if (error) return json({ error: "accept_failed" }, 500);
+    const result = (data || {}) as Record<string, unknown>;
+    if (result.error) return json({ error: result.error }, 404);
+    return json(result);
+  }
+
+  if (action === "get_item_proposal_context") {
+    const shareId = String(body.shareId || "");
+    if (!shareId) return json({ error: "share_id_required" }, 400);
+    const { data: share, error: shareError } = await serviceClient
+      .from("trip_shares")
+      .select("id, trip_id, owner_user_id, revoked_at")
+      .eq("id", shareId)
+      .maybeSingle();
+    if (shareError) return json({ error: "item_proposal_context_failed" }, 500);
+    if (!share) return json({ error: "share_not_found" }, 404);
+    if (share.revoked_at) return json({ error: "share_revoked" }, 410);
+    const profileNames = await getProfileDisplayNames(serviceClient, [user.id, String(share.owner_user_id || "")]);
+    const { data: proposals, error } = await serviceClient
+      .from("trip_share_item_proposals")
+      .select("id, trip_share_id, trip_id, title, item_type, link, price, currency, notes, status, accepted_item_id, created_at, updated_at, resolved_at")
+      .eq("trip_share_id", shareId)
+      .eq("requester_user_id", user.id)
+      .order("created_at", { ascending: false });
+    if (error) return json({ error: "item_proposal_context_failed" }, 500);
+    return json({
+      shareId,
+      tripId: share.trip_id,
+      isOwner: share.owner_user_id === user.id,
+      isAuthor: share.owner_user_id === user.id,
+      authorDisplayName: profileNames.get(String(share.owner_user_id || "")) || "",
+      currentUserDisplayName: profileNames.get(user.id) || "",
+      profileRequired: !profileNames.get(user.id),
+      proposals: (proposals || []).map(getRequesterItemProposalCard),
+    });
+  }
+
+  if (action === "create_item_proposal") {
+    const shareId = String(body.shareId || "");
+    const title = normalizeProposalText(body.title, 120);
+    const itemType = ITEM_TYPES.has(String(body.itemType || "")) ? String(body.itemType) : "idea";
+    const linkInput = String(body.link || "").trim();
+    const link = linkInput ? normalizeProposalLink(linkInput) : "";
+    const notes = normalizeProposalText(body.notes, 800);
+    const idempotencyKey = normalizeProposalText(body.idempotencyKey, 80);
+    const { amount: price, error: priceError } = parseOptionalMoney(body.price);
+    if (!shareId) return json({ error: "share_id_required" }, 400);
+    if (!title) return json({ error: "title_required" }, 400);
+    if (linkInput && !link) return json({ error: "link_invalid" }, 400);
+    if (priceError) return json({ error: priceError }, 400);
+
+    const displayName = await getProfileDisplayName(serviceClient, user.id);
+    if (!displayName) return json({ error: "profile_required" }, 409);
+
+    const { data: share, error: shareError } = await serviceClient
+      .from("trip_shares")
+      .select("id, trip_id, owner_user_id, state, revoked_at")
+      .eq("id", shareId)
+      .maybeSingle();
+    if (shareError) return json({ error: "item_proposal_failed" }, 500);
+    if (!share) return json({ error: "share_not_found" }, 404);
+    if (share.revoked_at) return json({ error: "share_revoked" }, 410);
+    if (share.owner_user_id === user.id) return json({ error: "owner_cannot_propose" }, 409);
+    const shareState = (share.state || {}) as Record<string, unknown>;
+    const currency = String(getTrip(shareState).currency || "");
+
+    const insertPayload = {
+      trip_share_id: shareId,
+      trip_id: share.trip_id,
+      requester_user_id: user.id,
+      title,
+      item_type: itemType,
+      link: link || null,
+      price,
+      currency,
+      notes: notes || null,
+      status: "pending",
+      idempotency_key: idempotencyKey || null,
+    };
+    const { data, error } = await serviceClient
+      .from("trip_share_item_proposals")
+      .insert(insertPayload)
+      .select("id, trip_share_id, trip_id, title, item_type, link, price, currency, notes, status, accepted_item_id, created_at, updated_at, resolved_at")
+      .single();
+    if (error?.code === "23505" && idempotencyKey) {
+      const { data: existing } = await serviceClient
+        .from("trip_share_item_proposals")
+        .select("id, trip_share_id, trip_id, title, item_type, link, price, currency, notes, status, accepted_item_id, created_at, updated_at, resolved_at")
+        .eq("requester_user_id", user.id)
+        .eq("idempotency_key", idempotencyKey)
+        .maybeSingle();
+      if (existing) return json({ proposal: getRequesterItemProposalCard(existing), duplicate: true });
+    }
+    if (error) return json({ error: "item_proposal_failed" }, 500);
+    return json({ proposal: getRequesterItemProposalCard(data) });
+  }
+
+  if (action === "withdraw_item_proposal") {
+    const proposalId = String(body.proposalId || "");
+    if (!proposalId) return json({ error: "proposal_id_required" }, 400);
+    const { data, error } = await serviceClient
+      .from("trip_share_item_proposals")
+      .update({ status: "withdrawn", resolved_at: new Date().toISOString() })
+      .eq("id", proposalId)
+      .eq("requester_user_id", user.id)
+      .eq("status", "pending")
+      .select("id, trip_share_id, trip_id, title, item_type, link, price, currency, notes, status, accepted_item_id, created_at, updated_at, resolved_at")
+      .maybeSingle();
+    if (error) return json({ error: "withdraw_failed" }, 500);
+    if (!data) return json({ error: "proposal_not_found" }, 404);
+    return json({ proposal: getRequesterItemProposalCard(data) });
+  }
+
+  if (action === "list_item_proposals") {
+    const tripId = String(body.tripId || "");
+    if (!tripId) return json({ error: "trip_id_required" }, 400);
+    const { data: share, error: shareError } = await serviceClient
+      .from("trip_shares")
+      .select("id, trip_id")
+      .eq("owner_user_id", user.id)
+      .eq("trip_id", tripId)
+      .maybeSingle();
+    if (shareError) return json({ error: "list_item_proposals_failed" }, 500);
+    if (!share) return json({ proposals: [], pendingCount: 0 });
+    const { data: proposals, error } = await serviceClient
+      .from("trip_share_item_proposals")
+      .select("id, trip_share_id, trip_id, requester_user_id, title, item_type, link, price, currency, notes, status, accepted_item_id, created_at, updated_at, resolved_at")
+      .eq("trip_share_id", share.id)
+      .order("created_at", { ascending: false });
+    if (error) return json({ error: "list_item_proposals_failed" }, 500);
+    const profileNames = await getProfileDisplayNames(serviceClient, (proposals || []).map((proposal) => String(proposal.requester_user_id || "")));
+    const cards = (proposals || []).map((proposal) => getAuthorItemProposalCard(proposal, profileNames));
+    return json({ proposals: cards, pendingCount: cards.filter((proposal) => proposal.status === "pending").length });
+  }
+
+  if (action === "reject_item_proposal") {
+    const proposalId = String(body.proposalId || "");
+    if (!proposalId) return json({ error: "proposal_id_required" }, 400);
+    const { data: proposal, error: proposalError } = await serviceClient
+      .from("trip_share_item_proposals")
+      .select("id, trip_share_id, status")
+      .eq("id", proposalId)
+      .maybeSingle();
+    if (proposalError) return json({ error: "reject_failed" }, 500);
+    if (!proposal) return json({ error: "proposal_not_found" }, 404);
+    const { data: share } = await serviceClient
+      .from("trip_shares")
+      .select("id")
+      .eq("id", proposal.trip_share_id)
+      .eq("owner_user_id", user.id)
+      .maybeSingle();
+    if (!share) return json({ error: "share_not_found" }, 404);
+    if (proposal.status !== "pending") return json({ ok: true, status: proposal.status });
+    const { error } = await serviceClient
+      .from("trip_share_item_proposals")
+      .update({ status: "rejected", resolved_at: new Date().toISOString() })
+      .eq("id", proposalId)
+      .eq("status", "pending");
+    if (error) return json({ error: "reject_failed" }, 500);
+    return json({ ok: true, status: "rejected" });
+  }
+
+  if (action === "accept_item_proposal") {
+    const proposalId = String(body.proposalId || "");
+    if (!proposalId) return json({ error: "proposal_id_required" }, 400);
+    const authorization = req.headers.get("Authorization") || "";
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authorization } },
+      auth: { persistSession: false },
+    });
+    const { data, error } = await userClient.rpc("accept_item_proposal", {
       p_proposal_id: proposalId,
     });
     if (error) return json({ error: "accept_failed" }, 500);

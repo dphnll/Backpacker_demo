@@ -1100,6 +1100,12 @@ button[aria-disabled="true"] .home-support-icon {
   font-weight: 900;
 }
 
+.proposal-card strong,
+.proposal-card p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .proposal-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2068,6 +2074,18 @@ h3 {
   -webkit-line-clamp: 2;
   line-clamp: 2;
   -webkit-box-orient: vertical;
+}
+
+.item-source-marker {
+  max-width: 100%;
+  margin: 3px 0 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chip,

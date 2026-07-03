@@ -260,6 +260,13 @@
       </header>
 
       <main class="main-content">
+        <section class="card proposal-inbox-card hidden" id="myItemProposalsSection" aria-label="Мои предложения">
+          <div class="card-title-row">
+            <h3>Мои предложения</h3>
+          </div>
+          <div class="proposal-inbox-list" id="myItemProposalsList"></div>
+        </section>
+
         <section class="card proposal-inbox-card hidden" id="proposalInboxSection" aria-label="Предложения участников">
           <div class="card-title-row">
             <h3 id="proposalInboxTitle">Предложения · 0</h3>
@@ -493,6 +500,40 @@
           <button class="icon-button" data-close="expenseProposal" type="button" aria-label="Закрыть">×</button>
         </header>
         <div class="expense-proposal-body" id="expenseProposalBody"></div>
+      </section>
+    </div>
+
+    <div class="sheet" id="itemProposalSheet" aria-hidden="true">
+      <div class="sheet-backdrop" data-close="itemProposal"></div>
+      <section class="sheet-panel item-proposal-panel" role="dialog" aria-modal="true" aria-labelledby="itemProposalTitle">
+        <header class="sheet-header">
+          <h2 id="itemProposalTitle">Предложить идею</h2>
+          <button class="icon-button" data-close="itemProposal" type="button" aria-label="Закрыть">×</button>
+        </header>
+        <form id="itemProposalForm" class="sheet-form">
+          <label class="field wide">
+            Название
+            <input id="itemProposalTitleInput" name="title" placeholder="Прогулка, место, билет..." required />
+          </label>
+          <label class="field">
+            Тип
+            <select name="itemType"></select>
+          </label>
+          <label class="field wide">
+            Ссылка
+            <input name="link" inputmode="url" placeholder="https://..." />
+          </label>
+          <label class="field">
+            Цена
+            <input name="price" inputmode="numeric" placeholder="0" />
+          </label>
+          <label class="field wide">
+            Заметка
+            <textarea name="notes" rows="3" placeholder="Что автору стоит знать"></textarea>
+          </label>
+          <button class="primary-button" id="itemProposalSubmitButton" type="submit">Отправить автору</button>
+          <p class="field-hint">Идея не попадёт в поездку, пока автор её не примет.</p>
+        </form>
       </section>
     </div>
 
