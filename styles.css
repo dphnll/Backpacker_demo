@@ -1066,13 +1066,36 @@ button[aria-disabled="true"] .home-support-icon {
   font-weight: 400;
 }
 
+.trip-card-submeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.trip-card-submeta > span {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 28px;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.2;
+}
+
 .trip-card-open .home-card-meta {
   min-width: 0;
   padding-right: 86px;
 }
 
 .received-trips-section {
-  margin-top: 4px;
+  margin-top: 12px;
 }
 
 .received-trip-card .trip-card-open {

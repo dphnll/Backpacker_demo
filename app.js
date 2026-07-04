@@ -15,8 +15,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.15";
-const APP_RELEASE_SUMMARY = "гости могут предложить новую идею автору расшаренной поездки.";
+const APP_VERSION = "1.1.2.16";
+const APP_RELEASE_SUMMARY = "карточки поездок показывают направление и даты единообразно.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -1089,6 +1089,13 @@ function formatDate(dateString, options = {}) {
   });
 }
 
+function formatTripCardDateRange(startDate, endDate) {
+  if (startDate && endDate) return `${formatDate(startDate)}-${formatDate(endDate)}`;
+  if (startDate) return `с ${formatDate(startDate)}`;
+  if (endDate) return `до ${formatDate(endDate)}`;
+  return "Даты не заданы";
+}
+
 function formatDateForInput(dateString) {
   if (!dateString) return "";
   const [year, month, day] = String(dateString).split("-");
@@ -1142,13 +1149,16 @@ function getTripDayCount(trip) {
   return Math.max(1, diff + 1);
 }
 
-function formatTripDayCount(trip) {
-  const count = getTripDayCount(trip);
+function formatDayCountText(count) {
   const mod10 = count % 10;
   const mod100 = count % 100;
   if (mod10 === 1 && mod100 !== 11) return `${count} день`;
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} дня`;
   return `${count} дней`;
+}
+
+function formatTripDayCount(trip) {
+  return formatDayCountText(getTripDayCount(trip));
 }
 
 function formatDurationText(minutes) {
@@ -1713,6 +1723,7 @@ function renderHome() {
     const trip = entry.state.trip;
     const style = entry.coverDataUrl ? ` style="background-image: linear-gradient(145deg, rgba(18,54,61,.66), rgba(18,54,61,.12)), url('${escapeAttr(entry.coverDataUrl)}')"` : "";
     const statusLabel = getHomeTripStatusLabel(entry.id);
+    const cardDateRange = formatTripCardDateRange(trip.startDate, trip.endDate);
     return `
       <article class="home-card trip-list-card"${style}>
         <button class="trip-card-open" data-open-trip="${escapeAttr(entry.id)}" type="button">
@@ -1721,7 +1732,10 @@ function renderHome() {
           </div>
           <div class="trip-card-title-block">
             <strong>${escapeHtml(trip.title || "Новая поездка")}</strong>
-            <span>${escapeHtml(trip.destination || "Направление не задано")}</span>
+            <div class="trip-card-submeta">
+              <span>${escapeHtml(trip.destination || "Направление не задано")}</span>
+              <span>${escapeHtml(cardDateRange)}</span>
+            </div>
           </div>
           <div class="home-card-meta">
             <span>${formatTripDayCount(trip)}</span>
@@ -1752,8 +1766,11 @@ function renderReceivedTrips() {
     return;
   }
   list.innerHTML = receivedShareCards.map((entry) => {
-    const dateText = [formatDate(entry.startDate), formatDate(entry.endDate)].filter(Boolean).join("-");
-    const meta = entry.revoked ? "Доступ закрыт" : [dateText, entry.destination || ""].filter(Boolean).join(" · ");
+    const dateText = formatTripCardDateRange(entry.startDate, entry.endDate);
+    const destinationText = entry.destination || "Направление не задано";
+    const dayCountText = entry.startDate || entry.endDate
+      ? formatTripDayCount({ startDate: entry.startDate, endDate: entry.endDate })
+      : entry.dayCount || "Дни не заданы";
     const coverStyle = entry.coverDataUrl ? ` style="background-image: linear-gradient(145deg, rgba(18,54,61,.66), rgba(18,54,61,.12)), url('${escapeAttr(entry.coverDataUrl)}')"` : "";
     const statusBadge = entry.revoked ? "Доступ закрыт" : "Групповая (гость) · Read-only";
     const authorBadge = entry.authorDisplayName ? `Автор: ${entry.authorDisplayName}` : "Автор поездки";
@@ -1766,10 +1783,13 @@ function renderReceivedTrips() {
           </div>
           <div class="trip-card-title-block">
             <strong>${escapeHtml(entry.title || "Поездка")}</strong>
-            <span>${escapeHtml(meta || "Автор поездки")}</span>
+            <div class="trip-card-submeta">
+              <span>${escapeHtml(destinationText)}</span>
+              <span>${escapeHtml(entry.revoked ? "Доступ закрыт" : dateText)}</span>
+            </div>
           </div>
           <div class="home-card-meta">
-            <span>${escapeHtml(entry.dayCount || "Дни не заданы")}</span>
+            <span>${escapeHtml(dayCountText)}</span>
             <span>${entry.includeBudget === false ? "Смета скрыта" : escapeHtml(formatCurrencyAmount(entry.budgetLimit || 0, entry.currency || "RUB"))}</span>
           </div>
         </button>

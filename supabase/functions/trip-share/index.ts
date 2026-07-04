@@ -286,7 +286,7 @@ function getTripCard(share: Record<string, unknown>, revoked = false) {
     destination: String(trip.destination || ""),
     startDate,
     endDate,
-    dayCount: `${dayCount} ${dayCount === 1 ? "день" : "дн."}`,
+    dayCount: formatDayCountText(dayCount),
     budgetLimit: parseMoney(trip.budgetLimit),
     currency: String(trip.currency || "RUB"),
     coverDataUrl: String(trip.coverDataUrl || ""),
@@ -294,6 +294,14 @@ function getTripCard(share: Record<string, unknown>, revoked = false) {
     updatedAt: share.updated_at,
     revoked,
   };
+}
+
+function formatDayCountText(count: number) {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${count} день`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} дня`;
+  return `${count} дней`;
 }
 
 Deno.serve(async (req) => {
