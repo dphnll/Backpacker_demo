@@ -15,7 +15,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.13";
+const APP_VERSION = "1.1.2.14";
 const APP_RELEASE_SUMMARY = "гости могут предложить новую идею автору расшаренной поездки.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -1280,6 +1280,34 @@ function getPrimaryParticipantForItem(item, participants = state.trip.participan
   return getParticipantFromList(participants, allocation?.participantId || item.participantId);
 }
 
+function getParticipantsForItem(item, participants = state.trip.participants) {
+  const seen = new Set();
+  return getItemAllocations(item, participants)
+    .map((allocation) => getParticipantFromList(participants, allocation.participantId))
+    .filter((participant) => {
+      if (!participant || seen.has(participant.id)) return false;
+      seen.add(participant.id);
+      return true;
+    });
+}
+
+function renderItemParticipantBadges(item) {
+  if (state.trip.participants.length <= 1) return "";
+  const itemParticipants = getParticipantsForItem(item);
+  const participants = itemParticipants.slice(0, 3);
+  if (!participants.length) return "";
+  const hiddenCount = Math.max(0, itemParticipants.length - participants.length);
+  const label = itemParticipants.map((participant) => participant.name).join(", ");
+  return `
+    <span class="item-participant-stack" aria-label="Расход распределен: ${escapeAttr(label)}">
+      ${participants.map((participant) => `
+        <span class="item-side-badge item-participant-badge participant-${escapeAttr(participant.colorKey)}" title="${escapeAttr(participant.name)}">${escapeHtml(participant.initials)}</span>
+      `).join("")}
+      ${hiddenCount ? `<span class="item-side-badge item-participant-badge item-participant-more">+${hiddenCount}</span>` : ""}
+    </span>
+  `;
+}
+
 function renderParticipantAvatar(participant) {
   return `<span class="participant-avatar participant-${escapeAttr(participant.colorKey)}">${escapeHtml(participant.initials)}</span>`;
 }
@@ -1939,6 +1967,16 @@ function renderExpenseProposalSheet() {
     `;
     return;
   }
+  if (existingProposal?.status === "accepted") {
+    body.innerHTML = `
+      <section class="proposal-summary">
+        <h3>${escapeHtml(item.title)}</h3>
+        <p>Ваша доля: <strong>${formatMoney(existingProposal.amount)}</strong> · ${formatProposalStatus(existingProposal.status)}</p>
+        <button class="ghost-button" type="button" data-withdraw-accepted-expense-proposal="${escapeAttr(existingProposal.id)}" ${resolvingExpenseProposalIds.has(existingProposal.id) ? "disabled" : ""}>Отозвать долю</button>
+      </section>
+    `;
+    return;
+  }
   if (existingProposal && existingProposal.status !== "withdrawn") {
     body.innerHTML = `
       <section class="proposal-summary">
@@ -2080,6 +2118,92 @@ async function withdrawExpenseProposal(proposalId) {
     renderExpenseProposalSheet();
   } catch {
     showToast("Не удалось отозвать предложение");
+  }
+}
+
+function getAcceptedExpenseProposalsForItem(itemId) {
+  return authorExpenseProposals.filter((proposal) => proposal.itemId === itemId && proposal.status === "accepted");
+}
+
+function getOwnAcceptedExpenseProposalForItem(itemId) {
+  return (shareProposalContext?.proposals || []).find((proposal) => proposal.itemId === itemId && proposal.status === "accepted");
+}
+
+function renderAcceptedExpenseControls(item) {
+  const controls = $("#acceptedExpenseControls");
+  if (!controls) return;
+  if (!item || isReadOnlyMode()) {
+    controls.classList.add("hidden");
+    controls.innerHTML = "";
+    return;
+  }
+  const proposals = getAcceptedExpenseProposalsForItem(item.id);
+  controls.classList.toggle("hidden", !proposals.length);
+  controls.innerHTML = proposals.map((proposal) => `
+    <article class="accepted-expense-card">
+      <div>
+        <strong>${escapeHtml(proposal.requesterDisplayName || proposal.requesterName || "Участник")}</strong>
+        <p>Взял(а) на себя ${formatMoney(proposal.amount)}.</p>
+      </div>
+      <button class="ghost-button compact" type="button" data-reject-accepted-expense-proposal="${escapeAttr(proposal.id)}" ${resolvingExpenseProposalIds.has(proposal.id) ? "disabled" : ""}>Отменить долю</button>
+    </article>
+  `).join("");
+}
+
+function renderEstimateProposalControls() {
+  const controls = $("#estimateProposalControls");
+  if (!controls) return;
+  if (!canShowBudget()) {
+    controls.classList.add("hidden");
+    controls.innerHTML = "";
+    return;
+  }
+  const proposals = isReadOnlyMode()
+    ? (shareProposalContext?.proposals || []).filter((proposal) => proposal.status === "accepted")
+    : authorExpenseProposals.filter((proposal) => proposal.status === "accepted");
+  controls.classList.toggle("hidden", !proposals.length);
+  controls.innerHTML = proposals.map((proposal) => `
+    <article class="estimate-proposal-action">
+      <div>
+        <strong>${escapeHtml(proposal.itemTitle || state.items.find((item) => item.id === proposal.itemId)?.title || "Расход")}</strong>
+        <p>${isReadOnlyMode() ? "Ваша доля" : escapeHtml(proposal.requesterDisplayName || proposal.requesterName || "Участник")}: ${formatMoney(proposal.amount)}</p>
+      </div>
+      <button class="ghost-button compact" type="button" ${isReadOnlyMode()
+        ? `data-withdraw-accepted-expense-proposal="${escapeAttr(proposal.id)}"`
+        : `data-reject-accepted-expense-proposal="${escapeAttr(proposal.id)}"`} ${resolvingExpenseProposalIds.has(proposal.id) ? "disabled" : ""}>
+        ${isReadOnlyMode() ? "Отозвать долю" : "Отменить долю"}
+      </button>
+    </article>
+  `).join("");
+}
+
+async function resolveAcceptedExpenseProposal(proposalId, nextStatus) {
+  if (resolvingExpenseProposalIds.has(proposalId)) return;
+  resolvingExpenseProposalIds.add(proposalId);
+  renderProposalInbox();
+  renderEstimateProposalControls();
+  renderAcceptedExpenseControls(state.items.find((item) => item.id === $("#itemForm")?.elements?.id?.value));
+  try {
+    if (!isReadOnlyMode()) await syncCurrentTripShareBeforeAccept();
+    const payload = await callTripShareFunction("resolve_accepted_expense_proposal", { proposalId, nextStatus }, { requireOwner: true });
+    if (payload.state) {
+      state = normalizeState(payload.state);
+      if (!isReadOnlyMode()) saveState();
+    }
+    if (isReadOnlyMode()) await refreshShareProposalContext();
+    else await refreshAuthorExpenseProposals();
+    render();
+    renderExpenseProposalSheet();
+    const currentItem = state.items.find((item) => item.id === $("#itemForm")?.elements?.id?.value);
+    renderItemAllocationSummary(currentItem);
+    renderAcceptedExpenseControls(currentItem);
+    showToast(nextStatus === "withdrawn" ? "Доля отозвана" : "Доля отменена");
+  } catch {
+    showToast("Не удалось изменить долю");
+  } finally {
+    resolvingExpenseProposalIds.delete(proposalId);
+    renderProposalInbox();
+    renderEstimateProposalControls();
   }
 }
 
@@ -2250,6 +2374,10 @@ function renderProposalInbox() {
           <button class="ghost-button compact" type="button" data-reject-expense-proposal="${escapeAttr(proposal.id)}" ${resolvingExpenseProposalIds.has(proposal.id) ? "disabled" : ""}>Отклонить</button>
           <button class="primary-button compact" type="button" data-accept-expense-proposal="${escapeAttr(proposal.id)}" ${resolvingExpenseProposalIds.has(proposal.id) ? "disabled" : ""}>${resolvingExpenseProposalIds.has(proposal.id) ? "Применяем..." : (proposal.participantMode === "new" ? "Добавить и принять" : "Принять")}</button>
         </div>
+      ` : proposal.status === "accepted" ? `
+        <div class="proposal-actions">
+          <button class="ghost-button compact" type="button" data-reject-accepted-expense-proposal="${escapeAttr(proposal.id)}" ${resolvingExpenseProposalIds.has(proposal.id) ? "disabled" : ""}>Отменить долю</button>
+        </div>
       ` : ""}
     </article>
   `).join("");
@@ -2282,6 +2410,7 @@ async function refreshAuthorExpenseProposals() {
   authorExpenseProposals = expenseResult.status === "fulfilled" ? (expenseResult.value.proposals || []) : [];
   authorItemProposals = itemResult.status === "fulfilled" ? (itemResult.value.proposals || []) : [];
   renderProposalInbox();
+  renderEstimateProposalControls();
 }
 
 async function syncCurrentTripShareBeforeAccept() {
@@ -2527,6 +2656,7 @@ function renderEstimateTable() {
         <tr><td>Автор скрыл смету для этой ссылки.</td></tr>
       </tbody>
     `;
+    renderEstimateProposalControls();
     return;
   }
   const { header, rows } = buildEstimateRows();
@@ -2540,14 +2670,12 @@ function renderEstimateTable() {
       `).join("")}
     </tbody>
   `;
+  renderEstimateProposalControls();
 }
 
 function renderItemCard(item) {
   const price = canShowBudget() && parseMoney(item.price) ? formatMoney(item.price) : "--";
-  const participant = getPrimaryParticipantForItem(item);
-  const participantBadge = state.trip.participants.length > 1
-    ? `<span class="item-side-badge item-participant-badge participant-${escapeAttr(participant.colorKey)}" aria-label="Расход назначен участнику ${escapeAttr(participant.name)}">${escapeHtml(participant.initials)}</span>`
-    : "";
+  const participantBadges = renderItemParticipantBadges(item);
   const note = item.notes ? `<p class="item-note">${escapeHtml(item.notes)}</p>` : "";
   const link = item.link
     ? `<a class="item-link" href="${escapeAttr(item.link)}" target="_blank" rel="noreferrer" onclick="event.stopPropagation()">открыть ссылку</a>`
@@ -2576,7 +2704,7 @@ function renderItemCard(item) {
           </div>
           <div class="item-side-badges">
             <span class="item-side-badge status-icon status-${item.status}" title="${escapeAttr(getStatusLabel(item.status))}" aria-label="${escapeAttr(getStatusLabel(item.status))}">${getStatusIcon(item.status)}</span>
-            ${participantBadge}
+            ${participantBadges}
           </div>
         </div>
         ${link ? `<div class="item-link-row">${link}</div>` : ""}
@@ -2630,11 +2758,19 @@ function openItemSheet(itemId = null) {
   $("#resetItemButton").style.display = itemId ? "inline-flex" : "none";
   $("#copyItemButton").hidden = !itemId;
   $("#itemSheetTitle").textContent = itemId ? "Редактировать элемент" : "Добавить в поездку";
-  fillItemForm(itemId ? state.items.find((entry) => entry.id === itemId) : null);
+  const trackedItem = itemId ? state.items.find((entry) => entry.id === itemId) : null;
+  fillItemForm(trackedItem);
+  renderItemAllocationSummary(trackedItem);
+  renderAcceptedExpenseControls(trackedItem);
   updateOpenLinkButton();
   openSheet("itemSheet");
   itemFormOpenedAt = Date.now();
-  const trackedItem = itemId ? state.items.find((entry) => entry.id === itemId) : null;
+  if (trackedItem) {
+    refreshAuthorExpenseProposals().then(() => {
+      const currentItem = state.items.find((entry) => entry.id === trackedItem.id);
+      renderAcceptedExpenseControls(currentItem);
+    });
+  }
   trackEvent("item_form_opened", {
     ...getTripAnalyticsContext(),
     item_id: trackedItem?.id || null,
@@ -2656,6 +2792,35 @@ function fillSelects() {
 
 function renderParticipantOwnerField() {
   $("#participantOwnerField").hidden = state.trip.participants.length <= 1;
+}
+
+function renderItemAllocationSummary(item) {
+  const summary = $("#itemAllocationSummary");
+  if (!summary) return;
+  const allocations = item ? getItemAllocations(item) : [];
+  if (!item || allocations.length <= 1 || !canShowBudget()) {
+    summary.classList.add("hidden");
+    summary.textContent = "";
+    return;
+  }
+  summary.classList.remove("hidden");
+  summary.textContent = `Распределено: ${allocations.map((allocation) => {
+    const participant = getParticipantById(allocation.participantId);
+    return `${participant.name} ${formatMoney(allocation.amount)}`;
+  }).join(" · ")}`;
+}
+
+function getSavedItemAllocations(existing, price, participantId) {
+  if (price <= 0) return [];
+  if (!existing) return [{ participantId, amount: price }];
+  const existingAllocations = getItemAllocations(existing);
+  const existingTotal = existingAllocations.reduce((sum, allocation) => sum + parseMoney(allocation.amount), 0);
+  const samePrice = parseMoney(existing.price) === price;
+  const sameParticipant = (existing.participantId || "") === participantId;
+  if (samePrice && sameParticipant && existingAllocations.length > 1 && existingTotal === price) {
+    return existingAllocations.map((allocation) => ({ ...allocation }));
+  }
+  return [{ participantId, amount: price }];
 }
 
 function getItemAnalyticsFlags(item) {
@@ -2697,7 +2862,7 @@ function saveItem(event) {
     price,
     paidAmount: parseMoney(data.paidAmount),
     participantId,
-    allocations: price > 0 ? [{ participantId, amount: price }] : [],
+    allocations: getSavedItemAllocations(existing, price, participantId),
     link: data.link.trim(),
     locationText: data.locationText.trim(),
     notes: data.notes.trim(),
@@ -4560,8 +4725,8 @@ async function buildTripPdfBlob(options) {
     const bodyHeight = 220;
     const height = headerHeight + bodyHeight;
     const padding = 12;
-    const participant = getPrimaryParticipantForItem(item);
-    const showParticipantBadge = state.trip.participants.length > 1;
+    const itemParticipants = getParticipantsForItem(item).slice(0, 3);
+    const showParticipantBadge = state.trip.participants.length > 1 && itemParticipants.length;
     const badgeX = baseWidth - padding - 18;
     const accent = getPdfTypeColor(item.type);
     const slotFill = getPdfTypeSlotColor(item.type);
@@ -4609,7 +4774,9 @@ async function buildTripPdfBlob(options) {
 
     drawPdfImageBadge(badgeX, localBodyY + 87, 18, accent, statusImages[item.status], getPdfStatusMark(item.status));
     if (showParticipantBadge) {
-      drawPdfBadge(badgeX, localBodyY + 134, 18, getPdfParticipantColor(participant), participant.initials, "#1f2423");
+      itemParticipants.forEach((participant, index) => {
+        drawPdfBadge(badgeX - index * 15, localBodyY + 134, 18, getPdfParticipantColor(participant), participant.initials, "#1f2423");
+      });
     }
     if (options.includeNotes && item.notes) {
       ctx.font = "400 10px Arial, sans-serif";
@@ -5564,7 +5731,9 @@ function bindEvents() {
 
     const addButton = event.target.closest("[data-action='add']");
     if (addButton) {
-      if (isReadOnlyMode()) openItemProposalSheet();
+      event.preventDefault();
+      event.stopPropagation();
+      if (isReadOnlyMode()) openItemProposalSheet().catch(() => showToast("Не удалось открыть форму идеи"));
       else openItemSheet();
       return;
     }
@@ -5712,6 +5881,12 @@ function bindEvents() {
       return;
     }
 
+    const withdrawAcceptedProposalButton = event.target.closest("[data-withdraw-accepted-expense-proposal]");
+    if (withdrawAcceptedProposalButton) {
+      resolveAcceptedExpenseProposal(withdrawAcceptedProposalButton.dataset.withdrawAcceptedExpenseProposal, "withdrawn");
+      return;
+    }
+
     const newProposalButton = event.target.closest("[data-new-expense-proposal]");
     if (newProposalButton) {
       shareProposalContext.proposals = (shareProposalContext.proposals || []).filter((proposal) => proposal.itemId !== expenseProposalDraft.itemId || proposal.status === "pending");
@@ -5729,6 +5904,12 @@ function bindEvents() {
     const rejectProposalButton = event.target.closest("[data-reject-expense-proposal]");
     if (rejectProposalButton) {
       rejectExpenseProposal(rejectProposalButton.dataset.rejectExpenseProposal);
+      return;
+    }
+
+    const rejectAcceptedProposalButton = event.target.closest("[data-reject-accepted-expense-proposal]");
+    if (rejectAcceptedProposalButton) {
+      resolveAcceptedExpenseProposal(rejectAcceptedProposalButton.dataset.rejectAcceptedExpenseProposal, "rejected");
       return;
     }
 

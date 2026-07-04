@@ -583,6 +583,26 @@ Deno.serve(async (req) => {
     return json(result);
   }
 
+  if (action === "resolve_accepted_expense_proposal") {
+    const proposalId = String(body.proposalId || "");
+    const nextStatus = String(body.nextStatus || "");
+    if (!proposalId) return json({ error: "proposal_id_required" }, 400);
+    if (!["rejected", "withdrawn"].includes(nextStatus)) return json({ error: "invalid_status" }, 400);
+    const authorization = req.headers.get("Authorization") || "";
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authorization } },
+      auth: { persistSession: false },
+    });
+    const { data, error } = await userClient.rpc("resolve_accepted_expense_proposal", {
+      p_proposal_id: proposalId,
+      p_next_status: nextStatus,
+    });
+    if (error) return json({ error: "resolve_failed" }, 500);
+    const result = (data || {}) as Record<string, unknown>;
+    if (result.error) return json({ error: result.error }, 409);
+    return json(result);
+  }
+
   if (action === "get_item_proposal_context") {
     const shareId = String(body.shareId || "");
     if (!shareId) return json({ error: "share_id_required" }, 400);

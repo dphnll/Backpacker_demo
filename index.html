@@ -322,6 +322,7 @@
             <div class="estimate-table-wrap">
               <table class="estimate-table" id="estimateTable"></table>
             </div>
+            <div class="estimate-proposal-controls hidden" id="estimateProposalControls"></div>
           </section>
         </section>
 
@@ -437,6 +438,7 @@
             Расход берет на себя
             <select name="participantId"></select>
           </label>
+          <p class="item-allocation-summary hidden" id="itemAllocationSummary"></p>
           <label class="field">
             Дата
             <input name="date" type="date" />
@@ -466,6 +468,7 @@
             Оплачено
             <input name="paidAmount" inputmode="numeric" placeholder="0" />
           </label>
+          <section class="accepted-expense-controls hidden" id="acceptedExpenseControls"></section>
           <label class="field">
             Приоритет
             <select name="priority"></select>

@@ -2210,6 +2210,68 @@ h3 {
   line-height: 1;
 }
 
+.item-participant-stack {
+  display: inline-flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 36px;
+}
+
+.item-participant-stack .item-participant-badge {
+  position: relative;
+  border: 2px solid rgba(255, 255, 255, 0.72);
+}
+
+.item-participant-stack .item-participant-badge + .item-participant-badge {
+  margin-right: -13px;
+}
+
+.item-participant-more {
+  background: var(--brand) !important;
+  font-size: 14px !important;
+}
+
+.item-allocation-summary,
+.accepted-expense-controls,
+.estimate-proposal-controls {
+  grid-column: 1 / -1;
+}
+
+.item-allocation-summary {
+  margin: -3px 0 2px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.accepted-expense-card,
+.estimate-proposal-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px;
+  border: 1px solid rgba(18, 54, 61, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.accepted-expense-card p,
+.estimate-proposal-action p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.estimate-proposal-controls {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .primary-button,
 .ghost-button,
 .danger-button,
