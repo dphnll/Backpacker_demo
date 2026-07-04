@@ -273,12 +273,24 @@ async function getRequestUser(req: Request, supabaseUrl: string, anonKey: string
 function getTripCard(share: Record<string, unknown>, revoked = false) {
   const state = (share.state || {}) as Record<string, unknown>;
   const trip = (state.trip || {}) as Record<string, unknown>;
+  const startDate = String(trip.startDate || "");
+  const endDate = String(trip.endDate || "");
+  const start = startDate ? new Date(`${startDate}T12:00:00Z`) : null;
+  const end = endDate ? new Date(`${endDate}T12:00:00Z`) : null;
+  const dayCount = start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())
+    ? Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
+    : 1;
   return {
     shareId: share.id,
     title: String(trip.title || "Поездка"),
     destination: String(trip.destination || ""),
-    startDate: String(trip.startDate || ""),
-    endDate: String(trip.endDate || ""),
+    startDate,
+    endDate,
+    dayCount: `${dayCount} ${dayCount === 1 ? "день" : "дн."}`,
+    budgetLimit: parseMoney(trip.budgetLimit),
+    currency: String(trip.currency || "RUB"),
+    coverDataUrl: String(trip.coverDataUrl || ""),
+    includeBudget: share.include_budget !== false,
     updatedAt: share.updated_at,
     revoked,
   };
@@ -814,16 +826,21 @@ Deno.serve(async (req) => {
     if (!shareIds.length) return json({ trips: [] });
     const { data: shares, error: sharesError } = await serviceClient
       .from("trip_shares")
-      .select("id, state, revoked_at, updated_at")
+      .select("id, owner_user_id, include_budget, state, revoked_at, updated_at")
       .in("id", shareIds);
     if (sharesError) return json({ error: "list_received_failed" }, 500);
     const sharesById = new Map((shares || []).map((share) => [share.id, share]));
+    const profileNames = await getProfileDisplayNames(serviceClient, (shares || []).map((share) => String(share.owner_user_id || "")));
     return json({
       trips: (recipients || [])
         .map((entry) => {
           const share = sharesById.get(entry.trip_share_id);
           if (!share) return null;
-          return { ...getTripCard(share, Boolean(share.revoked_at)), savedAt: entry.created_at };
+          return {
+            ...getTripCard(share, Boolean(share.revoked_at)),
+            authorDisplayName: profileNames.get(String(share.owner_user_id || "")) || "",
+            savedAt: entry.created_at,
+          };
         })
         .filter(Boolean),
     });

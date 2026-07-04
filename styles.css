@@ -172,6 +172,16 @@ a {
   filter: drop-shadow(5px 5px 0 rgba(18, 54, 61, 0.08));
 }
 
+.app-splash-card p {
+  max-width: 280px;
+  margin: -10px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.28;
+  text-align: center;
+}
+
 .intro-screen {
   position: relative;
   display: grid;
@@ -518,8 +528,8 @@ a {
 .home-trainer-hide {
   position: absolute;
   z-index: 2;
-  top: 20px;
-  right: 16px;
+  right: 22px;
+  bottom: 22px;
   min-height: 30px;
   padding: 5px 10px;
   border: 1px solid rgba(18, 54, 61, 0.18);
@@ -533,7 +543,11 @@ a {
 
 .trainer-card {
   cursor: pointer;
-  min-height: 112px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 12px;
+  min-height: 181px;
+  padding: 12px 126px 12px 12px;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.85),
     inset 0 -10px 18px rgba(18, 54, 61, 0.05);
@@ -558,6 +572,7 @@ a {
 .trainer-card h2 {
   width: fit-content;
   max-width: 100%;
+  margin: 0 0 5px;
   padding: 4px 8px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.88);
@@ -567,6 +582,7 @@ a {
 .trainer-card p {
   width: fit-content;
   max-width: 100%;
+  margin: 0;
   padding: 5px 8px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.82);
@@ -575,6 +591,10 @@ a {
 
 .trainer-card .home-card-kicker {
   color: var(--brand);
+}
+
+.trainer-card .home-card-meta {
+  padding-right: 0;
 }
 
 .create-trip-card {
@@ -989,17 +1009,36 @@ button[aria-disabled="true"] .home-support-icon {
 
 .trip-card-open {
   position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 12px;
   width: 100%;
+  height: 100%;
   min-height: 112px;
-  padding: 12px 72px 48px 12px;
+  padding: 12px 72px 12px 12px;
   border: 0;
   background: transparent;
   color: inherit;
   text-align: left;
 }
 
+.trip-card-status-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: calc(100% - 58px);
+}
+
+.trip-card-title-block {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 6px;
+  min-width: 0;
+}
+
 .trip-list-card strong,
-.trip-card-open > span:not(.home-card-kicker) {
+.trip-card-title-block > span {
   display: block;
 }
 
@@ -1015,7 +1054,7 @@ button[aria-disabled="true"] .home-support-icon {
   line-height: 1.12;
 }
 
-.trip-card-open > span:not(.home-card-kicker) {
+.trip-card-title-block > span {
   width: fit-content;
   max-width: 100%;
   margin-bottom: 8px;
@@ -1028,10 +1067,8 @@ button[aria-disabled="true"] .home-support-icon {
 }
 
 .trip-card-open .home-card-meta {
-  position: absolute;
-  right: 86px;
-  bottom: 12px;
-  left: 12px;
+  min-width: 0;
+  padding-right: 86px;
 }
 
 .received-trips-section {
@@ -1042,9 +1079,25 @@ button[aria-disabled="true"] .home-support-icon {
   padding-right: 12px;
 }
 
+.received-trip-card .trip-card-status-row {
+  max-width: 100%;
+}
+
+.received-trip-card .trip-card-open .home-card-meta {
+  padding-right: 112px;
+}
+
 .received-trip-card .home-card-kicker {
   background: rgba(18, 54, 61, 0.88);
   color: #fff;
+}
+
+.received-trip-author-badge {
+  max-width: min(52%, 180px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
 }
 
 .received-trip-card-closed {

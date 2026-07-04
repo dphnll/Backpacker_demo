@@ -15,7 +15,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.14";
+const APP_VERSION = "1.1.2.15";
 const APP_RELEASE_SUMMARY = "гости могут предложить новую идею автору расшаренной поездки.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -688,6 +688,12 @@ function renderHomeProfile() {
   const shouldShow = isSupabaseConfigured() && currentScreen === "home";
   button.classList.toggle("hidden", !shouldShow);
   name.textContent = userProfile.displayName || "Добавьте имя или ник";
+}
+
+function getHomeTripStatusLabel(tripId) {
+  const record = shareRecords[tripId];
+  if (record?.shareId && !record.revoked) return "Групповая (автор)";
+  return "Личная";
 }
 
 function renderProfileSheet() {
@@ -1696,8 +1702,8 @@ function renderHome() {
   if (!trips.length) {
     list.innerHTML = `
       <p class="empty-trips">
-        <span>Здесь будут ваши поездки</span>
-        <span>Начните с тренажера 👆🏻 или создайте новую поездку</span>
+        <span>Здесь будут поездки: ваши личные и те, в которые вас пригласят</span>
+        <span>Впервые здесь? Начните с тренажера 👆🏻 или создайте новую поездку</span>
       </p>
     `;
     return;
@@ -1706,12 +1712,17 @@ function renderHome() {
   list.innerHTML = trips.map((entry) => {
     const trip = entry.state.trip;
     const style = entry.coverDataUrl ? ` style="background-image: linear-gradient(145deg, rgba(18,54,61,.66), rgba(18,54,61,.12)), url('${escapeAttr(entry.coverDataUrl)}')"` : "";
+    const statusLabel = getHomeTripStatusLabel(entry.id);
     return `
       <article class="home-card trip-list-card"${style}>
         <button class="trip-card-open" data-open-trip="${escapeAttr(entry.id)}" type="button">
-          <span class="home-card-kicker">${formatDate(trip.startDate)}-${formatDate(trip.endDate)}</span>
-          <strong>${escapeHtml(trip.title || "Новая поездка")}</strong>
-          <span>${escapeHtml(trip.destination || "Направление не задано")}</span>
+          <div class="trip-card-status-row">
+            <span class="home-card-kicker">${escapeHtml(statusLabel)}</span>
+          </div>
+          <div class="trip-card-title-block">
+            <strong>${escapeHtml(trip.title || "Новая поездка")}</strong>
+            <span>${escapeHtml(trip.destination || "Направление не задано")}</span>
+          </div>
           <div class="home-card-meta">
             <span>${formatTripDayCount(trip)}</span>
             <span>${formatCurrencyAmount(trip.budgetLimit, trip.currency)}</span>
@@ -1743,16 +1754,23 @@ function renderReceivedTrips() {
   list.innerHTML = receivedShareCards.map((entry) => {
     const dateText = [formatDate(entry.startDate), formatDate(entry.endDate)].filter(Boolean).join("-");
     const meta = entry.revoked ? "Доступ закрыт" : [dateText, entry.destination || ""].filter(Boolean).join(" · ");
-    const badge = entry.revoked ? "Доступ закрыт" : "Просмотр";
+    const coverStyle = entry.coverDataUrl ? ` style="background-image: linear-gradient(145deg, rgba(18,54,61,.66), rgba(18,54,61,.12)), url('${escapeAttr(entry.coverDataUrl)}')"` : "";
+    const statusBadge = entry.revoked ? "Доступ закрыт" : "Групповая (гость) · Read-only";
+    const authorBadge = entry.authorDisplayName ? `Автор: ${entry.authorDisplayName}` : "Автор поездки";
     return `
-      <article class="home-card trip-list-card received-trip-card${entry.revoked ? " received-trip-card-closed" : ""}">
+      <article class="home-card trip-list-card received-trip-card${entry.revoked ? " received-trip-card-closed" : ""}"${coverStyle}>
         <button class="trip-card-open" data-open-received-trip="${escapeAttr(entry.shareId)}" type="button" ${entry.revoked ? "disabled aria-disabled=\"true\"" : ""}>
-          <span class="home-card-kicker">${escapeHtml(badge)}</span>
-          <strong>${escapeHtml(entry.title || "Поездка")}</strong>
-          <span>${escapeHtml(meta || "Автор поездки")}</span>
+          <div class="trip-card-status-row">
+            <span class="home-card-kicker">${escapeHtml(statusBadge)}</span>
+            <span class="home-card-kicker received-trip-author-badge">${escapeHtml(authorBadge)}</span>
+          </div>
+          <div class="trip-card-title-block">
+            <strong>${escapeHtml(entry.title || "Поездка")}</strong>
+            <span>${escapeHtml(meta || "Автор поездки")}</span>
+          </div>
           <div class="home-card-meta">
-            <span>Автор поездки</span>
-            <span>${entry.revoked ? "Закрыто" : "Read-only"}</span>
+            <span>${escapeHtml(entry.dayCount || "Дни не заданы")}</span>
+            <span>${entry.includeBudget === false ? "Смета скрыта" : escapeHtml(formatCurrencyAmount(entry.budgetLimit || 0, entry.currency || "RUB"))}</span>
           </div>
         </button>
         <button class="delete-trip-button received-trip-remove-button" data-remove-received-trip="${escapeAttr(entry.shareId)}" type="button">Удалить из списка</button>
@@ -3687,7 +3705,10 @@ function buildTripShareUrl(token) {
 }
 
 function buildPublishedTripState() {
-  return normalizeState(structuredClone(state));
+  const published = normalizeState(structuredClone(state));
+  const entry = tripStore.trips.find((trip) => trip.id === published.trip.id);
+  if (entry?.coverDataUrl) published.trip.coverDataUrl = entry.coverDataUrl;
+  return published;
 }
 
 async function publishTripShare(options = {}) {
@@ -5190,15 +5211,18 @@ function trackOnboardingExit() {
 }
 
 async function startApp() {
-  hideAppSplash();
   trackAppOpen();
+  const splashStatus = $("#appSplashStatus");
+  if (splashStatus && getSharePayloadFromUrl()) splashStatus.textContent = "Открываем приглашение...";
   readOnlyShare = await loadReadOnlyShareFromUrl();
   if (readOnlyShare) {
     if (readOnlyShare.invalid) showToast("Ссылка недействительна");
     state = readOnlyShare.state;
+    hideAppSplash();
     showTripScreen();
     return;
   }
+  hideAppSplash();
   const params = new URLSearchParams(window.location.search);
   const forceIntro = params.get("intro") === "1" || params.get(ONBOARDING_PREVIEW_PARAM) === "1";
   let onboardingSeen = false;
