@@ -166,6 +166,50 @@
           </span>
         </button>
 
+        <div class="sheet" id="tripDraftAiSheet" aria-hidden="true">
+          <div class="sheet-backdrop" data-close="tripDraftAi"></div>
+          <section class="sheet-panel trip-draft-ai-panel" role="dialog" aria-modal="true" aria-labelledby="tripDraftAiTitle">
+            <header class="sheet-header">
+              <h2 id="tripDraftAiTitle">Создать поездку</h2>
+              <button class="icon-button" data-close="tripDraftAi" type="button" aria-label="Закрыть">×</button>
+            </header>
+            <div class="trip-draft-ai-body">
+              <section class="trip-draft-choice-grid" aria-label="Способ создания поездки">
+                <button class="trip-draft-choice primary-button" id="tripDraftManualButton" type="button" data-trip-draft-mode="manual">Собрать вручную</button>
+                <button class="trip-draft-choice primary-button" id="tripDraftTextModeButton" type="button" data-trip-draft-mode="text">Описать текстом для AI</button>
+                <button class="trip-draft-choice primary-button" id="tripDraftVoiceModeButton" type="button" data-trip-draft-mode="voice">Надиктовать голосом для AI</button>
+              </section>
+
+              <section class="trip-draft-input hidden" id="tripDraftInputStep">
+                <p class="trip-draft-copy">Расскажите, куда едете, на какие даты, кто едет, что важно, что не подходит и какой темп отдыха хочется.</p>
+                <label class="field wide">
+                  Описание поездки
+                  <textarea id="tripDraftTextInput" rows="7" placeholder="Например: едем в Стамбул на 5 дней, двое взрослых и ребёнок, любим еду и прогулки, не хотим ранних подъёмов..."></textarea>
+                </label>
+                <div class="trip-draft-voice-controls hidden" id="tripDraftVoiceControls">
+                  <button class="ghost-button" id="tripDraftRecordButton" type="button">Начать запись</button>
+                  <span class="trip-draft-recording-indicator hidden" id="tripDraftRecordingIndicator">Идёт запись...</span>
+                </div>
+                <p class="field-hint wide">Ограничения вроде аллергий, питания и темпа будут учтены как ограничения планирования, не как медицинские рекомендации.</p>
+                <p class="trip-draft-status" id="tripDraftStatus" aria-live="polite"></p>
+                <div class="trip-draft-actions">
+                  <button class="ghost-button" id="tripDraftBackButton" type="button">Назад</button>
+                  <button class="primary-button" id="tripDraftParseButton" type="button">Разобрать поездку</button>
+                </div>
+              </section>
+
+              <section class="trip-draft-preview hidden" id="tripDraftPreviewStep">
+                <p class="trip-draft-copy">Проверьте черновик. Датированные идеи попадут в план, остальные — в парковку.</p>
+                <div class="trip-draft-preview-box" id="tripDraftPreviewBox"></div>
+                <div class="trip-draft-actions">
+                  <button class="ghost-button" id="tripDraftEditTextButton" type="button">Править текст</button>
+                  <button class="primary-button" id="tripDraftCreateButton" type="button">Создать черновик</button>
+                </div>
+              </section>
+            </div>
+          </section>
+        </div>
+
         <section class="trip-list-section">
           <div class="section-heading home-list-heading">
             <h2>Лента поездок</h2>

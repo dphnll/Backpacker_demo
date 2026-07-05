@@ -2853,7 +2853,7 @@ h3 {
 .sheet {
   position: fixed;
   inset: 0;
-  z-index: 30;
+  z-index: 70;
   display: none;
 }
 
@@ -2878,6 +2878,117 @@ h3 {
   background: var(--panel);
   overflow: auto;
   box-shadow: 0 -18px 45px rgba(35, 35, 31, 0.24);
+}
+
+.trip-draft-ai-panel {
+  max-height: min(92vh, 780px);
+  padding-top: 12px;
+}
+
+.trip-draft-ai-body,
+.trip-draft-input,
+.trip-draft-preview {
+  display: grid;
+  gap: 12px;
+}
+
+.trip-draft-choice-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.trip-draft-choice {
+  min-height: 52px;
+  justify-content: center;
+  border-color: rgba(18, 54, 61, 0.34);
+  background: var(--active-button-gradient);
+  box-shadow: var(--active-button-shadow);
+  color: #fff;
+  font-weight: 900;
+}
+
+.trip-draft-ai-panel .primary-button,
+.trip-draft-ai-panel .ghost-button {
+  border-color: rgba(18, 54, 61, 0.34);
+  background: var(--active-button-gradient);
+  box-shadow: var(--active-button-shadow);
+  color: #fff;
+  font-weight: 900;
+}
+
+.trip-draft-ai-panel .primary-button:disabled,
+.trip-draft-ai-panel .ghost-button:disabled {
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+.trip-draft-copy {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.trip-draft-voice-controls,
+.trip-draft-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: center;
+}
+
+.trip-draft-actions {
+  position: sticky;
+  bottom: -14px;
+  z-index: 1;
+  padding: 10px 0 calc(10px + env(safe-area-inset-bottom));
+  background: var(--panel);
+}
+
+.trip-draft-recording-indicator {
+  color: var(--danger);
+  font-weight: 900;
+}
+
+.trip-draft-status {
+  min-height: 20px;
+  margin: 0;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.trip-draft-status.is-error {
+  color: var(--danger);
+}
+
+.trip-draft-preview-box {
+  display: grid;
+  gap: 10px;
+}
+
+.trip-draft-preview-card {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.trip-draft-preview-card h3 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 17px;
+}
+
+.trip-draft-preview-card p,
+.trip-draft-preview-card ul {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.trip-draft-preview-card ul {
+  padding-left: 18px;
 }
 
 .export-format-dialog {

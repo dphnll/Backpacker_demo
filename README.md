@@ -6,6 +6,7 @@ Mobile-first prototype of a personal trip basket for independent travelers.
 
 - One active trip.
 - Trip items with type, status, day, time, price, paid amount, link and notes.
+- AI trip draft from text or voice: text is parsed into ordinary trip fields and cards, while voice is transcribed before the same parse flow.
 - Plan by days.
 - Basket grouped by status.
 - Budget summary.
@@ -20,6 +21,12 @@ Mobile-first prototype of a personal trip basket for independent travelers.
 - Local persistence via `localStorage`.
 - Unshared personal trips stay local. Shared-link management uses Supabase Anonymous Auth without a registration screen.
 - No permanent accounts, collaborative editing, maps, booking integrations, or full multi-device sync.
+
+## AI trip draft
+
+`Создать новую поездку` can start a manual trip, a text-to-AI draft, or a voice-to-AI draft. Voice input is transcribed first, then the user can edit the text before sending it for parsing.
+
+The OpenAI API key must be configured only as a Supabase Edge Function secret named `OPENAI_API_KEY`. It must never be committed or exposed in frontend config. The Edge Function `trip-draft-ai` does not store trip prompt text or audio in Supabase tables.
 
 ## Sharing with friends
 

@@ -15,11 +15,12 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.18";
-const APP_RELEASE_SUMMARY = "можно делиться поездками с друзьями, сохранять приглашения и предлагать сплит расходов или новые идеи.";
+const APP_VERSION = "1.1.2.19";
+const APP_RELEASE_SUMMARY = "появился AI-черновик поездки из текста или голоса: Backpacker раскладывает идеи по дням и парковке.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
+const TRIP_DRAFT_AI_SCHEMA_VERSION = "trip_draft_ai.v1";
 const DONATION_FLOW_ENABLED = false;
 const DONATION_URL = ANALYTICS_CONFIG.donationUrl || "https://t.me/bckpckrbot?start=donate";
 const DEFAULT_ITEM_STATUS = "want";
@@ -64,6 +65,7 @@ let itemProposalDraft = { title: "", itemType: "idea", link: "", price: "", note
 let authorExpenseProposals = [];
 let authorItemProposals = [];
 let userProfile = { loaded: false, loading: false, displayName: "", error: "" };
+let tripDraftAiState = { mode: "choice", inputMode: "text", isBusy: false, isRecording: false, draft: null, mediaRecorder: null, chunks: [] };
 let pendingProfileAction = null;
 let profileSaving = false;
 const resolvingExpenseProposalIds = new Set();
@@ -555,6 +557,13 @@ function getTripShareFunctionUrl() {
   return `${String(config.url).replace(/\/+$/, "")}/functions/v1/trip-share`;
 }
 
+function getTripDraftAiFunctionUrl() {
+  const config = getSupabaseConfig();
+  if (config.tripDraftAiFunctionUrl) return config.tripDraftAiFunctionUrl;
+  if (!config.url) return "";
+  return `${String(config.url).replace(/\/+$/, "")}/functions/v1/trip-draft-ai`;
+}
+
 function isSupabaseConfigured() {
   const config = getSupabaseConfig();
   return Boolean(config.url && config.anonKey && window.supabase?.createClient);
@@ -623,6 +632,29 @@ async function callTripShareFunction(action, payload = {}, { requireOwner = fals
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = new Error(data.error || `trip_share_${action}_failed`);
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+
+async function callTripDraftAiFunction(action, payload = {}) {
+  const config = getSupabaseConfig();
+  const url = getTripDraftAiFunctionUrl();
+  if (!url || !config.anonKey) throw new Error("supabase_not_configured");
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: config.anonKey,
+      Authorization: `Bearer ${await ensureSupabaseOwnerSession()}`,
+    },
+    cache: "no-store",
+    body: JSON.stringify({ action, ...payload }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data.error || `trip_draft_ai_${action}_failed`);
     error.status = response.status;
     throw error;
   }
@@ -5318,6 +5350,301 @@ function openTrip(tripId) {
   }
 }
 
+function setTripDraftAiStatus(message = "", isError = false) {
+  const status = $("#tripDraftStatus");
+  if (!status) return;
+  status.textContent = message;
+  status.classList.toggle("is-error", Boolean(isError));
+}
+
+function renderTripDraftAiSheet() {
+  const choice = $(".trip-draft-choice-grid");
+  const inputStep = $("#tripDraftInputStep");
+  const previewStep = $("#tripDraftPreviewStep");
+  const voiceControls = $("#tripDraftVoiceControls");
+  const recordButton = $("#tripDraftRecordButton");
+  const parseButton = $("#tripDraftParseButton");
+  const createButton = $("#tripDraftCreateButton");
+  const recordingIndicator = $("#tripDraftRecordingIndicator");
+  const title = $("#tripDraftAiTitle");
+  if (!choice || !inputStep || !previewStep) return;
+
+  choice.classList.toggle("hidden", tripDraftAiState.mode !== "choice");
+  inputStep.classList.toggle("hidden", tripDraftAiState.mode !== "input");
+  previewStep.classList.toggle("hidden", tripDraftAiState.mode !== "preview");
+  voiceControls?.classList.toggle("hidden", tripDraftAiState.inputMode !== "voice");
+  recordingIndicator?.classList.toggle("hidden", !tripDraftAiState.isRecording);
+  if (title) title.textContent = tripDraftAiState.mode === "choice" ? "Создать поездку" : "AI-черновик поездки";
+  if (recordButton) recordButton.textContent = tripDraftAiState.isRecording ? "Остановить запись" : "Начать запись";
+  if (parseButton) {
+    parseButton.disabled = tripDraftAiState.isBusy;
+    parseButton.textContent = tripDraftAiState.isBusy ? "Разбираю..." : "Разобрать поездку";
+  }
+  if (createButton) {
+    createButton.disabled = tripDraftAiState.isBusy || !tripDraftAiState.draft;
+  }
+}
+
+function openTripDraftAiSheet() {
+  tripDraftAiState = { mode: "choice", inputMode: "text", isBusy: false, isRecording: false, draft: null, mediaRecorder: null, chunks: [] };
+  const input = $("#tripDraftTextInput");
+  if (input) input.value = "";
+  setTripDraftAiStatus("");
+  renderTripDraftPreview(null);
+  renderTripDraftAiSheet();
+  openSheet("tripDraftAiSheet");
+  trackEvent("trip_create_sheet_opened", { creation_source: "home" });
+}
+
+function startTripDraftTextMode(mode = "text") {
+  tripDraftAiState = { ...tripDraftAiState, mode: "input", inputMode: mode, draft: null };
+  setTripDraftAiStatus(mode === "voice" ? "Запишите голос, потом проверьте текст перед разбором." : "");
+  renderTripDraftAiSheet();
+  window.setTimeout(() => $("#tripDraftTextInput")?.focus(), 80);
+}
+
+function cleanupTripDraftAiRecording() {
+  if (!tripDraftAiState.mediaRecorder) return;
+  try {
+    if (tripDraftAiState.mediaRecorder.state !== "inactive") tripDraftAiState.mediaRecorder.stop();
+  } catch {
+    // Best effort cleanup only.
+  }
+  tripDraftAiState = { ...tripDraftAiState, isRecording: false, mediaRecorder: null, chunks: [] };
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function toggleTripDraftRecording() {
+  if (tripDraftAiState.isRecording && tripDraftAiState.mediaRecorder) {
+    tripDraftAiState.mediaRecorder.stop();
+    return;
+  }
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    setTripDraftAiStatus("Запись голоса не поддерживается в этом браузере. Можно вставить текст.", true);
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const recorder = new MediaRecorder(stream);
+    tripDraftAiState = { ...tripDraftAiState, mediaRecorder: recorder, chunks: [], isRecording: true };
+    recorder.addEventListener("dataavailable", (event) => {
+      if (event.data?.size) tripDraftAiState.chunks.push(event.data);
+    });
+    recorder.addEventListener("stop", async () => {
+      stream.getTracks().forEach((track) => track.stop());
+      tripDraftAiState = { ...tripDraftAiState, isRecording: false, mediaRecorder: null, isBusy: true };
+      renderTripDraftAiSheet();
+      setTripDraftAiStatus("Расшифровываю запись...");
+      try {
+        const blob = new Blob(tripDraftAiState.chunks, { type: recorder.mimeType || "audio/webm" });
+        const audioDataUrl = await blobToDataUrl(blob);
+        const payload = await callTripDraftAiFunction("transcribe", { audioDataUrl });
+        const input = $("#tripDraftTextInput");
+        if (input) input.value = [input.value.trim(), payload.text || ""].filter(Boolean).join(input.value.trim() ? "\n\n" : "");
+        setTripDraftAiStatus("Текст готов. Проверьте его перед разбором.");
+        trackEvent("trip_draft_voice_transcribed", { ok: true });
+      } catch {
+        setTripDraftAiStatus("Не удалось расшифровать запись. Можно вставить текст вручную.", true);
+        trackEvent("trip_draft_voice_transcribed", { ok: false });
+      } finally {
+        tripDraftAiState = { ...tripDraftAiState, isBusy: false, chunks: [] };
+        renderTripDraftAiSheet();
+      }
+    });
+    recorder.start();
+    setTripDraftAiStatus("Говорите. Нажмите ещё раз, чтобы остановить запись.");
+    renderTripDraftAiSheet();
+  } catch {
+    setTripDraftAiStatus("Не удалось получить доступ к микрофону. Можно вставить текст.", true);
+  }
+}
+
+function normalizeTripDraftItemType(type = "") {
+  const value = String(type || "").toLowerCase();
+  return itemTypes.some(([key]) => key === value) ? value : "idea";
+}
+
+function normalizeTripDraftDate(value = "") {
+  return parseDateFromInput(String(value || "")) || "";
+}
+
+function normalizeTripDraftTime(value = "") {
+  const text = String(value || "").trim();
+  return /^\d{2}:\d{2}$/.test(text) ? text : "";
+}
+
+function normalizeTripDraftResponse(payload = {}) {
+  const draft = payload.draft || payload;
+  const trip = draft.trip || {};
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const fallbackStart = today.toISOString().slice(0, 10);
+  const fallbackEnd = tomorrow.toISOString().slice(0, 10);
+  const startDate = normalizeTripDraftDate(trip.startDate) || fallbackStart;
+  const endDate = normalizeTripDraftDate(trip.endDate) || startDate || fallbackEnd;
+  const items = Array.isArray(draft.items) ? draft.items : [];
+  const questions = Array.isArray(draft.questions) ? draft.questions.filter(Boolean).slice(0, 5) : [];
+  return {
+    trip: {
+      title: String(trip.title || "Новая поездка").trim().slice(0, 80) || "Новая поездка",
+      destination: String(trip.destination || "").trim().slice(0, 120),
+      startDate,
+      endDate: endDate < startDate ? startDate : endDate,
+      currency: getSupportedCurrencies().includes(trip.currency) ? trip.currency : "RUB",
+      budgetLimit: parseMoney(trip.budgetLimit),
+      preferencesText: String(trip.preferencesText || "").trim().slice(0, 4000),
+    },
+    items: items.slice(0, 80).map((item, index) => ({
+      title: String(item.title || `Идея ${index + 1}`).trim().slice(0, 120) || `Идея ${index + 1}`,
+      type: normalizeTripDraftItemType(item.type),
+      status: statuses.some(([key]) => key === item.status) ? item.status : DEFAULT_ITEM_STATUS,
+      priority: priorities.some(([key]) => key === item.priority) ? item.priority : DEFAULT_ITEM_PRIORITY,
+      date: normalizeTripDraftDate(item.date),
+      startTime: normalizeTripDraftTime(item.startTime),
+      durationMinutes: Math.max(0, Math.min(1440, parseMoney(item.durationMinutes))),
+      price: Math.max(0, parseMoney(item.price)),
+      paidAmount: 0,
+      link: String(item.link || "").trim().slice(0, 500),
+      locationText: String(item.locationText || "").trim().slice(0, 160),
+      notes: String(item.notes || "").trim().slice(0, 1000),
+    })),
+    questions,
+  };
+}
+
+function renderTripDraftPreview(draft) {
+  const box = $("#tripDraftPreviewBox");
+  if (!box) return;
+  if (!draft) {
+    box.innerHTML = "";
+    return;
+  }
+  const datedCount = draft.items.filter((item) => item.date).length;
+  const parkingCount = draft.items.length - datedCount;
+  const firstItems = draft.items.slice(0, 8);
+  box.innerHTML = `
+    <article class="trip-draft-preview-card">
+      <h3>${escapeHtml(draft.trip.title)}</h3>
+      <p>${escapeHtml(draft.trip.destination || "Направление не указано")} · ${escapeHtml(formatTripCardDateRange(draft.trip.startDate, draft.trip.endDate))}</p>
+    </article>
+    <article class="trip-draft-preview-card">
+      <h3>Что попадёт в поездку</h3>
+      <p>${datedCount} в план по дням · ${parkingCount} в парковку</p>
+    </article>
+    ${firstItems.length ? `<article class="trip-draft-preview-card"><h3>Первые идеи</h3><ul>${firstItems.map((item) => `<li>${escapeHtml(item.title)}${item.date ? ` · ${escapeHtml(formatDate(item.date))}` : " · парковка"}</li>`).join("")}</ul></article>` : ""}
+    ${draft.questions.length ? `<article class="trip-draft-preview-card"><h3>Что можно уточнить позже</h3><ul>${draft.questions.map((question) => `<li>${escapeHtml(question)}</li>`).join("")}</ul></article>` : ""}
+  `;
+}
+
+async function parseTripDraftText() {
+  const input = $("#tripDraftTextInput");
+  const text = input?.value.trim() || "";
+  if (text.length < 20) {
+    setTripDraftAiStatus("Добавьте чуть больше описания поездки.", true);
+    input?.focus();
+    return;
+  }
+  tripDraftAiState = { ...tripDraftAiState, isBusy: true, draft: null };
+  setTripDraftAiStatus("Разбираю текст в черновик...");
+  renderTripDraftAiSheet();
+  try {
+    const payload = await callTripDraftAiFunction("parse", {
+      text,
+      schemaVersion: TRIP_DRAFT_AI_SCHEMA_VERSION,
+      locale: "ru-RU",
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+    });
+    const draft = normalizeTripDraftResponse(payload);
+    tripDraftAiState = { ...tripDraftAiState, isBusy: false, mode: "preview", draft };
+    renderTripDraftPreview(draft);
+    setTripDraftAiStatus("");
+    renderTripDraftAiSheet();
+    trackEvent("trip_draft_ai_parsed", {
+      ok: true,
+      has_dates: Boolean(draft.trip.startDate && draft.trip.endDate),
+      item_count: draft.items.length,
+      dated_item_count: draft.items.filter((item) => item.date).length,
+      has_questions: Boolean(draft.questions.length),
+    });
+  } catch (error) {
+    tripDraftAiState = { ...tripDraftAiState, isBusy: false };
+    setTripDraftAiStatus(error.message === "supabase_not_configured" ? "Supabase не настроен: AI-черновик пока недоступен." : "Не удалось разобрать поездку. Попробуйте ещё раз.", true);
+    renderTripDraftAiSheet();
+    trackEvent("trip_draft_ai_parsed", { ok: false });
+  }
+}
+
+function createTripEntryFromDraft(draft) {
+  const id = `trip-${Date.now()}`;
+  const selfParticipant = createSelfParticipant(id);
+  const orderByDate = new Map();
+  const nextState = {
+    trip: {
+      id,
+      title: draft.trip.title,
+      destination: draft.trip.destination,
+      startDate: draft.trip.startDate,
+      endDate: draft.trip.endDate,
+      currency: draft.trip.currency,
+      budgetLimit: draft.trip.budgetLimit,
+      preferencesText: draft.trip.preferencesText,
+      participants: [selfParticipant],
+    },
+    items: draft.items.map((item, index) => {
+      const order = orderByDate.get(item.date || "") || 0;
+      orderByDate.set(item.date || "", order + 1);
+      return {
+        id: `item-${Date.now()}-${index}`,
+        title: item.title,
+        type: item.type,
+        status: item.status,
+        priority: item.priority,
+        date: item.date,
+        startTime: item.startTime,
+        durationMinutes: item.durationMinutes,
+        price: item.price,
+        paidAmount: item.paidAmount,
+        participantId: selfParticipant.id,
+        allocations: item.price > 0 ? [{ participantId: selfParticipant.id, amount: item.price }] : [],
+        link: item.link,
+        locationText: item.locationText,
+        notes: item.notes,
+        order,
+        creationSource: "ai_draft",
+      };
+    }),
+  };
+  return createTripEntry(nextState, { id });
+}
+
+function createTripFromAiDraft() {
+  if (!tripDraftAiState.draft) return;
+  const entry = createTripEntryFromDraft(tripDraftAiState.draft);
+  tripStore.trips.push(entry);
+  persistTripStore(tripStore);
+  closeSheet("tripDraftAiSheet");
+  openTrip(entry.id);
+  showToast("Черновик поездки создан");
+  trackEvent("trip_created", {
+    ...getTripAnalyticsContext(entry.state.trip),
+    trip_id: entry.id,
+    trip_origin: "user_created",
+    creation_source: "ai_draft",
+    trip_count_after_create: getUserTripCount(),
+    is_second_user_trip: getUserTripCount() >= 2,
+  });
+  checkTripMilestones();
+}
+
 function createNewTrip(creationSource = "home") {
   const entry = createBlankTripEntry();
   tripStore.trips.push(entry);
@@ -5782,6 +6109,20 @@ function bindEvents() {
       return;
     }
 
+    const tripDraftModeButton = event.target.closest("[data-trip-draft-mode]");
+    if (tripDraftModeButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      const mode = tripDraftModeButton.dataset.tripDraftMode;
+      if (mode === "manual") {
+        closeSheet("tripDraftAiSheet");
+        createNewTrip("home_manual");
+      } else if (mode === "text" || mode === "voice") {
+        startTripDraftTextMode(mode);
+      }
+      return;
+    }
+
     const editButton = event.target.closest("[data-edit]");
     if (editButton && isReadOnlyMode()) {
       openExpenseProposalSheet(editButton.dataset.edit);
@@ -5804,6 +6145,7 @@ function bindEvents() {
     const closeTarget = event.target.closest("[data-close]");
     if (closeTarget) {
       if (closeTarget.dataset.close === "profile") pendingProfileAction = null;
+      if (closeTarget.dataset.close === "tripDraftAi") cleanupTripDraftAiRecording();
       closeSheet(`${closeTarget.dataset.close}Sheet`);
     }
 
@@ -5995,7 +6337,20 @@ function bindEvents() {
       openTrip("trainer-kazan");
     }
   });
-  $("#createTripButton").addEventListener("click", createNewTrip);
+  $("#createTripButton").addEventListener("click", openTripDraftAiSheet);
+  $("#tripDraftBackButton")?.addEventListener("click", () => {
+    if (tripDraftAiState.isRecording) return;
+    tripDraftAiState = { ...tripDraftAiState, mode: "choice", draft: null };
+    setTripDraftAiStatus("");
+    renderTripDraftAiSheet();
+  });
+  $("#tripDraftRecordButton")?.addEventListener("click", toggleTripDraftRecording);
+  $("#tripDraftParseButton")?.addEventListener("click", parseTripDraftText);
+  $("#tripDraftEditTextButton")?.addEventListener("click", () => {
+    tripDraftAiState = { ...tripDraftAiState, mode: "input" };
+    renderTripDraftAiSheet();
+  });
+  $("#tripDraftCreateButton")?.addEventListener("click", createTripFromAiDraft);
   $("#refreshProposalsButton").addEventListener("click", refreshAuthorExpenseProposals);
   $("#introNextButton").addEventListener("click", () => showIntroSlide(1));
   $("#introSecondNextButton").addEventListener("click", () => showIntroSlide(2));

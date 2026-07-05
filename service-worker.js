@@ -1,4 +1,4 @@
-const CACHE_NAME = "backpacker-pwa-v49";
+const CACHE_NAME = "backpacker-pwa-v50";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -40,7 +40,7 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  if (url.pathname.includes("/functions/v1/trip-share") || url.pathname.endsWith("/supabase-config.js") || url.searchParams.has("share")) {
+  if (url.pathname.includes("/functions/v1/trip-share") || url.pathname.includes("/functions/v1/trip-draft-ai") || url.pathname.endsWith("/supabase-config.js") || url.searchParams.has("share")) {
     event.respondWith(fetch(event.request, { cache: "no-store" }));
     return;
   }
