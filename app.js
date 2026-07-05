@@ -15,12 +15,13 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.19";
+const APP_VERSION = "1.1.2.20";
 const APP_RELEASE_SUMMARY = "появился AI-черновик поездки из текста или голоса: Backpacker раскладывает идеи по дням и парковке.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
 const TRIP_DRAFT_AI_SCHEMA_VERSION = "trip_draft_ai.v1";
+const TRIP_DRAFT_AI_ENABLED = false;
 const DONATION_FLOW_ENABLED = false;
 const DONATION_URL = ANALYTICS_CONFIG.donationUrl || "https://t.me/bckpckrbot?start=donate";
 const DEFAULT_ITEM_STATUS = "want";
@@ -5362,6 +5363,8 @@ function renderTripDraftAiSheet() {
   const inputStep = $("#tripDraftInputStep");
   const previewStep = $("#tripDraftPreviewStep");
   const voiceControls = $("#tripDraftVoiceControls");
+  const textModeButton = $("#tripDraftTextModeButton");
+  const voiceModeButton = $("#tripDraftVoiceModeButton");
   const recordButton = $("#tripDraftRecordButton");
   const parseButton = $("#tripDraftParseButton");
   const createButton = $("#tripDraftCreateButton");
@@ -5374,10 +5377,12 @@ function renderTripDraftAiSheet() {
   previewStep.classList.toggle("hidden", tripDraftAiState.mode !== "preview");
   voiceControls?.classList.toggle("hidden", tripDraftAiState.inputMode !== "voice");
   recordingIndicator?.classList.toggle("hidden", !tripDraftAiState.isRecording);
+  if (textModeButton) textModeButton.disabled = !TRIP_DRAFT_AI_ENABLED;
+  if (voiceModeButton) voiceModeButton.disabled = !TRIP_DRAFT_AI_ENABLED;
   if (title) title.textContent = tripDraftAiState.mode === "choice" ? "Создать поездку" : "AI-черновик поездки";
   if (recordButton) recordButton.textContent = tripDraftAiState.isRecording ? "Остановить запись" : "Начать запись";
   if (parseButton) {
-    parseButton.disabled = tripDraftAiState.isBusy;
+    parseButton.disabled = tripDraftAiState.isBusy || !TRIP_DRAFT_AI_ENABLED;
     parseButton.textContent = tripDraftAiState.isBusy ? "Разбираю..." : "Разобрать поездку";
   }
   if (createButton) {
@@ -5397,6 +5402,7 @@ function openTripDraftAiSheet() {
 }
 
 function startTripDraftTextMode(mode = "text") {
+  if (!TRIP_DRAFT_AI_ENABLED) return;
   tripDraftAiState = { ...tripDraftAiState, mode: "input", inputMode: mode, draft: null };
   setTripDraftAiStatus(mode === "voice" ? "Запишите голос, потом проверьте текст перед разбором." : "");
   renderTripDraftAiSheet();
@@ -5423,6 +5429,7 @@ function blobToDataUrl(blob) {
 }
 
 async function toggleTripDraftRecording() {
+  if (!TRIP_DRAFT_AI_ENABLED) return;
   if (tripDraftAiState.isRecording && tripDraftAiState.mediaRecorder) {
     tripDraftAiState.mediaRecorder.stop();
     return;
@@ -5546,6 +5553,7 @@ function renderTripDraftPreview(draft) {
 }
 
 async function parseTripDraftText() {
+  if (!TRIP_DRAFT_AI_ENABLED) return;
   const input = $("#tripDraftTextInput");
   const text = input?.value.trim() || "";
   if (text.length < 20) {
