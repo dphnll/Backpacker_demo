@@ -15,7 +15,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.24";
+const APP_VERSION = "1.1.2.25";
 const APP_RELEASE_SUMMARY = "появился AI-черновик поездки из текста или голоса: Backpacker раскладывает идеи по дням и парковке.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -894,6 +894,8 @@ function normalizeState(nextState) {
   normalized.trip.dayCount = normalized.trip.startDate || normalized.trip.endDate
     ? getTripDayCount(normalized.trip)
     : normalizeTripDayCount(normalized.trip.dayCount, 1);
+  normalized.trip.datePrecision = normalizeTripDraftDatePrecision(normalized.trip.datePrecision, normalized.trip.startDate, normalized.trip.endDate);
+  normalized.trip.dateSourceText = normalized.trip.datePrecision === "approximate" ? String(normalized.trip.dateSourceText || "").trim().slice(0, 160) : "";
   normalized.trip.aiSourceText = String(normalized.trip.aiSourceText || "").trim().slice(0, 30000);
   normalized.trip.preferencesText = String(normalized.trip.preferencesText || "").trim().slice(0, 4000);
   let participants = Array.isArray(normalized.trip.participants) ? normalized.trip.participants : [];
@@ -3827,6 +3829,8 @@ function buildPublishedTripState() {
   if (entry?.coverDataUrl) published.trip.coverDataUrl = entry.coverDataUrl;
   delete published.trip.aiSourceText;
   delete published.trip.preferencesText;
+  delete published.trip.datePrecision;
+  delete published.trip.dateSourceText;
   return published;
 }
 
@@ -5560,6 +5564,22 @@ function normalizeTripDraftItemType(type = "") {
   return itemTypes.some(([key]) => key === value) ? value : "idea";
 }
 
+function isTransportTicketText(value = "") {
+  return /(?:^|[^\p{L}\p{N}])(самолет|самолёт|авиа|аэро|рейс|перел[её]т|поезд|электричк|автобус|трансфер|такси|метро|трамва|паром|катер|теплоход|машин|авто|аренд|вокзал|аэропорт)/iu.test(String(value || ""));
+}
+
+function normalizeTripDraftItemTypeForItem(item = {}) {
+  const rawType = String(item.type || "").toLowerCase();
+  const titleAndNotes = `${item.title || ""} ${item.notes || ""} ${item.locationText || ""}`;
+  if (["plane", "flight", "train", "bus", "car", "taxi", "transfer", "ferry", "boat", "transport"].includes(rawType)) {
+    return "transport";
+  }
+  if (rawType === "ticket") {
+    return isTransportTicketText(titleAndNotes) ? "transport" : "idea";
+  }
+  return normalizeTripDraftItemType(rawType);
+}
+
 function normalizeTripDraftDate(value = "") {
   const raw = String(value || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return "";
@@ -5581,13 +5601,79 @@ function normalizeTripDraftTime(value = "") {
   return /^\d{2}:\d{2}$/.test(text) ? text : "";
 }
 
-function normalizeTripDraftResponse(payload = {}) {
+function normalizeTripDraftDatePrecision(value = "", startDate = "", endDate = "") {
+  const normalized = String(value || "").toLowerCase();
+  if (normalized === "approximate") return startDate || endDate ? "approximate" : "none";
+  if (normalized === "exact") return startDate || endDate ? "exact" : "none";
+  return startDate || endDate ? "exact" : "none";
+}
+
+function extractApproximateDateSourceText(text = "") {
+  const month = "(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)";
+  const period = "(?:(?:перв(?:ой|ую)|втор(?:ой|ую))\\s+половин[аеу]|середин[аеу]|конц[аеу]|начал[аеу])";
+  const duration = "(?:\\s+на\\s+(?:(?:\\d{1,2}\\s*[-–—]\\s*)?\\d{1,2}\\s*(?:день|дня|дней|дн(?:я|ей|\\.)?|недел[юияь])|неделю))?";
+  const match = String(text || "").match(new RegExp(`(?:в|во)\\s+${period}\\s+${month}${duration}`, "iu"));
+  return match ? match[0].trim().slice(0, 160) : "";
+}
+
+function extractTripDayCountFromSourceText(text = "") {
+  const source = String(text || "").toLowerCase();
+  const dayWord = "(?:день|дня|дней|дн(?:я|ей|\\.)?)";
+  const rangeMatch = source.match(new RegExp(`(?:на\\s*)?(\\d{1,2})\\s*[-–—]\\s*(\\d{1,2})\\s*${dayWord}`, "iu"));
+  if (rangeMatch) {
+    return normalizeTripDayCount(Math.max(Number(rangeMatch[1]), Number(rangeMatch[2])), 0);
+  }
+  const singleMatch = source.match(new RegExp(`(?:на\\s*)?(\\d{1,2})\\s*${dayWord}`, "iu"));
+  if (singleMatch) {
+    return normalizeTripDayCount(Number(singleMatch[1]), 0);
+  }
+  const weekMatch = source.match(/(?:^|[^\p{L}\p{N}])(?:на\s*)?(?:неделю|1\s*недел[юяи])(?:$|[^\p{L}\p{N}])/iu);
+  if (weekMatch) return 7;
+  const weekRangeMatch = source.match(/(?:^|[^\p{L}\p{N}])(?:на\s*)?(\d{1,2})\s*[-–—]\s*(\d{1,2})\s*недел[юияь](?:$|[^\p{L}\p{N}])/iu);
+  if (weekRangeMatch) {
+    return normalizeTripDayCount(Math.max(Number(weekRangeMatch[1]), Number(weekRangeMatch[2])) * 7, 0);
+  }
+  const weekSingleMatch = source.match(/(?:^|[^\p{L}\p{N}])(?:на\s*)?(\d{1,2})\s*недел[юияь](?:$|[^\p{L}\p{N}])/iu);
+  if (weekSingleMatch) {
+    return normalizeTripDayCount(Number(weekSingleMatch[1]) * 7, 0);
+  }
+  return 0;
+}
+
+function getMaxTripDraftDayIndex(items = []) {
+  return items.reduce((max, item) => {
+    const dayIndex = normalizeTripDayCount(item?.dayIndex, 0);
+    const dateIndex = getVirtualDayIndex(item?.date || "");
+    return Math.max(max, dayIndex, dateIndex);
+  }, 0);
+}
+
+function getTripDraftDateFromDayIndex(startDate = "", dayIndex = 0) {
+  const start = normalizeTripDraftDate(startDate);
+  const index = normalizeTripDayCount(dayIndex, 0);
+  if (!start || index <= 0) return "";
+  const date = new Date(`${start}T12:00:00`);
+  date.setDate(date.getDate() + index - 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeTripDraftResponse(payload = {}, sourceText = "") {
   const draft = payload.draft || payload;
   const trip = draft.trip || {};
   const startDate = normalizeTripDraftDate(trip.startDate);
   const endDate = normalizeTripDraftDate(trip.endDate);
-  const dayCount = startDate || endDate ? getTripDayCount({ startDate, endDate }) : normalizeTripDayCount(trip.dayCount, 1);
   const items = Array.isArray(draft.items) ? draft.items : [];
+  const modelDayCount = normalizeTripDayCount(trip.dayCount, 0);
+  const sourceDayCount = extractTripDayCountFromSourceText(sourceText);
+  const maxItemDayIndex = getMaxTripDraftDayIndex(items);
+  const dayCount = startDate || endDate
+    ? getTripDayCount({ startDate, endDate })
+    : Math.max(1, modelDayCount, sourceDayCount, maxItemDayIndex);
+  const approximateDateSourceText = extractApproximateDateSourceText(sourceText);
+  const datePrecision = approximateDateSourceText && (startDate || endDate)
+    ? "approximate"
+    : normalizeTripDraftDatePrecision(trip.datePrecision, startDate, endDate);
+  const dateSourceText = datePrecision === "approximate" ? String(trip.dateSourceText || approximateDateSourceText || "").trim().slice(0, 160) : "";
   const questions = Array.isArray(draft.questions) ? draft.questions.filter(Boolean).slice(0, 5) : [];
   return {
     trip: {
@@ -5596,6 +5682,8 @@ function normalizeTripDraftResponse(payload = {}) {
       startDate,
       endDate: startDate && endDate && endDate < startDate ? startDate : endDate,
       dayCount,
+      datePrecision,
+      dateSourceText,
       currency: getSupportedCurrencies().includes(trip.currency) ? trip.currency : "RUB",
       budgetLimit: parseMoney(trip.budgetLimit),
       preferencesText: String(trip.preferencesText || "").trim().slice(0, 4000),
@@ -5604,12 +5692,13 @@ function normalizeTripDraftResponse(payload = {}) {
       const explicitDate = normalizeTripDraftDate(item.date);
       const dayIndex = normalizeTripDayCount(item.dayIndex, 0);
       const virtualDate = !startDate && !endDate && dayIndex > 0 && dayIndex <= dayCount ? createVirtualDayDate(dayIndex) : "";
+      const indexedDate = startDate && dayIndex > 0 && dayIndex <= dayCount ? getTripDraftDateFromDayIndex(startDate, dayIndex) : "";
       return {
         title: String(item.title || `Идея ${index + 1}`).trim().slice(0, 120) || `Идея ${index + 1}`,
-        type: normalizeTripDraftItemType(item.type),
+        type: normalizeTripDraftItemTypeForItem(item),
         status: statuses.some(([key]) => key === item.status) ? item.status : DEFAULT_ITEM_STATUS,
         priority: priorities.some(([key]) => key === item.priority) ? item.priority : DEFAULT_ITEM_PRIORITY,
-        date: explicitDate || virtualDate,
+        date: explicitDate || indexedDate || virtualDate,
         startTime: normalizeTripDraftTime(item.startTime),
         durationMinutes: Math.max(0, Math.min(1440, parseMoney(item.durationMinutes))),
         price: Math.max(0, parseMoney(item.price)),
@@ -5663,6 +5752,9 @@ function renderTripDraftPreview(draft) {
     return;
   }
   const sourceText = tripDraftAiState.sourceText || $("#tripDraftTextInput")?.value || "";
+  const approximateDateNote = draft.trip.datePrecision === "approximate"
+    ? `<p class="trip-draft-date-note"><strong>Примерные даты.</strong>${draft.trip.dateSourceText ? ` По формулировке: ${escapeHtml(draft.trip.dateSourceText)}.` : ""} Можно изменить даты вручную перед созданием.</p>`
+    : "";
   box.innerHTML = `
     <article class="trip-draft-preview-card">
       <h3>Поездка</h3>
@@ -5674,6 +5766,7 @@ function renderTripDraftPreview(draft) {
         <label class="field">Валюта<select data-draft-trip-field="currency">${renderTripDraftCurrencyOptions(draft.trip.currency)}</select></label>
         <label class="field">Бюджет<input inputmode="numeric" data-draft-trip-field="budgetLimit" value="${escapeAttr(draft.trip.budgetLimit ? draft.trip.budgetLimit : "")}" /></label>
       </div>
+      ${approximateDateNote}
       <label class="field wide trip-draft-preferences-field">Пожелания к поездке<textarea rows="4" data-draft-trip-field="preferencesText">${escapeHtml(draft.trip.preferencesText || "")}</textarea></label>
     </article>
     <details class="trip-draft-source">
@@ -5714,6 +5807,9 @@ function collectTripDraftPreviewForm() {
   const current = tripDraftAiState.draft;
   if (!box || !current) return null;
   const readTripField = (field) => box.querySelector(`[data-draft-trip-field="${field}"]`)?.value || "";
+  const nextStartDate = readTripField("startDate");
+  const nextEndDate = readTripField("endDate");
+  const dateRangeChanged = nextStartDate !== (current.trip.startDate || "") || nextEndDate !== (current.trip.endDate || "");
   const items = Array.from(box.querySelectorAll(".trip-draft-item-editor[data-draft-item-index]")).map((container, index) => {
     const original = current.items[index] || {};
     const readItemField = (field) => container.querySelector(`[data-draft-item-field="${field}"]`)?.value || "";
@@ -5733,8 +5829,11 @@ function collectTripDraftPreviewForm() {
       trip: {
         title: readTripField("title").trim(),
         destination: readTripField("destination").trim(),
-        startDate: readTripField("startDate"),
-        endDate: readTripField("endDate"),
+        startDate: nextStartDate,
+        endDate: nextEndDate,
+        dayCount: current.trip.dayCount,
+        datePrecision: dateRangeChanged ? "exact" : current.trip.datePrecision,
+        dateSourceText: dateRangeChanged ? "" : current.trip.dateSourceText,
         currency: readTripField("currency") || "RUB",
         budgetLimit: readTripField("budgetLimit"),
         preferencesText: readTripField("preferencesText").trim(),
@@ -5808,7 +5907,7 @@ async function parseTripDraftText() {
       locale: "ru-RU",
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
     });
-    const draft = normalizeTripDraftResponse(payload);
+    const draft = normalizeTripDraftResponse(payload, text);
     tripDraftAiState = { ...tripDraftAiState, isBusy: false, mode: "preview", draft, sourceText: text };
     renderTripDraftPreview(draft);
     setTripDraftAiStatus("");
@@ -5834,6 +5933,8 @@ function createTripEntryFromDraft(draft) {
       startDate: draft.trip.startDate,
       endDate: draft.trip.endDate,
       dayCount: normalizeTripDayCount(draft.trip.dayCount, getTripDayCount(draft.trip)),
+      datePrecision: draft.trip.datePrecision,
+      dateSourceText: draft.trip.dateSourceText,
       currency: draft.trip.currency,
       budgetLimit: draft.trip.budgetLimit,
       preferencesText: draft.trip.preferencesText,

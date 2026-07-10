@@ -2885,11 +2885,19 @@ h3 {
   padding-top: 12px;
 }
 
+.trip-draft-ai-panel,
+.trip-draft-ai-panel * {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
 .trip-draft-ai-body,
 .trip-draft-input,
 .trip-draft-preview {
   display: grid;
   gap: 12px;
+  width: 100%;
+  max-width: 100%;
 }
 
 .trip-draft-choice-grid {
@@ -2967,10 +2975,13 @@ h3 {
 }
 
 .trip-draft-preview-card {
+  width: 100%;
+  max-width: 100%;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.62);
+  overflow-wrap: anywhere;
 }
 
 .trip-draft-preview-card h3 {
@@ -2991,6 +3002,10 @@ h3 {
   padding-left: 18px;
 }
 
+.trip-draft-date-note {
+  margin-top: 10px;
+}
+
 .trip-draft-field-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3004,10 +3019,13 @@ h3 {
 }
 
 .trip-draft-source {
+  width: 100%;
+  max-width: 100%;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.62);
+  overflow-wrap: anywhere;
 }
 
 .trip-draft-source summary {
@@ -3018,6 +3036,8 @@ h3 {
 
 .trip-draft-source textarea,
 .ai-source-field textarea {
+  width: 100%;
+  max-width: 100%;
   margin-top: 10px;
 }
 
@@ -3036,6 +3056,8 @@ h3 {
 .trip-draft-item-editor {
   display: grid;
   gap: 10px;
+  width: 100%;
+  max-width: 100%;
   padding: 10px;
   border: 1px solid rgba(18, 54, 61, 0.14);
   border-radius: 8px;
@@ -3047,6 +3069,7 @@ h3 {
   gap: 10px;
   align-items: center;
   justify-content: space-between;
+  max-width: 100%;
 }
 
 .trip-draft-item-header strong {
@@ -3060,6 +3083,13 @@ h3 {
 @media (max-width: 430px) {
   .trip-draft-field-grid,
   .trip-draft-source-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 360px) {
+  .trip-draft-actions,
+  .trip-draft-voice-controls {
     grid-template-columns: 1fr;
   }
 }
