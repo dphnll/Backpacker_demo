@@ -15,7 +15,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.21";
+const APP_VERSION = "1.1.2.22";
 const APP_RELEASE_SUMMARY = "появился AI-черновик поездки из текста или голоса: Backpacker раскладывает идеи по дням и парковке.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -66,7 +66,7 @@ let itemProposalDraft = { title: "", itemType: "idea", link: "", price: "", note
 let authorExpenseProposals = [];
 let authorItemProposals = [];
 let userProfile = { loaded: false, loading: false, displayName: "", error: "" };
-let tripDraftAiState = { mode: "choice", inputMode: "text", isBusy: false, isRecording: false, draft: null, mediaRecorder: null, chunks: [] };
+let tripDraftAiState = { mode: "choice", inputMode: "text", isBusy: false, isCreating: false, isRecording: false, draft: null, sourceText: "", mediaRecorder: null, chunks: [] };
 let pendingProfileAction = null;
 let profileSaving = false;
 const resolvingExpenseProposalIds = new Set();
@@ -890,6 +890,8 @@ function normalizeState(nextState) {
   const normalized = nextState?.trip && Array.isArray(nextState.items) ? nextState : structuredClone(seedState);
   const tripId = normalized.trip.id || `trip-${Date.now()}`;
   normalized.trip.id = tripId;
+  normalized.trip.aiSourceText = String(normalized.trip.aiSourceText || "").trim().slice(0, 30000);
+  normalized.trip.preferencesText = String(normalized.trip.preferencesText || "").trim().slice(0, 4000);
   let participants = Array.isArray(normalized.trip.participants) ? normalized.trip.participants : [];
   participants = participants.map((participant, index) => {
     const name = normalizeParticipantName(participant.name) || "Я";
@@ -3374,6 +3376,26 @@ function deleteCurrentItem() {
   });
 }
 
+function ensureTripContextLabels() {
+  const form = $("#tripForm");
+  if (!form) return;
+  const preferencesField = form.elements.preferencesText?.closest(".field");
+  if (!preferencesField) return;
+  const labelText = Array.from(preferencesField.childNodes).find((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+  if (labelText) labelText.textContent = "Пожелания к поездке ";
+}
+
+function renderAiSourceTextField() {
+  ensureTripContextLabels();
+  const field = $("#aiSourceTextField");
+  const form = $("#tripForm");
+  const input = form?.elements.aiSourceText;
+  if (!field || !input) return;
+  const text = String(state.trip.aiSourceText || "").trim();
+  field.hidden = !text;
+  input.value = text;
+}
+
 function openTripSheet() {
   if (isReadOnlyMode()) return;
   const form = $("#tripForm");
@@ -3382,6 +3404,7 @@ function openTripSheet() {
   });
   syncTripDateInputs();
   renderParticipantsList();
+  renderAiSourceTextField();
   openSheet("tripSheet");
   trackEvent("trip_settings_opened", getTripAnalyticsContext());
 }
@@ -3679,6 +3702,7 @@ function saveTrip(event) {
     endDate: data.endDate,
     currency: data.currency,
     budgetLimit: previousCurrency === data.currency ? parseMoney(data.budgetLimit) : state.trip.budgetLimit,
+    aiSourceText: String(data.aiSourceText || "").trim().slice(0, 30000),
     preferencesText: data.preferencesText.trim(),
   };
   saveState();
@@ -3761,6 +3785,8 @@ function buildPublishedTripState() {
   const published = normalizeState(structuredClone(state));
   const entry = tripStore.trips.find((trip) => trip.id === published.trip.id);
   if (entry?.coverDataUrl) published.trip.coverDataUrl = entry.coverDataUrl;
+  delete published.trip.aiSourceText;
+  delete published.trip.preferencesText;
   return published;
 }
 
@@ -5375,23 +5401,24 @@ function renderTripDraftAiSheet() {
   choice.classList.toggle("hidden", tripDraftAiState.mode !== "choice");
   inputStep.classList.toggle("hidden", tripDraftAiState.mode !== "input");
   previewStep.classList.toggle("hidden", tripDraftAiState.mode !== "preview");
-  voiceControls?.classList.toggle("hidden", tripDraftAiState.inputMode !== "voice");
+  voiceControls?.classList.toggle("hidden", tripDraftAiState.mode !== "input");
   recordingIndicator?.classList.toggle("hidden", !tripDraftAiState.isRecording);
   if (textModeButton) textModeButton.disabled = !TRIP_DRAFT_AI_ENABLED;
   if (voiceModeButton) voiceModeButton.disabled = !TRIP_DRAFT_AI_ENABLED;
   if (title) title.textContent = tripDraftAiState.mode === "choice" ? "Создать поездку" : "AI-черновик поездки";
-  if (recordButton) recordButton.textContent = tripDraftAiState.isRecording ? "Остановить запись" : "Начать запись";
+  if (recordButton) recordButton.textContent = tripDraftAiState.isRecording ? "Остановить запись" : "🎙 Надиктовать";
   if (parseButton) {
     parseButton.disabled = tripDraftAiState.isBusy || !TRIP_DRAFT_AI_ENABLED;
-    parseButton.textContent = tripDraftAiState.isBusy ? "Разбираю..." : "Разобрать поездку";
+    parseButton.textContent = tripDraftAiState.isBusy ? "Разбираю..." : "Собрать черновик";
   }
   if (createButton) {
-    createButton.disabled = tripDraftAiState.isBusy || !tripDraftAiState.draft;
+    createButton.disabled = tripDraftAiState.isBusy || tripDraftAiState.isCreating || !tripDraftAiState.draft;
+    createButton.textContent = tripDraftAiState.isCreating ? "Создаю..." : "Создать поездку";
   }
 }
 
 function openTripDraftAiSheet() {
-  tripDraftAiState = { mode: "choice", inputMode: "text", isBusy: false, isRecording: false, draft: null, mediaRecorder: null, chunks: [] };
+  tripDraftAiState = { mode: "choice", inputMode: "text", isBusy: false, isCreating: false, isRecording: false, draft: null, sourceText: "", mediaRecorder: null, chunks: [] };
   const input = $("#tripDraftTextInput");
   if (input) input.value = "";
   setTripDraftAiStatus("");
@@ -5403,7 +5430,7 @@ function openTripDraftAiSheet() {
 
 function startTripDraftTextMode(mode = "text") {
   if (!TRIP_DRAFT_AI_ENABLED) return;
-  tripDraftAiState = { ...tripDraftAiState, mode: "input", inputMode: mode, draft: null };
+  tripDraftAiState = { ...tripDraftAiState, mode: "input", inputMode: mode, draft: null, isCreating: false };
   setTripDraftAiStatus(mode === "voice" ? "Запишите голос, потом проверьте текст перед разбором." : "");
   renderTripDraftAiSheet();
   window.setTimeout(() => $("#tripDraftTextInput")?.focus(), 80);
@@ -5456,6 +5483,7 @@ async function toggleTripDraftRecording() {
         const payload = await callTripDraftAiFunction("transcribe", { audioDataUrl });
         const input = $("#tripDraftTextInput");
         if (input) input.value = [input.value.trim(), payload.text || ""].filter(Boolean).join(input.value.trim() ? "\n\n" : "");
+        tripDraftAiState = { ...tripDraftAiState, inputMode: "voice" };
         setTripDraftAiStatus("Текст готов. Проверьте его перед разбором.");
         trackEvent("trip_draft_voice_transcribed", { ok: true });
       } catch {
@@ -5491,13 +5519,8 @@ function normalizeTripDraftTime(value = "") {
 function normalizeTripDraftResponse(payload = {}) {
   const draft = payload.draft || payload;
   const trip = draft.trip || {};
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
-  const fallbackStart = today.toISOString().slice(0, 10);
-  const fallbackEnd = tomorrow.toISOString().slice(0, 10);
-  const startDate = normalizeTripDraftDate(trip.startDate) || fallbackStart;
-  const endDate = normalizeTripDraftDate(trip.endDate) || startDate || fallbackEnd;
+  const startDate = normalizeTripDraftDate(trip.startDate);
+  const endDate = normalizeTripDraftDate(trip.endDate);
   const items = Array.isArray(draft.items) ? draft.items : [];
   const questions = Array.isArray(draft.questions) ? draft.questions.filter(Boolean).slice(0, 5) : [];
   return {
@@ -5505,7 +5528,7 @@ function normalizeTripDraftResponse(payload = {}) {
       title: String(trip.title || "Новая поездка").trim().slice(0, 80) || "Новая поездка",
       destination: String(trip.destination || "").trim().slice(0, 120),
       startDate,
-      endDate: endDate < startDate ? startDate : endDate,
+      endDate: startDate && endDate && endDate < startDate ? startDate : endDate,
       currency: getSupportedCurrencies().includes(trip.currency) ? trip.currency : "RUB",
       budgetLimit: parseMoney(trip.budgetLimit),
       preferencesText: String(trip.preferencesText || "").trim().slice(0, 4000),
@@ -5528,6 +5551,16 @@ function normalizeTripDraftResponse(payload = {}) {
   };
 }
 
+function renderTripDraftOptionList(options, selectedValue) {
+  return options.map(([value, label]) => `<option value="${escapeAttr(value)}"${value === selectedValue ? " selected" : ""}>${escapeHtml(label)}</option>`).join("");
+}
+
+function renderTripDraftCurrencyOptions(selectedValue) {
+  return getSupportedCurrencies()
+    .map((currency) => `<option value="${escapeAttr(currency)}"${currency === selectedValue ? " selected" : ""}>${escapeHtml(currency)}</option>`)
+    .join("");
+}
+
 function renderTripDraftPreview(draft) {
   const box = $("#tripDraftPreviewBox");
   if (!box) return;
@@ -5535,35 +5568,145 @@ function renderTripDraftPreview(draft) {
     box.innerHTML = "";
     return;
   }
-  const datedCount = draft.items.filter((item) => item.date).length;
-  const parkingCount = draft.items.length - datedCount;
-  const firstItems = draft.items.slice(0, 8);
+  const sourceText = tripDraftAiState.sourceText || $("#tripDraftTextInput")?.value || "";
   box.innerHTML = `
     <article class="trip-draft-preview-card">
-      <h3>${escapeHtml(draft.trip.title)}</h3>
-      <p>${escapeHtml(draft.trip.destination || "Направление не указано")} · ${escapeHtml(formatTripCardDateRange(draft.trip.startDate, draft.trip.endDate))}</p>
+      <h3>Поездка</h3>
+      <div class="trip-draft-field-grid">
+        <label class="field">Название<input data-draft-trip-field="title" value="${escapeAttr(draft.trip.title)}" /></label>
+        <label class="field">Направление<input data-draft-trip-field="destination" value="${escapeAttr(draft.trip.destination)}" /></label>
+        <label class="field">Дата с<input type="date" data-draft-trip-field="startDate" value="${escapeAttr(draft.trip.startDate)}" /></label>
+        <label class="field">Дата до<input type="date" data-draft-trip-field="endDate" value="${escapeAttr(draft.trip.endDate)}" /></label>
+        <label class="field">Валюта<select data-draft-trip-field="currency">${renderTripDraftCurrencyOptions(draft.trip.currency)}</select></label>
+        <label class="field">Бюджет<input inputmode="numeric" data-draft-trip-field="budgetLimit" value="${escapeAttr(draft.trip.budgetLimit ? draft.trip.budgetLimit : "")}" /></label>
+      </div>
+      <label class="field wide trip-draft-preferences-field">Пожелания к поездке<textarea rows="4" data-draft-trip-field="preferencesText">${escapeHtml(draft.trip.preferencesText || "")}</textarea></label>
     </article>
+    <details class="trip-draft-source">
+      <summary>Исходное описание</summary>
+      <textarea id="tripDraftPreviewSourceText" rows="5">${escapeHtml(sourceText)}</textarea>
+      <div class="trip-draft-source-actions">
+        <button class="ghost-button compact" type="button" data-trip-draft-action="edit-source">Вернуться к описанию</button>
+        <button class="ghost-button compact" type="button" data-trip-draft-action="rebuild">Пересобрать черновик</button>
+      </div>
+    </details>
     <article class="trip-draft-preview-card">
-      <h3>Что попадёт в поездку</h3>
-      <p>${datedCount} в план по дням · ${parkingCount} в парковку</p>
+      <h3>События</h3>
+      <div class="trip-draft-items-editor">
+        ${draft.items.length ? draft.items.map((item, index) => `
+          <section class="trip-draft-item-editor" data-draft-item-index="${index}">
+            <div class="trip-draft-item-header">
+              <strong>${escapeHtml(item.title || `Идея ${index + 1}`)}</strong>
+              <button class="ghost-button compact" type="button" data-trip-draft-action="delete-item" data-draft-item-index="${index}">Удалить</button>
+            </div>
+            <label class="field wide">Название<input data-draft-item-field="title" value="${escapeAttr(item.title)}" /></label>
+            <div class="trip-draft-field-grid">
+              <label class="field">Тип<select data-draft-item-field="type">${renderTripDraftOptionList(itemTypes, item.type)}</select></label>
+              <label class="field">День<input type="date" data-draft-item-field="date" value="${escapeAttr(item.date)}" /></label>
+              <label class="field">Время<input type="time" data-draft-item-field="startTime" value="${escapeAttr(item.startTime)}" /></label>
+              <label class="field">Цена<input inputmode="numeric" data-draft-item-field="price" value="${escapeAttr(item.price ? item.price : "")}" /></label>
+            </div>
+            <label class="field wide">Заметка<textarea rows="3" data-draft-item-field="notes">${escapeHtml(item.notes || "")}</textarea></label>
+          </section>
+        `).join("") : `<p>AI не нашёл событий. Можно вернуться к описанию и пересобрать черновик.</p>`}
+      </div>
     </article>
-    ${firstItems.length ? `<article class="trip-draft-preview-card"><h3>Первые идеи</h3><ul>${firstItems.map((item) => `<li>${escapeHtml(item.title)}${item.date ? ` · ${escapeHtml(formatDate(item.date))}` : " · парковка"}</li>`).join("")}</ul></article>` : ""}
     ${draft.questions.length ? `<article class="trip-draft-preview-card"><h3>Что можно уточнить позже</h3><ul>${draft.questions.map((question) => `<li>${escapeHtml(question)}</li>`).join("")}</ul></article>` : ""}
   `;
 }
 
+function collectTripDraftPreviewForm() {
+  const box = $("#tripDraftPreviewBox");
+  const current = tripDraftAiState.draft;
+  if (!box || !current) return null;
+  const readTripField = (field) => box.querySelector(`[data-draft-trip-field="${field}"]`)?.value || "";
+  const items = Array.from(box.querySelectorAll(".trip-draft-item-editor[data-draft-item-index]")).map((container, index) => {
+    const original = current.items[index] || {};
+    const readItemField = (field) => container.querySelector(`[data-draft-item-field="${field}"]`)?.value || "";
+    return {
+      ...original,
+      title: readItemField("title").trim() || original.title || `Идея ${index + 1}`,
+      type: normalizeTripDraftItemType(readItemField("type") || original.type),
+      date: normalizeTripDraftDate(readItemField("date")),
+      startTime: normalizeTripDraftTime(readItemField("startTime")),
+      price: Math.max(0, parseMoney(readItemField("price"))),
+      notes: readItemField("notes").trim().slice(0, 1000),
+      paidAmount: 0,
+    };
+  });
+  return normalizeTripDraftResponse({
+    draft: {
+      trip: {
+        title: readTripField("title").trim(),
+        destination: readTripField("destination").trim(),
+        startDate: readTripField("startDate"),
+        endDate: readTripField("endDate"),
+        currency: readTripField("currency") || "RUB",
+        budgetLimit: readTripField("budgetLimit"),
+        preferencesText: readTripField("preferencesText").trim(),
+      },
+      items,
+      questions: current.questions || [],
+    },
+  });
+}
+
+function syncTripDraftPreviewStateFromForm() {
+  const nextDraft = collectTripDraftPreviewForm();
+  if (!nextDraft) return null;
+  tripDraftAiState = { ...tripDraftAiState, draft: nextDraft };
+  return nextDraft;
+}
+
+function handleTripDraftPreviewAction(event) {
+  const actionButton = event.target.closest("[data-trip-draft-action]");
+  if (!actionButton) return;
+  const action = actionButton.dataset.tripDraftAction;
+  if (action === "delete-item") {
+    const draft = syncTripDraftPreviewStateFromForm();
+    const index = Number(actionButton.dataset.draftItemIndex);
+    if (!draft || Number.isNaN(index)) return;
+    draft.items.splice(index, 1);
+    tripDraftAiState = { ...tripDraftAiState, draft };
+    renderTripDraftPreview(draft);
+    return;
+  }
+  if (action === "edit-source") {
+    const sourceText = $("#tripDraftPreviewSourceText")?.value ?? tripDraftAiState.sourceText;
+    const input = $("#tripDraftTextInput");
+    if (input) input.value = sourceText;
+    tripDraftAiState = { ...tripDraftAiState, mode: "input", sourceText };
+    renderTripDraftAiSheet();
+    return;
+  }
+  if (action === "rebuild") {
+    const sourceText = $("#tripDraftPreviewSourceText")?.value.trim() || "";
+    if (!sourceText) {
+      setTripDraftAiStatus("Добавьте описание поездки перед сборкой черновика.", true);
+      return;
+    }
+    if (tripDraftAiState.draft && !window.confirm("Текущие правки черновика будут заменены новым результатом AI. Пересобрать?")) return;
+    const input = $("#tripDraftTextInput");
+    if (input) input.value = sourceText;
+    tripDraftAiState = { ...tripDraftAiState, mode: "input", sourceText };
+    parseTripDraftText();
+  }
+}
+
 async function parseTripDraftText() {
   if (!TRIP_DRAFT_AI_ENABLED) return;
+  if (tripDraftAiState.isBusy) return;
   const input = $("#tripDraftTextInput");
   const text = input?.value.trim() || "";
-  if (text.length < 20) {
-    setTripDraftAiStatus("Добавьте чуть больше описания поездки.", true);
+  if (!text) {
+    setTripDraftAiStatus("Добавьте описание поездки перед сборкой черновика.", true);
     input?.focus();
     return;
   }
-  tripDraftAiState = { ...tripDraftAiState, isBusy: true, draft: null };
+  tripDraftAiState = { ...tripDraftAiState, isBusy: true, sourceText: text };
   setTripDraftAiStatus("Разбираю текст в черновик...");
   renderTripDraftAiSheet();
+  trackEvent("trip_draft_ai_generation_started", { mode: tripDraftAiState.inputMode === "voice" ? "voice" : "text" });
   try {
     const payload = await callTripDraftAiFunction("parse", {
       text,
@@ -5572,22 +5715,16 @@ async function parseTripDraftText() {
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
     });
     const draft = normalizeTripDraftResponse(payload);
-    tripDraftAiState = { ...tripDraftAiState, isBusy: false, mode: "preview", draft };
+    tripDraftAiState = { ...tripDraftAiState, isBusy: false, mode: "preview", draft, sourceText: text };
     renderTripDraftPreview(draft);
     setTripDraftAiStatus("");
     renderTripDraftAiSheet();
-    trackEvent("trip_draft_ai_parsed", {
-      ok: true,
-      has_dates: Boolean(draft.trip.startDate && draft.trip.endDate),
-      item_count: draft.items.length,
-      dated_item_count: draft.items.filter((item) => item.date).length,
-      has_questions: Boolean(draft.questions.length),
-    });
+    trackEvent("trip_draft_ai_generation_completed", { mode: tripDraftAiState.inputMode === "voice" ? "voice" : "text", result: "success" });
   } catch (error) {
     tripDraftAiState = { ...tripDraftAiState, isBusy: false };
     setTripDraftAiStatus(error.message === "supabase_not_configured" ? "Supabase не настроен: AI-черновик пока недоступен." : "Не удалось разобрать поездку. Попробуйте ещё раз.", true);
     renderTripDraftAiSheet();
-    trackEvent("trip_draft_ai_parsed", { ok: false });
+    trackEvent("trip_draft_ai_generation_failed", { mode: tripDraftAiState.inputMode === "voice" ? "voice" : "text", result: "failed", error_reason_bucket: error.message === "supabase_not_configured" ? "network" : "unknown" });
   }
 }
 
@@ -5605,6 +5742,7 @@ function createTripEntryFromDraft(draft) {
       currency: draft.trip.currency,
       budgetLimit: draft.trip.budgetLimit,
       preferencesText: draft.trip.preferencesText,
+      aiSourceText: String(tripDraftAiState.sourceText || "").trim(),
       participants: [selfParticipant],
     },
     items: draft.items.map((item, index) => {
@@ -5635,22 +5773,39 @@ function createTripEntryFromDraft(draft) {
 }
 
 function createTripFromAiDraft() {
-  if (!tripDraftAiState.draft) return;
-  const entry = createTripEntryFromDraft(tripDraftAiState.draft);
-  tripStore.trips.push(entry);
-  persistTripStore(tripStore);
-  closeSheet("tripDraftAiSheet");
-  openTrip(entry.id);
-  showToast("Черновик поездки создан");
-  trackEvent("trip_created", {
-    ...getTripAnalyticsContext(entry.state.trip),
-    trip_id: entry.id,
-    trip_origin: "user_created",
-    creation_source: "ai_draft",
-    trip_count_after_create: getUserTripCount(),
-    is_second_user_trip: getUserTripCount() >= 2,
-  });
-  checkTripMilestones();
+  if (!tripDraftAiState.draft || tripDraftAiState.isCreating) return;
+  const previewSourceText = $("#tripDraftPreviewSourceText")?.value.trim();
+  if (typeof previewSourceText === "string" && previewSourceText !== String(tripDraftAiState.sourceText || "").trim()) {
+    setTripDraftAiStatus("Исходное описание изменено. Нажмите «Пересобрать черновик», чтобы обновить preview.", true);
+    return;
+  }
+  const draft = syncTripDraftPreviewStateFromForm();
+  if (!draft) return;
+  tripDraftAiState = { ...tripDraftAiState, isCreating: true, draft };
+  renderTripDraftAiSheet();
+  try {
+    const entry = createTripEntryFromDraft(draft);
+    tripStore.trips.push(entry);
+    persistTripStore(tripStore);
+    closeSheet("tripDraftAiSheet");
+    openTrip(entry.id);
+    showToast("Поездка создана");
+    trackEvent("trip_draft_ai_confirmed", { mode: tripDraftAiState.inputMode === "voice" ? "voice" : "text", result: "success" });
+    trackEvent("trip_created", {
+      ...getTripAnalyticsContext(entry.state.trip),
+      trip_id: entry.id,
+      trip_origin: "user_created",
+      creation_source: "ai_draft",
+      trip_count_after_create: getUserTripCount(),
+      is_second_user_trip: getUserTripCount() >= 2,
+    });
+    checkTripMilestones();
+  } catch {
+    tripDraftAiState = { ...tripDraftAiState, isCreating: false, draft };
+    renderTripDraftAiSheet();
+    setTripDraftAiStatus("Не удалось создать поездку. Черновик сохранён, попробуйте ещё раз.", true);
+    trackEvent("trip_draft_ai_generation_failed", { mode: tripDraftAiState.inputMode === "voice" ? "voice" : "text", result: "failed", error_reason_bucket: "save" });
+  }
 }
 
 function createNewTrip(creationSource = "home") {
@@ -6359,6 +6514,7 @@ function bindEvents() {
     renderTripDraftAiSheet();
   });
   $("#tripDraftCreateButton")?.addEventListener("click", createTripFromAiDraft);
+  $("#tripDraftPreviewBox")?.addEventListener("click", handleTripDraftPreviewAction);
   $("#refreshProposalsButton").addEventListener("click", refreshAuthorExpenseProposals);
   $("#introNextButton").addEventListener("click", () => showIntroSlide(1));
   $("#introSecondNextButton").addEventListener("click", () => showIntroSlide(2));

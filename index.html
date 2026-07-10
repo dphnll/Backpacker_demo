@@ -176,8 +176,8 @@
             <div class="trip-draft-ai-body">
               <section class="trip-draft-choice-grid" aria-label="Способ создания поездки">
                 <button class="trip-draft-choice primary-button" id="tripDraftManualButton" type="button" data-trip-draft-mode="manual">Собрать вручную</button>
-                <button class="trip-draft-choice primary-button" id="tripDraftTextModeButton" type="button" data-trip-draft-mode="text">Описать текстом для AI</button>
-                <button class="trip-draft-choice primary-button" id="tripDraftVoiceModeButton" type="button" data-trip-draft-mode="voice">Надиктовать голосом для AI</button>
+                <button class="trip-draft-choice primary-button" id="tripDraftTextModeButton" type="button" data-trip-draft-mode="text">Собрать с помощью AI</button>
+                <button class="trip-draft-choice primary-button hidden" id="tripDraftVoiceModeButton" type="button" data-trip-draft-mode="voice" hidden>Надиктовать голосом для AI</button>
               </section>
 
               <section class="trip-draft-input hidden" id="tripDraftInputStep">
@@ -186,15 +186,15 @@
                   Описание поездки
                   <textarea id="tripDraftTextInput" rows="7" placeholder="Например: едем в Стамбул на 5 дней, двое взрослых и ребёнок, любим еду и прогулки, не хотим ранних подъёмов..."></textarea>
                 </label>
-                <div class="trip-draft-voice-controls hidden" id="tripDraftVoiceControls">
-                  <button class="ghost-button" id="tripDraftRecordButton" type="button">Начать запись</button>
+                <div class="trip-draft-voice-controls" id="tripDraftVoiceControls">
+                  <button class="ghost-button" id="tripDraftRecordButton" type="button">🎙 Надиктовать</button>
                   <span class="trip-draft-recording-indicator hidden" id="tripDraftRecordingIndicator">Идёт запись...</span>
                 </div>
                 <p class="field-hint wide">Ограничения вроде аллергий, питания и темпа будут учтены как ограничения планирования, не как медицинские рекомендации.</p>
                 <p class="trip-draft-status" id="tripDraftStatus" aria-live="polite"></p>
                 <div class="trip-draft-actions">
                   <button class="ghost-button" id="tripDraftBackButton" type="button">Назад</button>
-                  <button class="primary-button" id="tripDraftParseButton" type="button">Разобрать поездку</button>
+                  <button class="primary-button" id="tripDraftParseButton" type="button">Собрать черновик</button>
                 </div>
               </section>
 
@@ -203,7 +203,7 @@
                 <div class="trip-draft-preview-box" id="tripDraftPreviewBox"></div>
                 <div class="trip-draft-actions">
                   <button class="ghost-button" id="tripDraftEditTextButton" type="button">Править текст</button>
-                  <button class="primary-button" id="tripDraftCreateButton" type="button">Создать черновик</button>
+                  <button class="primary-button" id="tripDraftCreateButton" type="button">Создать поездку</button>
                 </div>
               </section>
             </div>
@@ -627,6 +627,11 @@
           <label class="field wide">
             Направление
             <input name="destination" required />
+          </label>
+          <label class="field wide ai-source-field" id="aiSourceTextField" hidden>
+            Исходное описание поездки
+            <textarea name="aiSourceText" rows="5"></textarea>
+            <span class="field-hint">Используется как общий контекст поездки. Изменение описания не изменит уже созданный план.</span>
           </label>
           <label class="field">
             Дата начала
