@@ -15,7 +15,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.22";
+const APP_VERSION = "1.1.2.23";
 const APP_RELEASE_SUMMARY = "появился AI-черновик поездки из текста или голоса: Backpacker раскладывает идеи по дням и парковке.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -5455,6 +5455,16 @@ function blobToDataUrl(blob) {
   });
 }
 
+function getTripDraftRecordingOptions() {
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/mp4",
+    "audio/webm",
+  ];
+  const mimeType = candidates.find((type) => window.MediaRecorder?.isTypeSupported?.(type));
+  return mimeType ? { mimeType } : {};
+}
+
 async function toggleTripDraftRecording() {
   if (!TRIP_DRAFT_AI_ENABLED) return;
   if (tripDraftAiState.isRecording && tripDraftAiState.mediaRecorder) {
@@ -5467,7 +5477,7 @@ async function toggleTripDraftRecording() {
   }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const recorder = new MediaRecorder(stream);
+    const recorder = new MediaRecorder(stream, getTripDraftRecordingOptions());
     tripDraftAiState = { ...tripDraftAiState, mediaRecorder: recorder, chunks: [], isRecording: true };
     recorder.addEventListener("dataavailable", (event) => {
       if (event.data?.size) tripDraftAiState.chunks.push(event.data);
@@ -5486,9 +5496,12 @@ async function toggleTripDraftRecording() {
         tripDraftAiState = { ...tripDraftAiState, inputMode: "voice" };
         setTripDraftAiStatus("Текст готов. Проверьте его перед разбором.");
         trackEvent("trip_draft_voice_transcribed", { ok: true });
-      } catch {
-        setTripDraftAiStatus("Не удалось расшифровать запись. Можно вставить текст вручную.", true);
-        trackEvent("trip_draft_voice_transcribed", { ok: false });
+      } catch (error) {
+        const message = error.message === "invalid_audio"
+          ? "Запись получилась слишком короткой или в неподходящем формате. Попробуйте записать ещё раз."
+          : "Не удалось расшифровать запись. Можно вставить текст вручную.";
+        setTripDraftAiStatus(message, true);
+        trackEvent("trip_draft_voice_transcribed", { ok: false, error_reason_bucket: error.message === "invalid_audio" ? "invalid_audio" : "unknown" });
       } finally {
         tripDraftAiState = { ...tripDraftAiState, isBusy: false, chunks: [] };
         renderTripDraftAiSheet();

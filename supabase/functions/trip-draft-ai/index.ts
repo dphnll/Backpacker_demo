@@ -37,9 +37,9 @@ async function requireUser(req: Request) {
 
 function parseAudioDataUrl(value: unknown) {
   const text = String(value || "");
-  const match = text.match(/^data:([^;,]+);base64,(.+)$/);
+  const match = text.match(/^data:([^,]+);base64,(.+)$/);
   if (!match) return null;
-  const mimeType = match[1] || "audio/webm";
+  const mimeType = (match[1] || "audio/webm").split(";")[0] || "audio/webm";
   const binary = atob(match[2]);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) {
@@ -54,7 +54,17 @@ async function transcribe(body: Record<string, unknown>, openAiKey: string) {
   if (parsed.bytes.byteLength > 18 * 1024 * 1024) return json({ error: "audio_too_large" }, 413);
 
   const form = new FormData();
-  const extension = parsed.mimeType.includes("mp4") ? "mp4" : parsed.mimeType.includes("mpeg") ? "mp3" : "webm";
+  const extension = parsed.mimeType.includes("mp4")
+    ? "mp4"
+    : parsed.mimeType.includes("mpeg") || parsed.mimeType.includes("mp3")
+      ? "mp3"
+      : parsed.mimeType.includes("m4a")
+        ? "m4a"
+        : parsed.mimeType.includes("wav")
+          ? "wav"
+          : parsed.mimeType.includes("ogg")
+            ? "ogg"
+            : "webm";
   form.append("model", Deno.env.get("OPENAI_TRANSCRIBE_MODEL") || "gpt-4o-mini-transcribe");
   form.append("file", new Blob([parsed.bytes], { type: parsed.mimeType }), `trip-voice.${extension}`);
 
