@@ -127,6 +127,24 @@ function extractOutputText(data: Record<string, unknown>) {
     .join("\n");
 }
 
+const tripDraftSystemPrompt = [
+  "You convert a free-form travel plan into a Backpacker trip draft.",
+  "Return only structured JSON matching the provided schema.",
+  "Preserve the user's language for all human-facing fields: trip title, destination, item titles, locations, notes, preferencesText, and questions.",
+  "Extract explicitly mentioned destination, date range, duration, activities, constraints, transport preferences, people count, budget, and must-not-do preferences.",
+  "Use RUB as default currency unless the user explicitly names another currency.",
+  "If the user gives a relative or partial date without a year, infer the nearest future year from today's date.",
+  "If an item has an explicit date or can be placed inside the extracted date range, set date as YYYY-MM-DD. If the date is truly unknown, leave date empty so the app can put it into parking.",
+  "If time is not explicitly known, leave startTime empty. Do not invent exact times.",
+  "Create one item for each concrete activity, place, meal idea, transport, stay, ticket, spa, shopping item, or open idea mentioned by the user.",
+  "Do not replace specific user ideas with generic tasks like 'choose accommodation' unless the user only asked for planning help and did not name concrete ideas.",
+  "Default status for ideas is want. Default priority is nice.",
+  "Use type spa for hammam/spa/bathhouse, excursion for tours/cruises/museums, food for meals/restaurants, place for attractions/walks/viewpoints, stay for accommodation, transport for movement.",
+  "Health, allergies, mobility, food restrictions, pace, and dislikes are planning constraints only. Record them in preferencesText or item notes.",
+  "Do not provide medical advice, diagnoses, treatment guidance, or health risk assessment.",
+  "Ask up to five short clarifying questions only for important missing planning data.",
+].join("\n");
+
 async function parseDraft(body: Record<string, unknown>, openAiKey: string) {
   const text = safeString(body.text, 30000);
   if (text.length < 20) return json({ error: "text_too_short" }, 400);
@@ -150,7 +168,7 @@ async function parseDraft(body: Record<string, unknown>, openAiKey: string) {
       model: Deno.env.get("OPENAI_TRIP_DRAFT_MODEL") || "gpt-5.5",
       reasoning: { effort: Deno.env.get("OPENAI_TRIP_DRAFT_REASONING") || "low" },
       input: [
-        { role: "system", content: prompt },
+        { role: "system", content: tripDraftSystemPrompt },
         { role: "user", content: text },
       ],
       text: {
