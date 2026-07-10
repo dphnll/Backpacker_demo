@@ -15,8 +15,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.25";
-const APP_RELEASE_SUMMARY = "появился AI-черновик поездки из текста или голоса: Backpacker раскладывает идеи по дням и парковке.";
+const APP_VERSION = "1.1.2.26";
+const APP_RELEASE_SUMMARY = "раздел с полным списком карточек теперь называется «Все события», а AI-черновик аккуратнее распознаёт транспорт и примерные даты.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -5194,7 +5194,7 @@ async function shareApp() {
     : "https://dphnll.github.io/Backpacker_demo/";
   const shareData = {
     title: "Backpacker",
-    text: "Backpacker — план поездки, корзина идей, бюджет и ссылки в одном месте.",
+    text: "Backpacker — план поездки, все события, бюджет и ссылки в одном месте.",
     url,
   };
   if (navigator.share) {

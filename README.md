@@ -1,6 +1,6 @@
 # Backpacker
 
-Mobile-first prototype of a personal trip basket for independent travelers.
+Mobile-first prototype of a personal trip planner for independent travelers.
 
 ## Current scope
 
@@ -8,7 +8,7 @@ Mobile-first prototype of a personal trip basket for independent travelers.
 - Trip items with type, status, day, time, price, paid amount, link and notes.
 - AI trip draft from text or voice: text is parsed into ordinary trip fields and cards, while voice is transcribed before the same parse flow.
 - Plan by days.
-- Basket grouped by status.
+- All events grouped by status.
 - Budget summary.
 - Currency calculator for RUB / EUR / SEK with live-rate fallback to demo rates.
 - Telegram-friendly share text.
