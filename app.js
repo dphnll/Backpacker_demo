@@ -15,13 +15,14 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.23";
+const APP_VERSION = "1.1.2.24";
 const APP_RELEASE_SUMMARY = "появился AI-черновик поездки из текста или голоса: Backpacker раскладывает идеи по дням и парковке.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
 const TRIP_DRAFT_AI_SCHEMA_VERSION = "trip_draft_ai.v1";
 const TRIP_DRAFT_AI_ENABLED = true;
+const VIRTUAL_DAY_PREFIX = "day-";
 const DONATION_FLOW_ENABLED = false;
 const DONATION_URL = ANALYTICS_CONFIG.donationUrl || "https://t.me/bckpckrbot?start=donate";
 const DEFAULT_ITEM_STATUS = "want";
@@ -890,6 +891,9 @@ function normalizeState(nextState) {
   const normalized = nextState?.trip && Array.isArray(nextState.items) ? nextState : structuredClone(seedState);
   const tripId = normalized.trip.id || `trip-${Date.now()}`;
   normalized.trip.id = tripId;
+  normalized.trip.dayCount = normalized.trip.startDate || normalized.trip.endDate
+    ? getTripDayCount(normalized.trip)
+    : normalizeTripDayCount(normalized.trip.dayCount, 1);
   normalized.trip.aiSourceText = String(normalized.trip.aiSourceText || "").trim().slice(0, 30000);
   normalized.trip.preferencesText = String(normalized.trip.preferencesText || "").trim().slice(0, 4000);
   let participants = Array.isArray(normalized.trip.participants) ? normalized.trip.participants : [];
@@ -1114,7 +1118,29 @@ function parseMoney(value) {
   return Number(String(value || "").replace(/[^\d.-]/g, "")) || 0;
 }
 
+function normalizeTripDayCount(value, fallback = 1) {
+  const count = Math.ceil(parseMoney(value));
+  if (!Number.isFinite(count) || count <= 0) return fallback;
+  return Math.max(1, Math.min(60, count));
+}
+
+function getVirtualDayIndex(value = "") {
+  const match = String(value || "").match(/^day-(\d+)$/);
+  if (!match) return 0;
+  return normalizeTripDayCount(match[1], 0);
+}
+
+function isVirtualDayDate(value = "") {
+  return getVirtualDayIndex(value) > 0;
+}
+
+function createVirtualDayDate(index) {
+  return `${VIRTUAL_DAY_PREFIX}${normalizeTripDayCount(index)}`;
+}
+
 function formatDate(dateString, options = {}) {
+  const virtualIndex = getVirtualDayIndex(dateString);
+  if (virtualIndex) return `День ${virtualIndex}`;
   if (!dateString) return "без даты";
   const date = new Date(`${dateString}T12:00:00`);
   return date.toLocaleDateString("ru-RU", {
@@ -1177,6 +1203,9 @@ function parseDateFromInput(value) {
 }
 
 function getTripDayCount(trip) {
+  if (!trip?.startDate && !trip?.endDate && trip?.dayCount) {
+    return normalizeTripDayCount(trip.dayCount);
+  }
   const start = new Date(`${trip?.startDate || ""}T12:00:00`);
   const end = new Date(`${trip?.endDate || trip?.startDate || ""}T12:00:00`);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 1;
@@ -1238,6 +1267,8 @@ function getEndTime(startTime, durationMinutes) {
 }
 
 function getItemDateSlots(dateString) {
+  const virtualIndex = getVirtualDayIndex(dateString);
+  if (virtualIndex) return ["Д", String(virtualIndex), "–"];
   if (!dateString) return ["–", "–", "––"];
   const date = new Date(`${dateString}T12:00:00`);
   if (Number.isNaN(date.getTime())) return ["–", "–", "––"];
@@ -1283,7 +1314,9 @@ function getTripDatesForTrip(trip) {
   const dates = [];
   const start = new Date(`${trip?.startDate || ""}T12:00:00`);
   const end = new Date(`${trip?.endDate || ""}T12:00:00`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return dates;
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return Array.from({ length: normalizeTripDayCount(trip?.dayCount, 0) }, (_, index) => createVirtualDayDate(index + 1));
+  }
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     dates.push(d.toISOString().slice(0, 10));
   }
@@ -2578,7 +2611,7 @@ function renderHeader() {
   const dates = getTripDates();
   const totals = getTotals();
   $("#tripTitle").textContent = state.trip.title || "Новая поездка";
-  $("#tripMeta").textContent = `${state.trip.destination || "Направление"} · ${formatDate(state.trip.startDate)}-${formatDate(state.trip.endDate)} · ${dates.length || 1} дня`;
+  $("#tripMeta").textContent = `${state.trip.destination || "Направление"} · ${formatTripCardDateRange(state.trip.startDate, state.trip.endDate)} · ${formatDayCountText(dates.length || 1)}`;
   $("#tripBudgetMeta").textContent = canShowBudget() ? `Бюджет ${formatMoney(state.trip.budgetLimit)}` : "Смета скрыта";
   $("#paidTotal").textContent = formatBudgetMoney(totals.paid);
   $("#plannedTotal").textContent = formatBudgetMoney(totals.possible);
@@ -2911,6 +2944,13 @@ function getItemAnalyticsFlags(item) {
   };
 }
 
+function readItemFormDate(value, existing = null) {
+  const parsed = parseDateFromInput(value);
+  if (parsed) return parsed;
+  if (existing?.date && isVirtualDayDate(existing.date) && !state.trip.startDate && !state.trip.endDate) return existing.date;
+  return "";
+}
+
 function saveItem(event) {
   event.preventDefault();
   if (isReadOnlyMode()) return;
@@ -2918,7 +2958,7 @@ function saveItem(event) {
   const data = Object.fromEntries(new FormData(form).entries());
   const existing = state.items.find((entry) => entry.id === data.id);
   const isNew = !existing;
-  const itemDate = parseDateFromInput(data.date);
+  const itemDate = readItemFormDate(data.date, existing);
   const participantId = state.trip.participants.some((participant) => participant.id === data.participantId)
     ? data.participantId
     : getSelfParticipant().id;
@@ -4621,7 +4661,7 @@ async function buildTripPdfBlob(options) {
     drawPdfWrappedText(ctx, state.trip.title || "Поездка", margin + 66, y + 31, contentWidth - 76, 25, 1);
     ctx.font = "700 12px Arial, sans-serif";
     ctx.fillStyle = "#66716f";
-    const meta = `${state.trip.destination || "Направление не задано"} · ${formatDate(state.trip.startDate)}-${formatDate(state.trip.endDate)} · ${formatTripDayCount(state.trip)}`;
+    const meta = `${state.trip.destination || "Направление не задано"} · ${formatTripCardDateRange(state.trip.startDate, state.trip.endDate)} · ${formatTripDayCount(state.trip)}`;
     drawPdfWrappedText(ctx, meta, margin + 66, y + 56, contentWidth - 76, 15, 1);
 
     ctx.fillStyle = "rgba(255, 253, 248, 0.78)";
@@ -5521,7 +5561,19 @@ function normalizeTripDraftItemType(type = "") {
 }
 
 function normalizeTripDraftDate(value = "") {
-  return parseDateFromInput(String(value || "")) || "";
+  const raw = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return "";
+  const [year, month, day] = raw.split("-").map(Number);
+  const date = new Date(`${raw}T12:00:00`);
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== year ||
+    date.getMonth() + 1 !== month ||
+    date.getDate() !== day
+  ) {
+    return "";
+  }
+  return raw;
 }
 
 function normalizeTripDraftTime(value = "") {
@@ -5534,6 +5586,7 @@ function normalizeTripDraftResponse(payload = {}) {
   const trip = draft.trip || {};
   const startDate = normalizeTripDraftDate(trip.startDate);
   const endDate = normalizeTripDraftDate(trip.endDate);
+  const dayCount = startDate || endDate ? getTripDayCount({ startDate, endDate }) : normalizeTripDayCount(trip.dayCount, 1);
   const items = Array.isArray(draft.items) ? draft.items : [];
   const questions = Array.isArray(draft.questions) ? draft.questions.filter(Boolean).slice(0, 5) : [];
   return {
@@ -5542,24 +5595,30 @@ function normalizeTripDraftResponse(payload = {}) {
       destination: String(trip.destination || "").trim().slice(0, 120),
       startDate,
       endDate: startDate && endDate && endDate < startDate ? startDate : endDate,
+      dayCount,
       currency: getSupportedCurrencies().includes(trip.currency) ? trip.currency : "RUB",
       budgetLimit: parseMoney(trip.budgetLimit),
       preferencesText: String(trip.preferencesText || "").trim().slice(0, 4000),
     },
-    items: items.slice(0, 80).map((item, index) => ({
-      title: String(item.title || `Идея ${index + 1}`).trim().slice(0, 120) || `Идея ${index + 1}`,
-      type: normalizeTripDraftItemType(item.type),
-      status: statuses.some(([key]) => key === item.status) ? item.status : DEFAULT_ITEM_STATUS,
-      priority: priorities.some(([key]) => key === item.priority) ? item.priority : DEFAULT_ITEM_PRIORITY,
-      date: normalizeTripDraftDate(item.date),
-      startTime: normalizeTripDraftTime(item.startTime),
-      durationMinutes: Math.max(0, Math.min(1440, parseMoney(item.durationMinutes))),
-      price: Math.max(0, parseMoney(item.price)),
-      paidAmount: 0,
-      link: String(item.link || "").trim().slice(0, 500),
-      locationText: String(item.locationText || "").trim().slice(0, 160),
-      notes: String(item.notes || "").trim().slice(0, 1000),
-    })),
+    items: items.slice(0, 80).map((item, index) => {
+      const explicitDate = normalizeTripDraftDate(item.date);
+      const dayIndex = normalizeTripDayCount(item.dayIndex, 0);
+      const virtualDate = !startDate && !endDate && dayIndex > 0 && dayIndex <= dayCount ? createVirtualDayDate(dayIndex) : "";
+      return {
+        title: String(item.title || `Идея ${index + 1}`).trim().slice(0, 120) || `Идея ${index + 1}`,
+        type: normalizeTripDraftItemType(item.type),
+        status: statuses.some(([key]) => key === item.status) ? item.status : DEFAULT_ITEM_STATUS,
+        priority: priorities.some(([key]) => key === item.priority) ? item.priority : DEFAULT_ITEM_PRIORITY,
+        date: explicitDate || virtualDate,
+        startTime: normalizeTripDraftTime(item.startTime),
+        durationMinutes: Math.max(0, Math.min(1440, parseMoney(item.durationMinutes))),
+        price: Math.max(0, parseMoney(item.price)),
+        paidAmount: 0,
+        link: String(item.link || "").trim().slice(0, 500),
+        locationText: String(item.locationText || "").trim().slice(0, 160),
+        notes: String(item.notes || "").trim().slice(0, 1000),
+      };
+    }),
     questions,
   };
 }
@@ -5572,6 +5631,28 @@ function renderTripDraftCurrencyOptions(selectedValue) {
   return getSupportedCurrencies()
     .map((currency) => `<option value="${escapeAttr(currency)}"${currency === selectedValue ? " selected" : ""}>${escapeHtml(currency)}</option>`)
     .join("");
+}
+
+function renderTripDraftDayField(draft, item) {
+  if (!draft.trip.startDate && !draft.trip.endDate && draft.trip.dayCount > 0) {
+    const options = [
+      `<option value="">Без даты</option>`,
+      ...Array.from({ length: normalizeTripDayCount(draft.trip.dayCount) }, (_, index) => {
+        const value = createVirtualDayDate(index + 1);
+        return `<option value="${escapeAttr(value)}"${item.date === value ? " selected" : ""}>День ${index + 1}</option>`;
+      }),
+    ].join("");
+    return `<label class="field">День<select data-draft-item-field="date">${options}</select></label>`;
+  }
+  return `<label class="field">День<input type="date" data-draft-item-field="date" value="${escapeAttr(item.date)}" /></label>`;
+}
+
+function normalizeTripDraftItemDate(value = "", trip = {}) {
+  const raw = String(value || "").trim();
+  if (isVirtualDayDate(raw) && !trip.startDate && !trip.endDate && getVirtualDayIndex(raw) <= normalizeTripDayCount(trip.dayCount)) {
+    return raw;
+  }
+  return normalizeTripDraftDate(raw);
 }
 
 function renderTripDraftPreview(draft) {
@@ -5615,7 +5696,7 @@ function renderTripDraftPreview(draft) {
             <label class="field wide">Название<input data-draft-item-field="title" value="${escapeAttr(item.title)}" /></label>
             <div class="trip-draft-field-grid">
               <label class="field">Тип<select data-draft-item-field="type">${renderTripDraftOptionList(itemTypes, item.type)}</select></label>
-              <label class="field">День<input type="date" data-draft-item-field="date" value="${escapeAttr(item.date)}" /></label>
+              ${renderTripDraftDayField(draft, item)}
               <label class="field">Время<input type="time" data-draft-item-field="startTime" value="${escapeAttr(item.startTime)}" /></label>
               <label class="field">Цена<input inputmode="numeric" data-draft-item-field="price" value="${escapeAttr(item.price ? item.price : "")}" /></label>
             </div>
@@ -5640,7 +5721,7 @@ function collectTripDraftPreviewForm() {
       ...original,
       title: readItemField("title").trim() || original.title || `Идея ${index + 1}`,
       type: normalizeTripDraftItemType(readItemField("type") || original.type),
-      date: normalizeTripDraftDate(readItemField("date")),
+      date: normalizeTripDraftItemDate(readItemField("date"), current.trip),
       startTime: normalizeTripDraftTime(readItemField("startTime")),
       price: Math.max(0, parseMoney(readItemField("price"))),
       notes: readItemField("notes").trim().slice(0, 1000),
@@ -5752,6 +5833,7 @@ function createTripEntryFromDraft(draft) {
       destination: draft.trip.destination,
       startDate: draft.trip.startDate,
       endDate: draft.trip.endDate,
+      dayCount: normalizeTripDayCount(draft.trip.dayCount, getTripDayCount(draft.trip)),
       currency: draft.trip.currency,
       budgetLimit: draft.trip.budgetLimit,
       preferencesText: draft.trip.preferencesText,

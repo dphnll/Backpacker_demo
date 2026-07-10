@@ -86,12 +86,13 @@ const tripDraftSchema = {
     trip: {
       type: "object",
       additionalProperties: false,
-      required: ["title", "destination", "startDate", "endDate", "currency", "budgetLimit", "preferencesText"],
+      required: ["title", "destination", "startDate", "endDate", "dayCount", "currency", "budgetLimit", "preferencesText"],
       properties: {
         title: { type: "string" },
         destination: { type: "string" },
         startDate: { type: "string", description: "YYYY-MM-DD or empty string" },
         endDate: { type: "string", description: "YYYY-MM-DD or empty string" },
+        dayCount: { type: "number", description: "Trip duration in days. If the user gives a range like 3-4 days, use the maximum value. Use 1 when unknown." },
         currency: { type: "string", enum: ["RUB", "EUR", "SEK", "USD", "GEL", "TRY", "RSD", "BAM"] },
         budgetLimit: { type: "number" },
         preferencesText: { type: "string" },
@@ -103,13 +104,14 @@ const tripDraftSchema = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["title", "type", "status", "priority", "date", "startTime", "durationMinutes", "price", "link", "locationText", "notes"],
+        required: ["title", "type", "status", "priority", "date", "dayIndex", "startTime", "durationMinutes", "price", "link", "locationText", "notes"],
         properties: {
           title: { type: "string" },
           type: { type: "string", enum: ["ticket", "stay", "transport", "excursion", "food", "place", "spa", "shopping", "idea", "other"] },
           status: { type: "string", enum: ["paid", "fixed", "want", "maybe", "backup", "skipped"] },
           priority: { type: "string", enum: ["must", "nice", "optional"] },
           date: { type: "string", description: "YYYY-MM-DD when explicitly known, otherwise empty string" },
+          dayIndex: { type: "number", description: "1-based day number when user mentions Day 1/2/etc or sequence is clear and exact dates are unknown. Use 0 when unknown." },
           startTime: { type: "string", description: "HH:MM when explicitly known, otherwise empty string" },
           durationMinutes: { type: "number" },
           price: { type: "number" },
@@ -142,9 +144,10 @@ const tripDraftSystemPrompt = [
   "Return only structured JSON matching the provided schema.",
   "Preserve the user's language for all human-facing fields: trip title, destination, item titles, locations, notes, preferencesText, and questions.",
   "Extract explicitly mentioned destination, date range, duration, activities, constraints, transport preferences, people count, budget, and must-not-do preferences.",
+  "Always set trip.dayCount. If exact dates are unknown but the user states duration, use that duration. If the user gives a duration range like 3-4 days, use the maximum value.",
   "Use RUB as default currency unless the user explicitly names another currency.",
   "If the user gives a relative or partial date without a year, infer the nearest future year from today's date.",
-  "If an item has an explicit date or can be placed inside the extracted date range, set date as YYYY-MM-DD. If the date is truly unknown, leave date empty so the app can put it into parking.",
+  "If an item has an explicit date or can be placed inside the extracted date range, set date as YYYY-MM-DD. If exact dates are unknown but the item belongs to Day 1, Day 2, etc., leave date empty and set dayIndex. If the day is truly unknown, leave date empty and dayIndex 0 so the app can put it into parking.",
   "If time is not explicitly known, leave startTime empty. Do not invent exact times.",
   "Create one item for each concrete activity, place, meal idea, transport, stay, ticket, spa, shopping item, or open idea mentioned by the user.",
   "Do not replace specific user ideas with generic tasks like 'choose accommodation' unless the user only asked for planning help and did not name concrete ideas.",
@@ -162,7 +165,9 @@ async function parseDraft(body: Record<string, unknown>, openAiKey: string) {
   const prompt = [
     "Ты помогаешь превратить свободное описание поездки в черновик Backpacker.",
     "Верни только структурированный JSON по схеме.",
-    "Если дата или время явно не указаны, оставляй date/startTime пустыми: такие элементы попадут в парковку.",
+    "Всегда заполняй trip.dayCount. Если точных календарных дат нет, но пользователь сказал количество дней, используй его. Если сказал диапазон вроде 3-4 дня, бери максимум: 4.",
+    "Если точная дата события неизвестна, но понятно, что это День 1, День 2 и т.п., оставь date пустым и заполни dayIndex номером дня.",
+    "Если дата, день или время явно не указаны, оставляй date/startTime пустыми, а dayIndex 0: такие элементы попадут в парковку.",
     "Не выдумывай медицинские советы. Аллергии, здоровье, мобильность, питание, темп и запреты фиксируй только как ограничения планирования в preferencesText или notes.",
     "Не создавай диагнозы, риски лечения или рекомендации по лечению.",
     "Статус по умолчанию для идей: want. Приоритет по умолчанию: nice.",
@@ -178,7 +183,7 @@ async function parseDraft(body: Record<string, unknown>, openAiKey: string) {
       model: Deno.env.get("OPENAI_TRIP_DRAFT_MODEL") || "gpt-5.5",
       reasoning: { effort: Deno.env.get("OPENAI_TRIP_DRAFT_REASONING") || "low" },
       input: [
-        { role: "system", content: tripDraftSystemPrompt },
+        { role: "system", content: `${tripDraftSystemPrompt}\n\n${prompt}` },
         { role: "user", content: text },
       ],
       text: {
