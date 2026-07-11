@@ -15,8 +15,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.30";
-const APP_RELEASE_SUMMARY = "в справке появился практический раздел о создании поездки с AI, а продуктовая документация приведена к текущим возможностям.";
+const APP_VERSION = "1.1.2.31";
+const APP_RELEASE_SUMMARY = "финансовые показатели в приложении, PDF и шаринге приведены к единой модели с безопасным вводом сумм и приватной скрытой сметой.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -898,6 +898,7 @@ function normalizeState(nextState) {
   normalized.trip.dateSourceText = normalized.trip.datePrecision === "approximate" ? String(normalized.trip.dateSourceText || "").trim().slice(0, 160) : "";
   normalized.trip.aiSourceText = String(normalized.trip.aiSourceText || "").trim().slice(0, 30000);
   normalized.trip.preferencesText = String(normalized.trip.preferencesText || "").trim().slice(0, 4000);
+  normalized.trip.budgetLimit = parseMoney(normalized.trip.budgetLimit);
   let participants = Array.isArray(normalized.trip.participants) ? normalized.trip.participants : [];
   participants = participants.map((participant, index) => {
     const name = normalizeParticipantName(participant.name) || "Я";
@@ -929,14 +930,11 @@ function normalizeState(nextState) {
   normalized.items = normalized.items.map((item, index) => {
     const participantId = participantIds.has(item.participantId) ? item.participantId : selfParticipant.id;
     const price = parseMoney(item.price);
-    const sourceAllocations = Array.isArray(item.allocations) ? item.allocations : [];
-    const allocations = sourceAllocations
-      .map((allocation) => ({
-        participantId: participantIds.has(allocation.participantId) ? allocation.participantId : "",
-        amount: parseMoney(allocation.amount),
-      }))
-      .filter((allocation) => allocation.participantId && allocation.amount > 0);
-    if (!allocations.length && price > 0) allocations.push({ participantId, amount: price });
+    const allocations = window.BackpackerFinancial.normalizeAllocations(item.allocations, {
+      price,
+      participantIds: Array.from(participantIds),
+      ownerId: participantId,
+    });
     const allocationTotal = allocations.reduce((sum, allocation) => sum + parseMoney(allocation.amount), 0);
     if (allocations.length && allocationTotal !== price) {
       const delta = price - allocationTotal;
@@ -1117,7 +1115,22 @@ async function refreshExchangeRates() {
 }
 
 function parseMoney(value) {
-  return Number(String(value || "").replace(/[^\d.-]/g, "")) || 0;
+  return window.BackpackerFinancial?.parseMoney(value) || 0;
+}
+
+const MONEY_INPUT_ERROR = "Проверьте сумму: для копеек используйте 1–2 цифры после точки или запятой.";
+
+function validateMoneyInput(input) {
+  if (!input) return true;
+  input.setCustomValidity("");
+  if (!window.BackpackerFinancial?.isValidMoney(input.value)) {
+    input.setCustomValidity(MONEY_INPUT_ERROR);
+  }
+  return !input.validationMessage;
+}
+
+function validateMoneyFields(form, names) {
+  return names.every((name) => validateMoneyInput(form.elements[name]));
 }
 
 function normalizeTripDayCount(value, fallback = 1) {
@@ -1344,16 +1357,13 @@ function getParticipantFromList(participants, participantId) {
 function getItemAllocations(item, participants = state.trip.participants) {
   const participantIds = new Set(participants.map((participant) => participant.id));
   const price = parseMoney(item.price);
-  const allocations = Array.isArray(item.allocations)
-    ? item.allocations
-        .map((allocation) => ({
-          participantId: participantIds.has(allocation.participantId) ? allocation.participantId : "",
-          amount: parseMoney(allocation.amount),
-        }))
-        .filter((allocation) => allocation.participantId && allocation.amount > 0)
-    : [];
-  if (allocations.length) return allocations;
   const fallback = getParticipantFromList(participants, item.participantId);
+  const allocations = window.BackpackerFinancial.normalizeAllocations(item.allocations, {
+    price,
+    participantIds: Array.from(participantIds),
+    ownerId: fallback?.id || "",
+  });
+  if (allocations.length) return allocations;
   return fallback && price > 0 ? [{ participantId: fallback.id, amount: price }] : [];
 }
 
@@ -1431,18 +1441,7 @@ function isActiveCost(item) {
 }
 
 function getTotals() {
-  const paid = state.items
-    .filter((item) => item.status === "paid")
-    .reduce((sum, item) => sum + parseMoney(item.price), 0);
-  const fixed = state.items
-    .filter((item) => item.status === "fixed")
-    .reduce((sum, item) => sum + parseMoney(item.price), 0);
-  const optional = state.items
-    .filter((item) => ["want", "maybe"].includes(item.status))
-    .reduce((sum, item) => sum + parseMoney(item.price), 0);
-  const possible = state.items.filter(isActiveCost).reduce((sum, item) => sum + parseMoney(item.price), 0);
-  const remaining = parseMoney(state.trip.budgetLimit) - possible;
-  return { paid, fixed, optional, possible, remaining };
+  return window.BackpackerFinancial.getFinancialSummary(state);
 }
 
 function getAnalyticsMilestones() {
@@ -2523,11 +2522,12 @@ async function refreshAuthorExpenseProposals() {
 
 async function syncCurrentTripShareBeforeAccept() {
   const record = getTripShareRecord();
+  const includeBudget = record?.includeBudget !== false;
   await callTripShareFunction("update", {
     tripId: state.trip.id,
-    includeBudget: record?.includeBudget !== false,
+    includeBudget,
     schemaVersion: TRIP_SHARE_SCHEMA_VERSION,
-    state: buildPublishedTripState(),
+    state: buildPublishedTripState({ includeBudget }),
   }, { requireOwner: true });
 }
 
@@ -2614,11 +2614,11 @@ function renderHeader() {
   const totals = getTotals();
   $("#tripTitle").textContent = state.trip.title || "Новая поездка";
   $("#tripMeta").textContent = `${state.trip.destination || "Направление"} · ${formatTripCardDateRange(state.trip.startDate, state.trip.endDate)} · ${formatDayCountText(dates.length || 1)}`;
-  $("#tripBudgetMeta").textContent = canShowBudget() ? `Бюджет ${formatMoney(state.trip.budgetLimit)}` : "Смета скрыта";
-  $("#paidTotal").textContent = formatBudgetMoney(totals.paid);
-  $("#plannedTotal").textContent = formatBudgetMoney(totals.possible);
-  $("#remainingTotal").textContent = formatBudgetMoney(totals.remaining);
-  $("#remainingTotal").style.color = totals.remaining < 0 ? "var(--danger)" : "";
+  $("#tripBudgetMeta").textContent = canShowBudget() ? `Бюджет ${formatMoney(totals.budgetLimit)}` : "Смета скрыта";
+  $("#paidTotal").textContent = formatBudgetMoney(totals.paidTotal);
+  $("#plannedTotal").textContent = formatBudgetMoney(totals.confirmedTotal);
+  $("#remainingTotal").textContent = formatBudgetMoney(totals.remainingConfirmed);
+  $("#remainingTotal").style.color = totals.remainingConfirmed < 0 ? "var(--danger)" : "";
 }
 
 function renderPlan() {
@@ -2726,13 +2726,23 @@ function renderBudget() {
     })
     .join("");
   $("#budgetPage").innerHTML = `
-    <section class="budget-grid">
-      <div class="metric-card"><span>Бюджет поездки</span><strong>${formatBudgetMoney(state.trip.budgetLimit)}</strong></div>
-      <div class="metric-card"><span>Уже оплачено</span><strong>${formatBudgetMoney(totals.paid)}</strong></div>
-      <div class="metric-card"><span>Бронь</span><strong>${formatBudgetMoney(totals.fixed)}</strong></div>
-      <div class="metric-card"><span>Опционально</span><strong>${formatBudgetMoney(totals.optional)}</strong></div>
-      <div class="metric-card service-total"><span>Возможный итог</span><strong>${formatBudgetMoney(totals.possible)}</strong></div>
-      <div class="metric-card"><span>Остаток</span><strong style="color:${canShowBudget() && totals.remaining < 0 ? "var(--danger)" : "var(--green)"}">${formatBudgetMoney(totals.remaining)}</strong></div>
+    <section class="budget-metric-group">
+      <h3>Основной план</h3>
+      <div class="budget-grid">
+        <div class="metric-card"><span>Бюджет поездки</span><strong>${formatBudgetMoney(totals.budgetLimit)}</strong></div>
+        <div class="metric-card"><span>Оплачено</span><strong>${formatBudgetMoney(totals.paidTotal)}</strong></div>
+        <div class="metric-card"><span>Подтверждено</span><strong>${formatBudgetMoney(totals.confirmedTotal)}</strong></div>
+        <div class="metric-card"><span>Осталось оплатить</span><strong>${formatBudgetMoney(totals.confirmedOutstanding)}</strong></div>
+        <div class="metric-card"><span>Свободно</span><strong style="color:${canShowBudget() && totals.remainingConfirmed < 0 ? "var(--danger)" : "var(--green)"}">${formatBudgetMoney(totals.remainingConfirmed)}</strong></div>
+      </div>
+    </section>
+    <section class="budget-metric-group">
+      <h3>Дополнительные планы</h3>
+      <div class="budget-grid">
+        <div class="metric-card"><span>Дополнительные планы</span><strong>${formatBudgetMoney(totals.additionalTotal)}</strong></div>
+        <div class="metric-card service-total"><span>Если включить всё</span><strong>${formatBudgetMoney(totals.possibleTotal)}</strong></div>
+        <div class="metric-card"><span>Останется, если включить всё</span><strong style="color:${canShowBudget() && totals.remainingAll < 0 ? "var(--danger)" : "var(--green)"}">${formatBudgetMoney(totals.remainingAll)}</strong></div>
+      </div>
     </section>
     <section class="card budget-days-card">
       <div class="card-title-row">
@@ -2957,6 +2967,11 @@ function saveItem(event) {
   event.preventDefault();
   if (isReadOnlyMode()) return;
   const form = event.currentTarget;
+  if (!validateMoneyFields(form, ["price", "paidAmount"])) {
+    form.reportValidity();
+    showToast(MONEY_INPUT_ERROR);
+    return;
+  }
   const data = Object.fromEntries(new FormData(form).entries());
   const existing = state.items.find((entry) => entry.id === data.id);
   const isNew = !existing;
@@ -3724,11 +3739,14 @@ function handleTripEndDateChange() {
 function saveTrip(event) {
   event.preventDefault();
   if (isReadOnlyMode()) return;
-  const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const form = event.currentTarget;
+  const data = Object.fromEntries(new FormData(form).entries());
   syncTripDateInputs();
-  if (!validateTripDateInputs()) {
-    event.currentTarget.reportValidity();
-    showToast(TRIP_DATE_RANGE_ERROR);
+  const validDates = validateTripDateInputs();
+  const validBudget = validateMoneyFields(form, ["budgetLimit"]);
+  if (!validDates || !validBudget) {
+    form.reportValidity();
+    showToast(validDates ? MONEY_INPUT_ERROR : TRIP_DATE_RANGE_ERROR);
     return;
   }
   const previousTrip = { ...state.trip };
@@ -3823,7 +3841,7 @@ function buildTripShareUrl(token) {
   return url.toString();
 }
 
-function buildPublishedTripState() {
+function buildPublishedTripState({ includeBudget = true } = {}) {
   const published = normalizeState(structuredClone(state));
   const entry = tripStore.trips.find((trip) => trip.id === published.trip.id);
   if (entry?.coverDataUrl) published.trip.coverDataUrl = entry.coverDataUrl;
@@ -3831,7 +3849,7 @@ function buildPublishedTripState() {
   delete published.trip.preferencesText;
   delete published.trip.datePrecision;
   delete published.trip.dateSourceText;
-  return published;
+  return includeBudget ? published : window.BackpackerFinancial.stripFinancialFields(published);
 }
 
 async function publishTripShare(options = {}) {
@@ -3847,7 +3865,7 @@ async function publishTripShare(options = {}) {
     includeBudget,
     rotateToken: mustRotateToken,
     schemaVersion: TRIP_SHARE_SCHEMA_VERSION,
-    state: buildPublishedTripState(),
+    state: buildPublishedTripState({ includeBudget }),
   }, { requireOwner: true });
   const token = payload.token || existing?.token || "";
   const record = {
@@ -3870,7 +3888,7 @@ async function updatePublishedTripShare(options = {}) {
     tripId: state.trip.id,
     includeBudget,
     schemaVersion: TRIP_SHARE_SCHEMA_VERSION,
-    state: buildPublishedTripState(),
+    state: buildPublishedTripState({ includeBudget }),
   }, { requireOwner: true });
   const record = {
     ...existing,
@@ -4023,9 +4041,14 @@ function buildShareText(compact = false) {
   if (canShowBudget()) {
     lines.push(
       "Бюджет:",
-      `Оплачено: ${formatMoney(totals.paid)}`,
-      `План: ${formatMoney(totals.possible)}`,
-      `Остаток: ${formatMoney(totals.remaining)}`,
+      `Бюджет поездки: ${formatMoney(totals.budgetLimit)}`,
+      `Оплачено: ${formatMoney(totals.paidTotal)}`,
+      `Подтверждено: ${formatMoney(totals.confirmedTotal)}`,
+      `Осталось оплатить: ${formatMoney(totals.confirmedOutstanding)}`,
+      `Свободно: ${formatMoney(totals.remainingConfirmed)}`,
+      `Дополнительные планы: ${formatMoney(totals.additionalTotal)}`,
+      `Если включить всё: ${formatMoney(totals.possibleTotal)}`,
+      `Останется, если включить всё: ${formatMoney(totals.remainingAll)}`,
       "",
     );
   }
@@ -4647,7 +4670,9 @@ async function buildTripPdfBlob(options) {
   function drawHeader() {
     const totals = getTotals();
     const hasGroupParticipants = state.trip.participants.length > 1;
-    const headerHeight = hasGroupParticipants ? 184 : 164;
+    const headerHeight = options.includeBudget
+      ? (hasGroupParticipants ? 184 : 164)
+      : (hasGroupParticipants ? 104 : 84);
     ctx.fillStyle = "#eef3ef";
     roundRect(ctx, margin, y, contentWidth, headerHeight, 8);
     ctx.fill();
@@ -4668,32 +4693,35 @@ async function buildTripPdfBlob(options) {
     const meta = `${state.trip.destination || "Направление не задано"} · ${formatTripCardDateRange(state.trip.startDate, state.trip.endDate)} · ${formatTripDayCount(state.trip)}`;
     drawPdfWrappedText(ctx, meta, margin + 66, y + 56, contentWidth - 76, 15, 1);
 
-    ctx.fillStyle = "rgba(255, 253, 248, 0.78)";
-    roundRect(ctx, margin + 180, y + 74, contentWidth - 190, 30, 6);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(18, 54, 61, 0.18)";
-    ctx.stroke();
-    ctx.fillStyle = "#12363d";
-    ctx.font = "800 13px Arial, sans-serif";
-    ctx.fillText(`Бюджет ${formatMoney(state.trip.budgetLimit)}`, margin + 194, y + 94);
+    if (options.includeBudget) {
+      ctx.fillStyle = "rgba(255, 253, 248, 0.78)";
+      roundRect(ctx, margin + 180, y + 74, contentWidth - 190, 30, 6);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(18, 54, 61, 0.18)";
+      ctx.stroke();
+      ctx.fillStyle = "#12363d";
+      ctx.font = "800 13px Arial, sans-serif";
+      ctx.fillText(`Бюджет ${formatMoney(totals.budgetLimit)}`, margin + 194, y + 94);
 
-    const cardGap = 8;
-    const cardWidth = (contentWidth - cardGap * 2) / 3;
-    const cardY = y + 114;
-    drawPdfMetricCard(margin, cardY, cardWidth, 42, "Оплачено", formatMoney(totals.paid), "paid");
-    drawPdfMetricCard(margin + cardWidth + cardGap, cardY, cardWidth, 42, "Уже распределено", formatMoney(totals.possible));
-    drawPdfMetricCard(margin + (cardWidth + cardGap) * 2, cardY, cardWidth, 42, "Осталось распределить", formatMoney(totals.remaining));
+      const cardGap = 8;
+      const cardWidth = (contentWidth - cardGap * 2) / 3;
+      const cardY = y + 114;
+      drawPdfMetricCard(margin, cardY, cardWidth, 42, "Оплачено", formatMoney(totals.paidTotal), "paid");
+      drawPdfMetricCard(margin + cardWidth + cardGap, cardY, cardWidth, 42, "Подтверждено", formatMoney(totals.confirmedTotal));
+      drawPdfMetricCard(margin + (cardWidth + cardGap) * 2, cardY, cardWidth, 42, "Свободно", formatMoney(totals.remainingConfirmed));
+    }
     if (hasGroupParticipants) {
+      const participantsY = options.includeBudget ? y + 175 : y + 91;
       ctx.fillStyle = "#66716f";
       ctx.font = "800 11px Arial, sans-serif";
-      ctx.fillText("Участники", margin + 8, y + 175);
+      ctx.fillText("Участники", margin + 8, participantsY);
       ctx.fillStyle = "#1f2423";
       ctx.font = "700 11px Arial, sans-serif";
       drawPdfWrappedText(
         ctx,
         state.trip.participants.map((participant) => participant.name).join(" · "),
         margin + 84,
-        y + 175,
+        participantsY,
         contentWidth - 92,
         13,
         1,
@@ -4706,7 +4734,7 @@ async function buildTripPdfBlob(options) {
     if (!options.includeBudget) return;
     const totals = getTotals();
     const hasGroupParticipants = state.trip.participants.length > 1;
-    const height = hasGroupParticipants ? 136 : 118;
+    const height = hasGroupParticipants ? 208 : 190;
     await ensureSpace(height);
     ctx.fillStyle = "#ffffff";
     roundRect(ctx, margin, y, contentWidth, height - 12, 8);
@@ -4717,10 +4745,14 @@ async function buildTripPdfBlob(options) {
     ctx.font = "800 15px Arial, sans-serif";
     ctx.fillText("Бюджет", margin + 14, y + 24);
     const budgetRows = [
-      ["Бюджет", formatMoney(state.trip.budgetLimit)],
-      ["Оплачено", formatMoney(totals.paid)],
-      ["Уже распределено", formatMoney(totals.possible)],
-      ["Осталось распределить", formatMoney(totals.remaining)],
+      ["Бюджет поездки", formatMoney(totals.budgetLimit)],
+      ["Оплачено", formatMoney(totals.paidTotal)],
+      ["Подтверждено", formatMoney(totals.confirmedTotal)],
+      ["Осталось оплатить", formatMoney(totals.confirmedOutstanding)],
+      ["Свободно", formatMoney(totals.remainingConfirmed)],
+      ["Дополнительные планы", formatMoney(totals.additionalTotal)],
+      ["Если включить всё", formatMoney(totals.possibleTotal)],
+      ["Останется, если включить всё", formatMoney(totals.remainingAll)],
     ];
     ctx.font = "700 11px Arial, sans-serif";
     budgetRows.forEach((row, index) => {
@@ -4949,6 +4981,7 @@ async function buildTripPdfBlob(options) {
 
   startPage();
   drawHeader();
+  await drawBudget();
 
   for (const [index, date] of getTripDates().entries()) {
     const items = state.items.filter((item) => item.date === date && item.status !== "skipped").sort(sortItems);
@@ -6763,6 +6796,9 @@ function bindEvents() {
   $("#feedbackButton").addEventListener("click", () => trackEvent("feedback_channel_opened", { channel: "telegram" }));
   $("#homeButton").addEventListener("click", () => showHomeScreen("trip_bottom_bar"));
   $("#itemForm").addEventListener("submit", saveItem);
+  ["price", "paidAmount"].forEach((name) => {
+    $("#itemForm").elements[name].addEventListener("input", (event) => validateMoneyInput(event.currentTarget));
+  });
   $("#itemProposalForm")?.addEventListener("submit", submitItemProposal);
   $("#copyItemButton").addEventListener("click", openCardCopySheet);
   $("#resetItemButton").addEventListener("click", resetCurrentItemForm);
@@ -6775,6 +6811,7 @@ function bindEvents() {
   $("#tripMeta").addEventListener("click", openTripSheet);
   $("#tripBudgetMeta").addEventListener("click", openTripSheet);
   $("#tripForm").addEventListener("submit", saveTrip);
+  $("#tripForm").elements.budgetLimit.addEventListener("input", (event) => validateMoneyInput(event.currentTarget));
   $("#tripForm").elements.startDate.addEventListener("change", handleTripStartDateChange);
   $("#tripForm").elements.startDate.addEventListener("input", handleTripStartDateChange);
   $("#tripForm").elements.endDate.addEventListener("change", handleTripEndDateChange);

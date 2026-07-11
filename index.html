@@ -303,11 +303,11 @@
             <strong id="paidTotal">0 ₽</strong>
           </div>
           <div class="budget-allocation-card">
-            <span>Уже распределено</span>
+            <span>Подтверждено</span>
             <strong id="plannedTotal">0 ₽</strong>
           </div>
           <div class="budget-allocation-card">
-            <span>Осталось распределить</span>
+            <span>Свободно</span>
             <strong id="remainingTotal">0 ₽</strong>
           </div>
         </section>
@@ -518,11 +518,11 @@
           </label>
           <label class="field">
             Цена
-            <input name="price" inputmode="numeric" placeholder="0" />
+            <input name="price" inputmode="decimal" placeholder="0" />
           </label>
           <label class="field">
             Оплачено
-            <input name="paidAmount" inputmode="numeric" placeholder="0" />
+            <input name="paidAmount" inputmode="decimal" placeholder="0" />
           </label>
           <section class="accepted-expense-controls hidden" id="acceptedExpenseControls"></section>
           <label class="field">
@@ -584,7 +584,7 @@
           </label>
           <label class="field">
             Цена
-            <input name="price" inputmode="numeric" placeholder="0" />
+            <input name="price" inputmode="decimal" placeholder="0" />
           </label>
           <label class="field wide">
             Заметка
@@ -660,7 +660,7 @@
           </label>
           <label class="field">
             Бюджет
-            <input name="budgetLimit" inputmode="numeric" />
+            <input name="budgetLimit" inputmode="decimal" />
           </label>
           <p class="field-hint wide">При смене валюты суммы пересчитываются по демо-курсу.</p>
           <label class="field wide">
@@ -880,6 +880,7 @@
     <script src="./supabase-config.public.js?v=1"></script>
     <script src="./supabase-config.js?v=local"></script>
     <script src="./vendor/pdf-lib.min.js"></script>
+    <script src="./financial-core.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

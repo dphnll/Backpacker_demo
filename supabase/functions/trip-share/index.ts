@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getVisibleBudgetFields, stripBudget } from "./privacy.mjs";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,7 +9,6 @@ const corsHeaders = {
 };
 
 const SCHEMA_VERSION = "trip_share.v1";
-const FINANCIAL_FIELDS = new Set(["price", "paidAmount", "budgetLimit", "allocations"]);
 const PARTICIPANT_COLORS = ["orange", "yellow", "blue", "teal", "purple", "pink"];
 const ITEM_TYPES = new Set(["ticket", "stay", "transport", "excursion", "food", "place", "spa", "shopping", "idea", "other"]);
 
@@ -248,16 +248,6 @@ function getAuthorItemProposalCard(proposal: Record<string, unknown>, profileNam
   };
 }
 
-function stripBudget(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stripBudget);
-  if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .filter(([key]) => !FINANCIAL_FIELDS.has(key))
-      .map(([key, entry]) => [key, stripBudget(entry)]),
-  );
-}
-
 async function getRequestUser(req: Request, supabaseUrl: string, anonKey: string) {
   const authorization = req.headers.get("Authorization") || "";
   if (!authorization.startsWith("Bearer ")) return null;
@@ -280,6 +270,7 @@ function getTripCard(share: Record<string, unknown>, revoked = false) {
   const dayCount = start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())
     ? Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
     : 1;
+  const includeBudget = share.include_budget !== false;
   return {
     shareId: share.id,
     title: String(trip.title || "Поездка"),
@@ -287,10 +278,10 @@ function getTripCard(share: Record<string, unknown>, revoked = false) {
     startDate,
     endDate,
     dayCount: formatDayCountText(dayCount),
-    budgetLimit: parseMoney(trip.budgetLimit),
+    ...getVisibleBudgetFields(trip, includeBudget),
     currency: String(trip.currency || "RUB"),
     coverDataUrl: String(trip.coverDataUrl || ""),
-    includeBudget: share.include_budget !== false,
+    includeBudget,
     updatedAt: share.updated_at,
     revoked,
   };
@@ -919,7 +910,7 @@ Deno.serve(async (req) => {
         token_hash: tokenHash,
         include_budget: includeBudget,
         schema_version: schemaVersion,
-        state,
+        state: includeBudget ? state : stripBudget(state),
         revoked_at: null,
       }, { onConflict: "owner_user_id,trip_id" })
       .select("id, updated_at")
@@ -938,7 +929,7 @@ Deno.serve(async (req) => {
       .update({
         include_budget: includeBudget,
         schema_version: schemaVersion,
-        state,
+        state: includeBudget ? state : stripBudget(state),
         revoked_at: null,
       })
       .eq("owner_user_id", user.id)

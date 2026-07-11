@@ -2196,6 +2196,15 @@ h3 {
   -webkit-box-orient: vertical;
 }
 
+.budget-metric-group {
+  display: grid;
+  gap: 8px;
+}
+
+.budget-metric-group + .budget-metric-group {
+  margin-top: 16px;
+}
+
 .item-source-marker {
   max-width: 100%;
   margin: 3px 0 7px;
