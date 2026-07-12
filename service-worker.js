@@ -1,10 +1,11 @@
-const CACHE_NAME = "backpacker-pwa-v65";
+const CACHE_NAME = "backpacker-pwa-v66";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
   "./financial-core.js",
   "./trip-date-core.js",
+  "./link-intake-ui-core.js",
   "./app.js",
   "./analytics-config.js",
   "./supabase-config.public.js",

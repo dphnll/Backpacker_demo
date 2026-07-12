@@ -15,8 +15,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.34";
-const APP_RELEASE_SUMMARY = "карточки больше не исчезают из плана при смене диапазона дат поездки.";
+const APP_VERSION = "1.1.2.35";
+const APP_RELEASE_SUMMARY = "сбор карточки по ссылке стал доступнее и безопаснее очищает старый черновик при ошибке.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -68,7 +68,7 @@ let authorExpenseProposals = [];
 let authorItemProposals = [];
 let userProfile = { loaded: false, loading: false, displayName: "", error: "" };
 let tripDraftAiState = { mode: "choice", inputMode: "text", isBusy: false, isCreating: false, isRecording: false, draft: null, sourceText: "", mediaRecorder: null, chunks: [] };
-let linkIntakeState = { isLoading: false, draft: null, status: "", error: "", previewOnlyImageUrl: "" };
+let linkIntakeState = { isLoading: false, draft: null, status: "", error: "", previewOnlyImageUrl: "", appliedSnapshot: null };
 let pendingProfileAction = null;
 let profileSaving = false;
 const resolvingExpenseProposalIds = new Set();
@@ -2909,7 +2909,7 @@ function fillItemForm(item = null) {
 }
 
 function resetLinkIntakeState() {
-  linkIntakeState = { isLoading: false, draft: null, status: "", error: "", previewOnlyImageUrl: "" };
+  linkIntakeState = { isLoading: false, draft: null, status: "", error: "", previewOnlyImageUrl: "", appliedSnapshot: null };
 }
 
 function isLinkIntakePanelAvailable() {
@@ -2951,15 +2951,18 @@ function renderLinkIntakePanel({ visible = true } = {}) {
   const button = $("#linkIntakePreviewButton");
   const status = $("#linkIntakeStatus");
   const preview = $("#linkIntakePreview");
-  const form = $("#itemForm");
-  const hasLink = Boolean(normalizeExternalUrl(form?.elements.link.value || ""));
+  const hint = $("#linkIntakeHint");
+  const buttonState = window.BackpackerLinkIntakeUiCore.createLinkIntakeButtonState(linkIntakeState);
   if (button) {
-    button.disabled = linkIntakeState.isLoading || !hasLink;
-    button.textContent = linkIntakeState.isLoading ? "Собираю..." : "Собрать по ссылке";
+    button.disabled = buttonState.disabled;
+    button.textContent = buttonState.text;
   }
   if (status) {
     status.textContent = linkIntakeState.error || linkIntakeState.status || "";
     status.classList.toggle("is-error", Boolean(linkIntakeState.error));
+  }
+  if (hint) {
+    hint.textContent = window.BackpackerLinkIntakeUiCore.LINK_INTAKE_HINT;
   }
   if (!preview) return;
 
@@ -2997,9 +3000,42 @@ function renderLinkIntakePanel({ visible = true } = {}) {
   }, { once: true });
 }
 
+function getLinkIntakeFormValues() {
+  const form = $("#itemForm");
+  if (!form) return {};
+  return {
+    link: form.elements.link.value,
+    title: form.elements.title.value,
+    type: form.elements.type.value,
+    locationText: form.elements.locationText.value,
+    price: form.elements.price.value,
+  };
+}
+
+function restoreLinkIntakeFormValues(values, fields) {
+  const form = $("#itemForm");
+  if (!form || !values || !Array.isArray(fields)) return;
+  fields.forEach((field) => {
+    if (!Object.prototype.hasOwnProperty.call(values, field) || !form.elements[field]) return;
+    form.elements[field].value = values[field];
+    if (field === "price") validateMoneyInput(form.elements.price);
+  });
+  updateOpenLinkButton();
+}
+
+function clearStaleLinkIntakeDraftFields() {
+  const snapshot = linkIntakeState.appliedSnapshot;
+  if (!snapshot) return [];
+  const result = window.BackpackerLinkIntakeUiCore.clearStaleLinkIntakeValues(getLinkIntakeFormValues(), snapshot);
+  restoreLinkIntakeFormValues(result.values, result.clearedFields);
+  linkIntakeState.appliedSnapshot = null;
+  return result.clearedFields;
+}
+
 function applyLinkIntakeDraftToItemForm(draft) {
   const form = $("#itemForm");
-  if (!form || !draft) return;
+  if (!form || !draft) return null;
+  const beforeValues = getLinkIntakeFormValues();
   if (draft.sourceUrl) form.elements.link.value = draft.sourceUrl;
   if (draft.title) form.elements.title.value = draft.title;
   if (draft.type && Array.from(form.elements.type.options).some((option) => option.value === draft.type)) {
@@ -3012,32 +3048,37 @@ function applyLinkIntakeDraftToItemForm(draft) {
     validateMoneyInput(form.elements.price);
   }
   updateOpenLinkButton();
+  return window.BackpackerLinkIntakeUiCore.createLinkIntakeAppliedSnapshot(beforeValues, getLinkIntakeFormValues());
 }
 
 async function previewLinkIntakeFromForm() {
   if (linkIntakeState.isLoading || isReadOnlyMode()) return;
   const form = $("#itemForm");
   const url = normalizeExternalUrl(form?.elements.link.value || "");
-  if (!url) {
-    linkIntakeState = { ...linkIntakeState, error: "Вставьте корректную ссылку.", status: "" };
+  const request = window.BackpackerLinkIntakeUiCore.createLinkIntakePreviewRequest(url);
+  if (!request.shouldCallBackend) {
+    clearStaleLinkIntakeDraftFields();
+    linkIntakeState = { ...linkIntakeState, isLoading: false, draft: null, error: request.error, status: "", previewOnlyImageUrl: "", appliedSnapshot: null };
     renderLinkIntakePanel();
     return;
   }
-  linkIntakeState = { isLoading: true, draft: null, status: "Ищу данные по ссылке...", error: "", previewOnlyImageUrl: "" };
+  linkIntakeState = { ...linkIntakeState, isLoading: true, draft: null, status: "Ищу данные по ссылке...", error: "", previewOnlyImageUrl: "" };
   renderLinkIntakePanel();
   try {
-    const payload = await callLinkIntakeFunction("preview", { url });
+    const payload = await callLinkIntakeFunction("preview", { url: request.url });
     const draft = payload.draft || null;
     if (!draft || (!draft.title && !draft.sourceUrl && !draft.description && !draft.locationText)) {
       throw new Error("empty_draft");
     }
-    applyLinkIntakeDraftToItemForm(draft);
+    clearStaleLinkIntakeDraftFields();
+    const appliedSnapshot = applyLinkIntakeDraftToItemForm(draft);
     linkIntakeState = {
       isLoading: false,
       draft,
       status: "Черновик заполнен. Проверьте поля и нажмите «Сохранить».",
       error: "",
       previewOnlyImageUrl: draft.imageUrl || "",
+      appliedSnapshot,
     };
     renderLinkIntakePanel();
   } catch (error) {
@@ -3048,7 +3089,8 @@ async function previewLinkIntakeFromForm() {
         : error.message === "empty_draft"
           ? "Не получилось найти полезные данные на странице."
           : "Не удалось собрать черновик по ссылке. Можно заполнить карточку вручную.";
-    linkIntakeState = { isLoading: false, draft: null, status: "", error: reason, previewOnlyImageUrl: "" };
+    clearStaleLinkIntakeDraftFields();
+    linkIntakeState = { isLoading: false, draft: null, status: "", error: reason, previewOnlyImageUrl: "", appliedSnapshot: null };
     renderLinkIntakePanel();
   }
 }

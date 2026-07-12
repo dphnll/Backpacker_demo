@@ -3359,6 +3359,14 @@ h3 {
   color: var(--danger);
 }
 
+.link-intake-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .link-intake-preview {
   display: grid;
   gap: 8px;
