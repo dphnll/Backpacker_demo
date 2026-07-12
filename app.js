@@ -15,8 +15,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.31";
-const APP_RELEASE_SUMMARY = "финансовые показатели в приложении, PDF и шаринге приведены к единой модели с безопасным вводом сумм и приватной скрытой сметой.";
+const APP_VERSION = "1.1.2.32";
+const APP_RELEASE_SUMMARY = "ссылка на место или событие теперь может заполнить черновик карточки в существующей форме добавления.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -68,6 +68,7 @@ let authorExpenseProposals = [];
 let authorItemProposals = [];
 let userProfile = { loaded: false, loading: false, displayName: "", error: "" };
 let tripDraftAiState = { mode: "choice", inputMode: "text", isBusy: false, isCreating: false, isRecording: false, draft: null, sourceText: "", mediaRecorder: null, chunks: [] };
+let linkIntakeState = { isLoading: false, draft: null, status: "", error: "", previewOnlyImageUrl: "" };
 let pendingProfileAction = null;
 let profileSaving = false;
 const resolvingExpenseProposalIds = new Set();
@@ -566,6 +567,13 @@ function getTripDraftAiFunctionUrl() {
   return `${String(config.url).replace(/\/+$/, "")}/functions/v1/trip-draft-ai`;
 }
 
+function getLinkIntakeFunctionUrl() {
+  const config = getSupabaseConfig();
+  if (config.linkIntakeFunctionUrl) return config.linkIntakeFunctionUrl;
+  if (!config.url) return "";
+  return `${String(config.url).replace(/\/+$/, "")}/functions/v1/link-intake`;
+}
+
 function isSupabaseConfigured() {
   const config = getSupabaseConfig();
   return Boolean(config.url && config.anonKey && window.supabase?.createClient);
@@ -657,6 +665,29 @@ async function callTripDraftAiFunction(action, payload = {}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = new Error(data.error || `trip_draft_ai_${action}_failed`);
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+
+async function callLinkIntakeFunction(action, payload = {}) {
+  const config = getSupabaseConfig();
+  const url = getLinkIntakeFunctionUrl();
+  if (!url || !config.anonKey) throw new Error("supabase_not_configured");
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: config.anonKey,
+      Authorization: `Bearer ${await ensureSupabaseOwnerSession()}`,
+    },
+    cache: "no-store",
+    body: JSON.stringify({ action, ...payload }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data.error || `link_intake_${action}_failed`);
     error.status = response.status;
     throw error;
   }
@@ -2869,6 +2900,151 @@ function fillItemForm(item = null) {
   form.elements.participantId.value = getSelfParticipant().id;
 }
 
+function resetLinkIntakeState() {
+  linkIntakeState = { isLoading: false, draft: null, status: "", error: "", previewOnlyImageUrl: "" };
+}
+
+function isLinkIntakePanelAvailable() {
+  const form = $("#itemForm");
+  return Boolean(form && !form.elements.id.value && !isReadOnlyMode());
+}
+
+function getLinkIntakePriceLabel(draft) {
+  if (!draft || !draft.price) return "";
+  const currency = draft.currency || state.trip.currency || "";
+  const amount = draft.currency && draft.currency !== state.trip.currency
+    ? `${draft.price} ${draft.currency}`
+    : formatMoney(draft.price);
+  if (draft.priceKind === "from") return `Цена на странице: от ${amount}`;
+  if (draft.priceKind === "range") return `Цена на странице: диапазон от ${amount}`;
+  if (draft.priceKind === "exact") return `Цена на странице: ${amount}`;
+  return currency ? `Цена на странице: ${draft.price} ${currency}` : `Цена на странице: ${draft.price}`;
+}
+
+function getLinkIntakeDraftWarnings(draft) {
+  if (!draft) return [];
+  const warnings = [];
+  if (draft.price && draft.priceKind !== "exact") {
+    warnings.push("Цена выглядит примерной, поэтому не записана в поле цены. Уточните сумму вручную.");
+  }
+  if (draft.price && draft.currency && draft.currency !== state.trip.currency) {
+    warnings.push(`Валюта источника ${draft.currency} отличается от валюты поездки ${state.trip.currency}. Введите сумму в валюте поездки.`);
+  }
+  return [...warnings, ...(Array.isArray(draft.warnings) ? draft.warnings : [])].slice(0, 6);
+}
+
+function renderLinkIntakePanel({ visible = true } = {}) {
+  const panel = $("#linkIntakePanel");
+  if (!panel) return;
+  const shouldShow = visible && isLinkIntakePanelAvailable();
+  panel.classList.toggle("hidden", !shouldShow);
+  if (!shouldShow) return;
+
+  const button = $("#linkIntakePreviewButton");
+  const status = $("#linkIntakeStatus");
+  const preview = $("#linkIntakePreview");
+  const form = $("#itemForm");
+  const hasLink = Boolean(normalizeExternalUrl(form?.elements.link.value || ""));
+  if (button) {
+    button.disabled = linkIntakeState.isLoading || !hasLink;
+    button.textContent = linkIntakeState.isLoading ? "Собираю..." : "Собрать по ссылке";
+  }
+  if (status) {
+    status.textContent = linkIntakeState.error || linkIntakeState.status || "";
+    status.classList.toggle("is-error", Boolean(linkIntakeState.error));
+  }
+  if (!preview) return;
+
+  const draft = linkIntakeState.draft;
+  preview.classList.toggle("hidden", !draft);
+  if (!draft) {
+    preview.innerHTML = "";
+    return;
+  }
+
+  const image = linkIntakeState.previewOnlyImageUrl
+    ? `<div class="link-intake-image-preview"><img src="${escapeAttr(linkIntakeState.previewOnlyImageUrl)}" alt="" loading="lazy" data-link-intake-image /></div>`
+    : "";
+  const description = draft.description
+    ? `<p class="link-intake-preview-copy">${escapeHtml(draft.description)}</p>`
+    : "";
+  const price = getLinkIntakePriceLabel(draft)
+    ? `<p class="link-intake-preview-copy">${escapeHtml(getLinkIntakePriceLabel(draft))}</p>`
+    : "";
+  const warnings = getLinkIntakeDraftWarnings(draft)
+    .map((warning) => `<p class="link-intake-preview-warning">${escapeHtml(warning)}</p>`)
+    .join("");
+  preview.innerHTML = `
+    <article class="link-intake-preview-card">
+      ${image}
+      <p class="link-intake-preview-title">Черновик по ссылке заполнен в форме ниже</p>
+      ${description}
+      ${price}
+      ${warnings}
+      <p class="link-intake-preview-copy">Изображение показано только для проверки и не сохранится в карточку.</p>
+    </article>
+  `;
+  preview.querySelector("[data-link-intake-image]")?.addEventListener("error", (event) => {
+    event.currentTarget.closest(".link-intake-image-preview")?.classList.add("hidden");
+  }, { once: true });
+}
+
+function applyLinkIntakeDraftToItemForm(draft) {
+  const form = $("#itemForm");
+  if (!form || !draft) return;
+  if (draft.sourceUrl) form.elements.link.value = draft.sourceUrl;
+  if (draft.title) form.elements.title.value = draft.title;
+  if (draft.type && Array.from(form.elements.type.options).some((option) => option.value === draft.type)) {
+    form.elements.type.value = draft.type;
+  }
+  if (draft.locationText) form.elements.locationText.value = draft.locationText;
+  const canUseExactPrice = draft.price && draft.priceKind === "exact" && (!draft.currency || draft.currency === state.trip.currency);
+  if (canUseExactPrice) {
+    form.elements.price.value = String(draft.price);
+    validateMoneyInput(form.elements.price);
+  }
+  updateOpenLinkButton();
+}
+
+async function previewLinkIntakeFromForm() {
+  if (linkIntakeState.isLoading || isReadOnlyMode()) return;
+  const form = $("#itemForm");
+  const url = normalizeExternalUrl(form?.elements.link.value || "");
+  if (!url) {
+    linkIntakeState = { ...linkIntakeState, error: "Вставьте корректную ссылку.", status: "" };
+    renderLinkIntakePanel();
+    return;
+  }
+  linkIntakeState = { isLoading: true, draft: null, status: "Ищу данные по ссылке...", error: "", previewOnlyImageUrl: "" };
+  renderLinkIntakePanel();
+  try {
+    const payload = await callLinkIntakeFunction("preview", { url });
+    const draft = payload.draft || null;
+    if (!draft || (!draft.title && !draft.sourceUrl && !draft.description && !draft.locationText)) {
+      throw new Error("empty_draft");
+    }
+    applyLinkIntakeDraftToItemForm(draft);
+    linkIntakeState = {
+      isLoading: false,
+      draft,
+      status: "Черновик заполнен. Проверьте поля и нажмите «Сохранить».",
+      error: "",
+      previewOnlyImageUrl: draft.imageUrl || "",
+    };
+    renderLinkIntakePanel();
+  } catch (error) {
+    const reason = error.message === "supabase_not_configured"
+      ? "AI-сбор по ссылке пока не настроен."
+      : error.message === "invalid_url"
+        ? "Ссылка выглядит некорректной."
+        : error.message === "empty_draft"
+          ? "Не получилось найти полезные данные на странице."
+          : "Не удалось собрать черновик по ссылке. Можно заполнить карточку вручную.";
+    linkIntakeState = { isLoading: false, draft: null, status: "", error: reason, previewOnlyImageUrl: "" };
+    renderLinkIntakePanel();
+  }
+}
+
 function openItemSheet(itemId = null) {
   fillSelects();
   renderParticipantOwnerField();
@@ -2881,6 +3057,8 @@ function openItemSheet(itemId = null) {
   renderItemAllocationSummary(trackedItem);
   renderAcceptedExpenseControls(trackedItem);
   updateOpenLinkButton();
+  resetLinkIntakeState();
+  renderLinkIntakePanel({ visible: !itemId && !isReadOnlyMode() });
   openSheet("itemSheet");
   itemFormOpenedAt = Date.now();
   if (trackedItem) {
@@ -6805,7 +6983,14 @@ function bindEvents() {
   $("#deleteItemButton").addEventListener("click", deleteCurrentItem);
   $("#cardCopyBackButton").addEventListener("click", goBackCardCopyStep);
   $("#cardCopyConfirmButton").addEventListener("click", confirmCardCopy);
-  $("#itemForm").elements.link.addEventListener("input", updateOpenLinkButton);
+  $("#itemForm").elements.link.addEventListener("input", () => {
+    updateOpenLinkButton();
+    if (!linkIntakeState.isLoading) {
+      linkIntakeState = { ...linkIntakeState, draft: null, status: "", error: "", previewOnlyImageUrl: "" };
+    }
+    renderLinkIntakePanel();
+  });
+  $("#linkIntakePreviewButton")?.addEventListener("click", previewLinkIntakeFromForm);
   $("#openLinkButton").addEventListener("click", openItemLink);
   $("#editTripButton").addEventListener("click", openTripSheet);
   $("#tripMeta").addEventListener("click", openTripSheet);

@@ -534,6 +534,13 @@
             <input name="link" inputmode="url" placeholder="Aviasales, Tripster, кафе, отель..." />
           </label>
           <button class="ghost-button link-open-button" id="openLinkButton" type="button" disabled>Перейти</button>
+          <section class="link-intake-panel hidden" id="linkIntakePanel" aria-live="polite">
+            <div class="link-intake-actions">
+              <button class="ghost-button compact" id="linkIntakePreviewButton" type="button">Собрать по ссылке</button>
+              <span class="link-intake-status" id="linkIntakeStatus"></span>
+            </div>
+            <div class="link-intake-preview hidden" id="linkIntakePreview"></div>
+          </section>
           <label class="field wide">
             Локация
             <input name="locationText" placeholder="Адрес или район" />
