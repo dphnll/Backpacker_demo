@@ -15,8 +15,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.32";
-const APP_RELEASE_SUMMARY = "ссылка на место или событие теперь может заполнить черновик карточки в существующей форме добавления.";
+const APP_VERSION = "1.1.2.33";
+const APP_RELEASE_SUMMARY = "карточки, разложенные по виртуальным дням, сохраняют свой день после назначения реальных дат поездки.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -3943,6 +3943,9 @@ function saveTrip(event) {
     aiSourceText: String(data.aiSourceText || "").trim().slice(0, 30000),
     preferencesText: data.preferencesText.trim(),
   };
+  if (window.BackpackerTripDates?.migrateVirtualItemDatesToRealDates) {
+    state.items = window.BackpackerTripDates.migrateVirtualItemDatesToRealDates(state.items, previousTrip, state.trip);
+  }
   saveState();
   closeSheet("tripSheet");
   render();
