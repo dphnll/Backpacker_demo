@@ -71,7 +71,7 @@ async function previewItemDraft(body: Record<string, unknown>) {
 
   try {
     const controlledFetch = createFirecrawlControlledFetch({ apiKey: firecrawlApiKey });
-    const page = await controlledFetch(url, { zeroDataRetention: true });
+    const page = await controlledFetch(url);
     const candidate = extractTravelCandidate(page, { sourceType: "link_intake" });
     const draft = buildBaseDraftFromCandidate(candidate);
     const hasUsefulDraft = Boolean(draft.title || draft.sourceUrl || draft.description || draft.locationText);
