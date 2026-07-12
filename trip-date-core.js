@@ -66,12 +66,44 @@
     });
   }
 
+  function isDateInTripRange(date = "", trip = {}) {
+    if (!isValidIsoDate(date)) return false;
+    if (!isValidIsoDate(trip.startDate) || !isValidIsoDate(trip.endDate) || trip.endDate < trip.startDate) return true;
+    return date >= trip.startDate && date <= trip.endDate;
+  }
+
+  function moveOutOfRangeItemDatesToUnscheduled(items = [], trip = {}) {
+    if (!isValidIsoDate(trip.startDate) || !isValidIsoDate(trip.endDate) || trip.endDate < trip.startDate) {
+      return { items, movedCount: 0 };
+    }
+    let nextUnscheduledOrder = items
+      .filter((item) => !item?.date)
+      .reduce((max, item) => {
+        const order = Number(item?.order);
+        return Number.isFinite(order) ? Math.max(max, order + 1) : max;
+      }, 0);
+    let movedCount = 0;
+    const nextItems = items.map((item) => {
+      const itemDate = item?.date || "";
+      if (!itemDate || getVirtualDayIndex(itemDate) || !isValidIsoDate(itemDate) || isDateInTripRange(itemDate, trip)) {
+        return item;
+      }
+      const nextItem = { ...item, date: "", order: nextUnscheduledOrder };
+      nextUnscheduledOrder += 1;
+      movedCount += 1;
+      return nextItem;
+    });
+    return { items: movedCount ? nextItems : items, movedCount };
+  }
+
   return {
     VIRTUAL_DAY_PREFIX,
     getCalendarDayCount,
     getDateForTripDay,
     getVirtualDayIndex,
+    isDateInTripRange,
     migrateVirtualItemDatesToRealDates,
+    moveOutOfRangeItemDatesToUnscheduled,
     shouldMigrateVirtualDates,
   };
 });

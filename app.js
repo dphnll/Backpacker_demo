@@ -15,8 +15,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.33";
-const APP_RELEASE_SUMMARY = "карточки, разложенные по виртуальным дням, сохраняют свой день после назначения реальных дат поездки.";
+const APP_VERSION = "1.1.2.34";
+const APP_RELEASE_SUMMARY = "карточки больше не исчезают из плана при смене диапазона дат поездки.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -1265,6 +1265,14 @@ function formatDayCountText(count) {
   if (mod10 === 1 && mod100 !== 11) return `${count} день`;
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} дня`;
   return `${count} дней`;
+}
+
+function formatEventMoveCountText(count) {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${count} событие перенесено`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} события перенесены`;
+  return `${count} событий перенесено`;
 }
 
 function formatTripDayCount(trip) {
@@ -3946,10 +3954,17 @@ function saveTrip(event) {
   if (window.BackpackerTripDates?.migrateVirtualItemDatesToRealDates) {
     state.items = window.BackpackerTripDates.migrateVirtualItemDatesToRealDates(state.items, previousTrip, state.trip);
   }
+  const outOfRangeDateResult = window.BackpackerTripDates?.moveOutOfRangeItemDatesToUnscheduled?.(state.items, state.trip);
+  const outOfRangeMovedCount = outOfRangeDateResult?.movedCount || 0;
+  if (outOfRangeDateResult?.items) {
+    state.items = outOfRangeDateResult.items;
+  }
   saveState();
   closeSheet("tripSheet");
   render();
-  showToast("Поездка сохранена");
+  showToast(outOfRangeMovedCount
+    ? `${formatEventMoveCountText(outOfRangeMovedCount)} в «Без даты»`
+    : "Поездка сохранена");
   const changedFields = ["title", "destination", "startDate", "endDate", "currency", "budgetLimit", "preferencesText"]
     .filter((field) => String(previousTrip[field] ?? "") !== String(state.trip[field] ?? ""));
   trackEvent("trip_settings_updated", {
