@@ -2,7 +2,7 @@
   "use strict";
 
   const LINK_INTAKE_HINT = "Вставьте ссылку и нажмите «Собрать по ссылке».";
-  const LINK_INTAKE_INVALID_URL_MESSAGE = "Вставьте корректную ссылку";
+  const LINK_INTAKE_INVALID_URL_MESSAGE = "Вставьте корректную ссылку.";
   const LINK_INTAKE_AUTOFILL_FIELDS = ["link", "title", "type", "locationText", "price"];
 
   function toFieldValue(value) {

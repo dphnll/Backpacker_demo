@@ -14,7 +14,7 @@ test("create mode with empty URL keeps Link Intake button available and blocks b
 
   const request = core.createLinkIntakePreviewRequest("");
   assert.equal(request.shouldCallBackend, false);
-  assert.equal(request.error, "Вставьте корректную ссылку");
+  assert.equal(request.error, "Вставьте корректную ссылку.");
 });
 
 test("valid URL is allowed to start the existing preview pipeline", () => {
@@ -76,6 +76,40 @@ test("success then manual field edits then failure preserves manual edits", () =
   assert.equal(result.values.title, "My edited title");
   assert.equal(result.values.type, "food");
   assert.equal(result.values.locationText, "My edited location");
+});
+
+test("failure restores user values that existed before Link Intake autofill", () => {
+  const snapshot = core.createLinkIntakeAppliedSnapshot(
+    {
+      link: "https://example.com/user-link",
+      title: "My original title",
+      type: "food",
+      locationText: "My original location",
+      price: "250",
+    },
+    {
+      link: "https://example.com/first",
+      title: "First place",
+      type: "other",
+      locationText: "Autofilled location",
+      price: "100",
+    },
+  );
+
+  const result = core.clearStaleLinkIntakeValues({
+    link: "https://example.com/broken",
+    title: "First place",
+    type: "other",
+    locationText: "Autofilled location",
+    price: "100",
+  }, snapshot);
+
+  assert.deepEqual(result.clearedFields.sort(), ["locationText", "price", "title", "type"]);
+  assert.equal(result.values.link, "https://example.com/broken");
+  assert.equal(result.values.title, "My original title");
+  assert.equal(result.values.type, "food");
+  assert.equal(result.values.locationText, "My original location");
+  assert.equal(result.values.price, "250");
 });
 
 test("success after previous success does not restore an older auto-filled draft on later failure", () => {
