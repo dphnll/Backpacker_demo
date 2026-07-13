@@ -15,8 +15,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.37";
-const APP_RELEASE_SUMMARY = "локальная проверка ссылки стала точнее, а возврат исходных данных закреплён тестом.";
+const APP_VERSION = "1.1.2.38";
+const APP_RELEASE_SUMMARY = "уточнены итоги бюджета и выровнена ключевая плашка в шапке поездки.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -2779,8 +2779,8 @@ function renderBudget() {
       <h3>Идеи, хотелки, запас</h3>
       <div class="budget-grid additional-budget-grid">
         <div class="metric-card"><span>Идеи, хотелки, запас</span><strong>${formatBudgetMoney(totals.additionalTotal)}</strong></div>
-        <div class="metric-card service-total"><span>С учетом идей и хотелок</span><strong>${formatBudgetMoney(totals.possibleTotal)}</strong></div>
-        <div class="metric-card"><span>Остаток с учётом хотелок</span><strong style="color:${canShowBudget() && totals.remainingAll < 0 ? "var(--danger)" : "var(--green)"}">${formatBudgetMoney(totals.remainingAll)}</strong></div>
+        <div class="metric-card service-total"><span>С учётом идей, хотелок, запаса</span><strong>${formatBudgetMoney(totals.possibleTotal)}</strong></div>
+        <div class="metric-card"><span>Остаток с учётом идей, хотелок, запаса</span><strong style="color:${canShowBudget() && totals.remainingAll < 0 ? "var(--danger)" : "var(--green)"}">${formatBudgetMoney(totals.remainingAll)}</strong></div>
       </div>
     </section>
     <section class="card budget-days-card">
@@ -4285,8 +4285,8 @@ function buildShareText(compact = false) {
       `Осталось оплатить: ${formatMoney(totals.confirmedOutstanding)}`,
       `Свободно: ${formatMoney(totals.remainingConfirmed)}`,
       `Идеи, хотелки, запас: ${formatMoney(totals.additionalTotal)}`,
-      `С учетом идей и хотелок: ${formatMoney(totals.possibleTotal)}`,
-      `Остаток с учётом хотелок: ${formatMoney(totals.remainingAll)}`,
+      `С учётом идей, хотелок, запаса: ${formatMoney(totals.possibleTotal)}`,
+      `Остаток с учётом идей, хотелок, запаса: ${formatMoney(totals.remainingAll)}`,
       "",
     );
   }
@@ -4989,17 +4989,20 @@ async function buildTripPdfBlob(options) {
       ["Осталось оплатить", formatMoney(totals.confirmedOutstanding)],
       ["Свободно", formatMoney(totals.remainingConfirmed)],
       ["Идеи, хотелки, запас", formatMoney(totals.additionalTotal)],
-      ["С учетом идей и хотелок", formatMoney(totals.possibleTotal)],
-      ["Остаток с учётом хотелок", formatMoney(totals.remainingAll)],
+      ["С учётом идей, хотелок, запаса", formatMoney(totals.possibleTotal)],
+      ["Остаток с учётом идей, хотелок, запаса", formatMoney(totals.remainingAll)],
     ];
     ctx.font = "700 11px Arial, sans-serif";
     budgetRows.forEach((row, index) => {
       const rowY = y + 48 + index * 18;
       ctx.fillStyle = "#66716f";
+      ctx.textAlign = "left";
       ctx.fillText(row[0], margin + 14, rowY);
       ctx.fillStyle = "#1f2423";
-      ctx.fillText(row[1], margin + 190, rowY);
+      ctx.textAlign = "right";
+      ctx.fillText(row[1], margin + contentWidth - 14, rowY);
     });
+    ctx.textAlign = "left";
     if (hasGroupParticipants) {
       const rowY = y + 48 + budgetRows.length * 18;
       ctx.fillStyle = "#66716f";
