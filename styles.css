@@ -2829,6 +2829,10 @@ h3 {
   grid-column: 1 / -1;
 }
 
+.additional-budget-grid .metric-card:last-child {
+  grid-column: auto;
+}
+
 .budget-days-card {
   padding: 12px;
   display: grid;

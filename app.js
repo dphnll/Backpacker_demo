@@ -15,8 +15,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.35";
-const APP_RELEASE_SUMMARY = "сбор карточки по ссылке стал доступнее и безопаснее очищает старый черновик при ошибке.";
+const APP_VERSION = "1.1.2.36";
+const APP_RELEASE_SUMMARY = "в бюджете обновлены подписи и усилены ключевые итоговые карточки.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -2768,19 +2768,19 @@ function renderBudget() {
     <section class="budget-metric-group">
       <h3>Основной план</h3>
       <div class="budget-grid">
-        <div class="metric-card"><span>Бюджет поездки</span><strong>${formatBudgetMoney(totals.budgetLimit)}</strong></div>
+        <div class="metric-card service-total budget-limit-total"><span>Бюджет поездки</span><strong>${formatBudgetMoney(totals.budgetLimit)}</strong></div>
         <div class="metric-card"><span>Оплачено</span><strong>${formatBudgetMoney(totals.paidTotal)}</strong></div>
-        <div class="metric-card"><span>Подтверждено</span><strong>${formatBudgetMoney(totals.confirmedTotal)}</strong></div>
+        <div class="metric-card"><span>Бронь</span><strong>${formatBudgetMoney(totals.confirmedTotal)}</strong></div>
         <div class="metric-card"><span>Осталось оплатить</span><strong>${formatBudgetMoney(totals.confirmedOutstanding)}</strong></div>
         <div class="metric-card"><span>Свободно</span><strong style="color:${canShowBudget() && totals.remainingConfirmed < 0 ? "var(--danger)" : "var(--green)"}">${formatBudgetMoney(totals.remainingConfirmed)}</strong></div>
       </div>
     </section>
     <section class="budget-metric-group">
-      <h3>Дополнительные планы</h3>
-      <div class="budget-grid">
-        <div class="metric-card"><span>Дополнительные планы</span><strong>${formatBudgetMoney(totals.additionalTotal)}</strong></div>
-        <div class="metric-card service-total"><span>Если включить всё</span><strong>${formatBudgetMoney(totals.possibleTotal)}</strong></div>
-        <div class="metric-card"><span>Останется, если включить всё</span><strong style="color:${canShowBudget() && totals.remainingAll < 0 ? "var(--danger)" : "var(--green)"}">${formatBudgetMoney(totals.remainingAll)}</strong></div>
+      <h3>Идеи, хотелки, запас</h3>
+      <div class="budget-grid additional-budget-grid">
+        <div class="metric-card"><span>Идеи, хотелки, запас</span><strong>${formatBudgetMoney(totals.additionalTotal)}</strong></div>
+        <div class="metric-card service-total"><span>С учетом идей и хотелок</span><strong>${formatBudgetMoney(totals.possibleTotal)}</strong></div>
+        <div class="metric-card"><span>Остаток с учётом хотелок</span><strong style="color:${canShowBudget() && totals.remainingAll < 0 ? "var(--danger)" : "var(--green)"}">${formatBudgetMoney(totals.remainingAll)}</strong></div>
       </div>
     </section>
     <section class="card budget-days-card">
@@ -4281,12 +4281,12 @@ function buildShareText(compact = false) {
       "Бюджет:",
       `Бюджет поездки: ${formatMoney(totals.budgetLimit)}`,
       `Оплачено: ${formatMoney(totals.paidTotal)}`,
-      `Подтверждено: ${formatMoney(totals.confirmedTotal)}`,
+      `Бронь: ${formatMoney(totals.confirmedTotal)}`,
       `Осталось оплатить: ${formatMoney(totals.confirmedOutstanding)}`,
       `Свободно: ${formatMoney(totals.remainingConfirmed)}`,
-      `Дополнительные планы: ${formatMoney(totals.additionalTotal)}`,
-      `Если включить всё: ${formatMoney(totals.possibleTotal)}`,
-      `Останется, если включить всё: ${formatMoney(totals.remainingAll)}`,
+      `Идеи, хотелки, запас: ${formatMoney(totals.additionalTotal)}`,
+      `С учетом идей и хотелок: ${formatMoney(totals.possibleTotal)}`,
+      `Остаток с учётом хотелок: ${formatMoney(totals.remainingAll)}`,
       "",
     );
   }
@@ -4945,7 +4945,7 @@ async function buildTripPdfBlob(options) {
       const cardWidth = (contentWidth - cardGap * 2) / 3;
       const cardY = y + 114;
       drawPdfMetricCard(margin, cardY, cardWidth, 42, "Оплачено", formatMoney(totals.paidTotal), "paid");
-      drawPdfMetricCard(margin + cardWidth + cardGap, cardY, cardWidth, 42, "Подтверждено", formatMoney(totals.confirmedTotal));
+      drawPdfMetricCard(margin + cardWidth + cardGap, cardY, cardWidth, 42, "Бронь", formatMoney(totals.confirmedTotal));
       drawPdfMetricCard(margin + (cardWidth + cardGap) * 2, cardY, cardWidth, 42, "Свободно", formatMoney(totals.remainingConfirmed));
     }
     if (hasGroupParticipants) {
@@ -4985,12 +4985,12 @@ async function buildTripPdfBlob(options) {
     const budgetRows = [
       ["Бюджет поездки", formatMoney(totals.budgetLimit)],
       ["Оплачено", formatMoney(totals.paidTotal)],
-      ["Подтверждено", formatMoney(totals.confirmedTotal)],
+      ["Бронь", formatMoney(totals.confirmedTotal)],
       ["Осталось оплатить", formatMoney(totals.confirmedOutstanding)],
       ["Свободно", formatMoney(totals.remainingConfirmed)],
-      ["Дополнительные планы", formatMoney(totals.additionalTotal)],
-      ["Если включить всё", formatMoney(totals.possibleTotal)],
-      ["Останется, если включить всё", formatMoney(totals.remainingAll)],
+      ["Идеи, хотелки, запас", formatMoney(totals.additionalTotal)],
+      ["С учетом идей и хотелок", formatMoney(totals.possibleTotal)],
+      ["Остаток с учётом хотелок", formatMoney(totals.remainingAll)],
     ];
     ctx.font = "700 11px Arial, sans-serif";
     budgetRows.forEach((row, index) => {
