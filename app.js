@@ -15,8 +15,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.38";
-const APP_RELEASE_SUMMARY = "уточнены итоги бюджета и выровнена ключевая плашка в шапке поездки.";
+const APP_VERSION = "1.1.2.39";
+const APP_RELEASE_SUMMARY = "AI-черновик стабильно учитывает явно указанное количество однотипных мест.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -5949,6 +5949,31 @@ function normalizeTripDraftResponse(payload = {}, sourceText = "") {
     : normalizeTripDraftDatePrecision(trip.datePrecision, startDate, endDate);
   const dateSourceText = datePrecision === "approximate" ? String(trip.dateSourceText || approximateDateSourceText || "").trim().slice(0, 160) : "";
   const questions = Array.isArray(draft.questions) ? draft.questions.filter(Boolean).slice(0, 5) : [];
+  const normalizedItems = items.slice(0, 80).map((item, index) => {
+    const explicitDate = normalizeTripDraftDate(item.date);
+    const dayIndex = normalizeTripDayCount(item.dayIndex, 0);
+    const virtualDate = !startDate && !endDate && dayIndex > 0 && dayIndex <= dayCount ? createVirtualDayDate(dayIndex) : "";
+    const indexedDate = startDate && dayIndex > 0 && dayIndex <= dayCount ? getTripDraftDateFromDayIndex(startDate, dayIndex) : "";
+    return {
+      title: String(item.title || `Идея ${index + 1}`).trim().slice(0, 120) || `Идея ${index + 1}`,
+      type: normalizeTripDraftItemTypeForItem(item),
+      status: statuses.some(([key]) => key === item.status) ? item.status : DEFAULT_ITEM_STATUS,
+      priority: priorities.some(([key]) => key === item.priority) ? item.priority : DEFAULT_ITEM_PRIORITY,
+      date: explicitDate || indexedDate || virtualDate,
+      startTime: normalizeTripDraftTime(item.startTime),
+      durationMinutes: Math.max(0, Math.min(1440, parseMoney(item.durationMinutes))),
+      price: Math.max(0, parseMoney(item.price)),
+      paidAmount: 0,
+      link: String(item.link || "").trim().slice(0, 500),
+      locationText: String(item.locationText || "").trim().slice(0, 160),
+      notes: String(item.notes || "").trim().slice(0, 1000),
+    };
+  });
+  const quantityAdjustedItems = window.BackpackerTripDraftQuantities?.applyExplicitItemQuantities?.(
+    sourceText,
+    normalizedItems,
+    { contextText: trip.destination, maxItems: 80 },
+  ) || normalizedItems;
   return {
     trip: {
       title: String(trip.title || "Новая поездка").trim().slice(0, 80) || "Новая поездка",
@@ -5962,26 +5987,7 @@ function normalizeTripDraftResponse(payload = {}, sourceText = "") {
       budgetLimit: parseMoney(trip.budgetLimit),
       preferencesText: String(trip.preferencesText || "").trim().slice(0, 4000),
     },
-    items: items.slice(0, 80).map((item, index) => {
-      const explicitDate = normalizeTripDraftDate(item.date);
-      const dayIndex = normalizeTripDayCount(item.dayIndex, 0);
-      const virtualDate = !startDate && !endDate && dayIndex > 0 && dayIndex <= dayCount ? createVirtualDayDate(dayIndex) : "";
-      const indexedDate = startDate && dayIndex > 0 && dayIndex <= dayCount ? getTripDraftDateFromDayIndex(startDate, dayIndex) : "";
-      return {
-        title: String(item.title || `Идея ${index + 1}`).trim().slice(0, 120) || `Идея ${index + 1}`,
-        type: normalizeTripDraftItemTypeForItem(item),
-        status: statuses.some(([key]) => key === item.status) ? item.status : DEFAULT_ITEM_STATUS,
-        priority: priorities.some(([key]) => key === item.priority) ? item.priority : DEFAULT_ITEM_PRIORITY,
-        date: explicitDate || indexedDate || virtualDate,
-        startTime: normalizeTripDraftTime(item.startTime),
-        durationMinutes: Math.max(0, Math.min(1440, parseMoney(item.durationMinutes))),
-        price: Math.max(0, parseMoney(item.price)),
-        paidAmount: 0,
-        link: String(item.link || "").trim().slice(0, 500),
-        locationText: String(item.locationText || "").trim().slice(0, 160),
-        notes: String(item.notes || "").trim().slice(0, 1000),
-      };
-    }),
+    items: quantityAdjustedItems,
     questions,
   };
 }

@@ -155,6 +155,8 @@ const tripDraftSystemPrompt = [
   "If an item has an explicit date or can be placed inside the extracted date range, set date as YYYY-MM-DD. If exact dates are unknown but the item belongs to Day 1, Day 2, etc., leave date empty and set dayIndex. If the day is truly unknown, leave date empty and dayIndex 0 so the app can put it into parking.",
   "If time is not explicitly known, leave startTime empty. Do not invent exact times.",
   "Create one item for each concrete activity, place, meal idea, transport, stay, spa, shopping item, or open idea mentioned by the user.",
+  "Interpret explicit item quantities deterministically: one/один/одна means 1; two/два/две/пара means 2; three/три means 3; several/несколько means 3; numeric N means N; a numeric range N-M means its upper bound M.",
+  "When the user gives an explicit quantity for a place or activity category, create that many separate items instead of one aggregate item. Keep different meaningful titles when known; otherwise use neutral numbered titles in the user's language, such as 'Кофейня 1', 'Кофейня 2'.",
   "Do not replace specific user ideas with generic tasks like 'choose accommodation' unless the user only asked for planning help and did not name concrete ideas.",
   "Default status for ideas is want. Default priority is nice.",
   "Use type spa for hammam/spa/bathhouse, excursion for tours/cruises/museums, food for meals/restaurants, place for attractions/walks/viewpoints, stay for accommodation, transport for movement.",
@@ -186,6 +188,8 @@ async function parseDraft(body: Record<string, unknown>, openAiKey: string) {
     "Если транспорт используется ради впечатления или экскурсии — прогулка на теплоходе, обзорная автобусная экскурсия, круиз с ужином, лодка по каналам — не ставь transport; выбирай excursion, food, idea или другой существующий тип по главной цели.",
     "preferencesText оформи короткими редактируемыми строками с буллитами, максимум 4-6 строк: '• Обязательно: ...', '• Темп: ...', '• Опционально: ...', '• Ограничения: ...'. Не повторяй исходное описание целиком, не дублируй события, объединяй близкие идеи и пропускай пустые категории.",
     "Статус по умолчанию для идей: want. Приоритет по умолчанию: nice.",
+    "Явные количества мест и событий трактуй так: один/одна — 1; два/две/пара — 2; три — 3; несколько — 3; точное число N — N; диапазон N–M — верхняя граница M.",
+    "Если пользователь указал количество однотипных мест или событий, создай нужное количество отдельных items, а не одну обобщённую карточку. Сохраняй разные осмысленные названия; если конкретные места неизвестны, используй нейтральную нумерацию вроде 'Кофейня 1', 'Кофейня 2'.",
   ].join("\n");
 
   const response = await fetch("https://api.openai.com/v1/responses", {
