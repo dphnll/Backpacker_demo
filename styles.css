@@ -1335,11 +1335,17 @@ button[aria-disabled="true"] .home-support-icon {
 }
 
 .profile-copy {
+  grid-column: 1 / -1;
   margin: 0;
   color: var(--muted);
   font-size: 14px;
   font-weight: 700;
   line-height: 1.4;
+}
+
+.profile-form > .field-hint {
+  grid-column: 1 / -1;
+  width: 100%;
 }
 
 .profile-error {
@@ -1394,8 +1400,33 @@ button[aria-disabled="true"] .home-support-icon {
 
 .recoverable-auth-form {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
+  width: 100%;
   margin-top: 12px;
+}
+
+.recoverable-auth-form .field,
+.recoverable-auth-form .field-hint,
+.recoverable-auth-form input,
+.recoverable-auth-form button {
+  width: 100%;
+  min-width: 0;
+}
+
+.recoverable-auth-form .field,
+.recoverable-auth-form .field.wide {
+  grid-column: 1 / -1;
+}
+
+.profile-sheet-panel #profileSaveButton,
+.recoverable-auth-form .primary-button,
+.recoverable-auth-form .ghost-button {
+  min-height: 44px;
+  border-color: rgba(18, 54, 61, 0.34);
+  background: var(--active-button-gradient);
+  color: #fff;
+  box-shadow: var(--active-button-shadow);
 }
 
 .recoverable-auth-login-form {

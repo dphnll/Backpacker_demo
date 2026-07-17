@@ -15,8 +15,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.40";
-const APP_RELEASE_SUMMARY = "Добавлен минимальный recoverable access через email-ссылку.";
+const APP_VERSION = "1.1.2.41";
+const APP_RELEASE_SUMMARY = "Выровнен recoverable access и уточнены ошибки email-ссылок.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -938,6 +938,21 @@ function getRecoverableAuthEmailFromInput(selector) {
   return { email, error };
 }
 
+function getRecoverableAuthSendErrorMessage(error, { login = false } = {}) {
+  const code = String(error?.code || error?.error_code || "").toLowerCase();
+  const message = String(error?.message || "").toLowerCase();
+  const status = Number(error?.status || 0);
+  if (status === 429 || code.includes("rate_limit") || message.includes("rate limit") || message.includes("too many")) {
+    return "Слишком много писем за короткое время. Подождите немного и попробуйте позже.";
+  }
+  if (message.includes("already")) {
+    return "Этот email уже используется. Попробуйте войти по email.";
+  }
+  return login
+    ? "Не удалось отправить ссылку. Проверьте email или сохраните доступ сначала."
+    : "Не удалось отправить ссылку. Проверьте email и попробуйте ещё раз.";
+}
+
 async function submitRecoverableAuthUpgradeForm(event) {
   event.preventDefault();
   if (recoverableAuthState.upgradeSending) return;
@@ -967,9 +982,7 @@ async function submitRecoverableAuthUpgradeForm(event) {
     showToast("Письмо отправлено");
     await refreshRecoverableAuthSession();
   } catch (error) {
-    recoverableAuthState.error = error?.message?.includes("already")
-      ? "Этот email уже используется. Попробуйте войти по email."
-      : "Не удалось отправить ссылку. Проверьте email и попробуйте ещё раз.";
+    recoverableAuthState.error = getRecoverableAuthSendErrorMessage(error);
   } finally {
     recoverableAuthState.upgradeSending = false;
     renderProfileSheet();
@@ -1008,8 +1021,8 @@ async function submitRecoverableAuthLoginForm(event) {
     if (result.error) throw result.error;
     recoverableAuthState.status = "Письмо отправлено, проверьте почту.";
     showToast("Письмо отправлено");
-  } catch {
-    recoverableAuthState.error = "Не удалось отправить ссылку. Проверьте email или сохраните доступ сначала.";
+  } catch (error) {
+    recoverableAuthState.error = getRecoverableAuthSendErrorMessage(error, { login: true });
   } finally {
     recoverableAuthState.loginSending = false;
     renderProfileSheet();
