@@ -15,8 +15,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.39";
-const APP_RELEASE_SUMMARY = "AI-черновик стабильно учитывает явно указанное количество однотипных мест.";
+const APP_VERSION = "1.1.2.40";
+const APP_RELEASE_SUMMARY = "Добавлен минимальный recoverable access через email-ссылку.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -67,6 +67,13 @@ let itemProposalDraft = { title: "", itemType: "idea", link: "", price: "", note
 let authorExpenseProposals = [];
 let authorItemProposals = [];
 let userProfile = { loaded: false, loading: false, displayName: "", error: "" };
+let recoverableAuthState = {
+  error: "",
+  loginSending: false,
+  status: "",
+  upgradeSending: false,
+  user: null,
+};
 let tripDraftAiState = { mode: "choice", inputMode: "text", isBusy: false, isCreating: false, isRecording: false, draft: null, sourceText: "", mediaRecorder: null, chunks: [] };
 let linkIntakeState = { isLoading: false, draft: null, status: "", error: "", previewOnlyImageUrl: "", appliedSnapshot: null };
 let pendingProfileAction = null;
@@ -593,6 +600,113 @@ function getSupabaseClient() {
   return supabaseClient;
 }
 
+function getRecoverableAuthCore() {
+  return window.BackpackerRecoverableAuth;
+}
+
+function getRecoverableAuthRedirectUrl() {
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
+function getRecoverableAuthUserSummary(user = null) {
+  const core = getRecoverableAuthCore();
+  return core?.summarizeAuthUser ? core.summarizeAuthUser(user) : {
+    email: user?.email || "",
+    hasEmailIdentity: false,
+    id: user?.id || "",
+    isAnonymous: user?.is_anonymous === true,
+    providers: [],
+  };
+}
+
+async function refreshRecoverableAuthSession({ refreshProfile = false } = {}) {
+  const client = getSupabaseClient();
+  if (!client) {
+    recoverableAuthState.user = null;
+    renderProfileSheet();
+    return null;
+  }
+  const sessionResult = await client.auth.getSession();
+  const session = sessionResult.data.session;
+  if (!session?.access_token) {
+    recoverableAuthState.user = null;
+    renderProfileSheet();
+    return null;
+  }
+  const userResult = await client.auth.getUser();
+  const user = userResult.data?.user || session.user || null;
+  recoverableAuthState.user = getRecoverableAuthUserSummary(user);
+  renderProfileSheet();
+  renderHomeProfile();
+  if (refreshProfile) await loadMyProfile({ createSession: false }).catch(() => null);
+  return recoverableAuthState.user;
+}
+
+function cleanRecoverableAuthCallbackUrl() {
+  const core = getRecoverableAuthCore();
+  if (!core?.getCleanAuthCallbackUrl || !window.history?.replaceState) return;
+  const cleanUrl = core.getCleanAuthCallbackUrl(window.location.href);
+  if (cleanUrl !== window.location.href) window.history.replaceState({}, document.title, cleanUrl);
+}
+
+async function handleRecoverableAuthCallback() {
+  if (!isSupabaseConfigured()) return null;
+  const core = getRecoverableAuthCore();
+  const info = core?.getAuthCallbackInfo?.(window.location.href);
+  const client = getSupabaseClient();
+  if (!info?.hasAuthParams || !client) {
+    return refreshRecoverableAuthSession();
+  }
+  if (info.hasError) {
+    recoverableAuthState.error = "Не удалось подтвердить email. Попробуйте отправить ссылку ещё раз.";
+    recoverableAuthState.status = "";
+    cleanRecoverableAuthCallbackUrl();
+    showToast("Не удалось подтвердить email");
+    renderProfileSheet();
+    return refreshRecoverableAuthSession();
+  }
+  try {
+    if (info.hasCode && client.auth.exchangeCodeForSession) {
+      const exchanged = await client.auth.exchangeCodeForSession(info.code);
+      if (exchanged.error) {
+        const current = await client.auth.getSession();
+        if (!current.data.session?.access_token) throw exchanged.error;
+      }
+    }
+    const user = await refreshRecoverableAuthSession({ refreshProfile: true });
+    recoverableAuthState.error = "";
+    recoverableAuthState.status = user?.hasEmailIdentity
+      ? "Готово: доступ сохранён."
+      : "Вход выполнен.";
+    showToast(recoverableAuthState.status);
+    return user;
+  } catch {
+    recoverableAuthState.error = "Ссылка открылась, но сессию не удалось восстановить. Попробуйте отправить ссылку ещё раз.";
+    recoverableAuthState.status = "";
+    showToast("Не удалось восстановить доступ");
+    renderProfileSheet();
+    return null;
+  } finally {
+    cleanRecoverableAuthCallbackUrl();
+  }
+}
+
+function subscribeRecoverableAuthChanges() {
+  const client = getSupabaseClient();
+  if (!client?.auth?.onAuthStateChange) return;
+  client.auth.onAuthStateChange((event, session) => {
+    recoverableAuthState.user = session?.user ? getRecoverableAuthUserSummary(session.user) : null;
+    renderProfileSheet();
+    renderHomeProfile();
+    if (["SIGNED_IN", "USER_UPDATED"].includes(event)) {
+      window.setTimeout(() => loadMyProfile({ createSession: false }).catch(() => null), 0);
+    }
+  });
+}
+
 function getSharePayloadFromUrl() {
   const params = new URLSearchParams(window.location.search);
   const queryToken = params.get("share");
@@ -743,6 +857,7 @@ async function saveMyProfile(displayName) {
   };
   renderHomeProfile();
   renderShareRoleBanner();
+  refreshRecoverableAuthSession().catch(() => {});
   return userProfile;
 }
 
@@ -765,11 +880,44 @@ function renderProfileSheet() {
   const input = $("#profileDisplayNameInput");
   const error = $("#profileError");
   const button = $("#profileSaveButton");
+  const authCard = $("#recoverableAuthCard");
+  const authSummary = $("#recoverableAuthSummary");
+  const authStatus = $("#recoverableAuthStatus");
+  const upgradeForm = $("#recoverableAuthUpgradeForm");
+  const loginForm = $("#recoverableAuthLoginForm");
+  const sendButton = $("#recoverableAuthSendButton");
+  const loginButton = $("#recoverableAuthLoginButton");
   if (input && document.activeElement !== input) input.value = userProfile.displayName || input.value || "";
   if (error) error.textContent = userProfile.error || "";
   if (button) {
     button.disabled = profileSaving;
     button.textContent = profileSaving ? "Сохраняем..." : (pendingProfileAction ? "Сохранить и продолжить" : "Сохранить");
+  }
+  if (!authCard) return;
+  const authUser = recoverableAuthState.user;
+  authCard.hidden = !isSupabaseConfigured();
+  const isLinked = Boolean(authUser?.hasEmailIdentity && authUser.email);
+  const isAnonymous = authUser?.isAnonymous === true;
+  if (authSummary) {
+    authSummary.textContent = isLinked
+      ? "Email уже привязан: можно вернуться к серверному профилю и ссылкам с другого браузера."
+      : "Email поможет вернуться к профилю и серверным ссылкам. Локальные поездки на другом устройстве не переносятся.";
+  }
+  if (authStatus) {
+    authStatus.classList.toggle("error", Boolean(recoverableAuthState.error));
+    authStatus.textContent = recoverableAuthState.error
+      || recoverableAuthState.status
+      || (isLinked ? `Доступ сохранён: ${authUser.email}` : "");
+  }
+  if (upgradeForm) upgradeForm.hidden = !isAnonymous || isLinked;
+  if (loginForm) loginForm.hidden = isLinked;
+  if (sendButton) {
+    sendButton.disabled = recoverableAuthState.upgradeSending;
+    sendButton.textContent = recoverableAuthState.upgradeSending ? "Отправляем..." : "Отправить ссылку";
+  }
+  if (loginButton) {
+    loginButton.disabled = recoverableAuthState.loginSending;
+    loginButton.textContent = recoverableAuthState.loginSending ? "Отправляем..." : "Войти по email";
   }
 }
 
@@ -777,8 +925,95 @@ function openProfileSheet(action = null) {
   pendingProfileAction = action;
   userProfile.error = "";
   renderProfileSheet();
+  refreshRecoverableAuthSession().catch(() => {});
   openSheet("profileSheet");
   window.setTimeout(() => $("#profileDisplayNameInput")?.focus(), 80);
+}
+
+function getRecoverableAuthEmailFromInput(selector) {
+  const core = getRecoverableAuthCore();
+  const input = $(selector);
+  const email = core?.normalizeEmail ? core.normalizeEmail(input?.value || "") : String(input?.value || "").trim().toLowerCase();
+  const error = core?.getEmailError ? core.getEmailError(email) : "";
+  return { email, error };
+}
+
+async function submitRecoverableAuthUpgradeForm(event) {
+  event.preventDefault();
+  if (recoverableAuthState.upgradeSending) return;
+  const { email, error } = getRecoverableAuthEmailFromInput("#recoverableAuthEmailInput");
+  if (error) {
+    recoverableAuthState.error = error;
+    recoverableAuthState.status = "";
+    renderProfileSheet();
+    return;
+  }
+  const client = getSupabaseClient();
+  if (!client) {
+    recoverableAuthState.error = "Supabase не настроен: доступ по email пока недоступен.";
+    recoverableAuthState.status = "";
+    renderProfileSheet();
+    return;
+  }
+  recoverableAuthState.upgradeSending = true;
+  recoverableAuthState.error = "";
+  recoverableAuthState.status = "";
+  renderProfileSheet();
+  try {
+    await ensureSupabaseOwnerSession();
+    const result = await client.auth.updateUser({ email }, { emailRedirectTo: getRecoverableAuthRedirectUrl() });
+    if (result.error) throw result.error;
+    recoverableAuthState.status = "Письмо отправлено, проверьте почту.";
+    showToast("Письмо отправлено");
+    await refreshRecoverableAuthSession();
+  } catch (error) {
+    recoverableAuthState.error = error?.message?.includes("already")
+      ? "Этот email уже используется. Попробуйте войти по email."
+      : "Не удалось отправить ссылку. Проверьте email и попробуйте ещё раз.";
+  } finally {
+    recoverableAuthState.upgradeSending = false;
+    renderProfileSheet();
+  }
+}
+
+async function submitRecoverableAuthLoginForm(event) {
+  event.preventDefault();
+  if (recoverableAuthState.loginSending) return;
+  const { email, error } = getRecoverableAuthEmailFromInput("#recoverableLoginEmailInput");
+  if (error) {
+    recoverableAuthState.error = error;
+    recoverableAuthState.status = "";
+    renderProfileSheet();
+    return;
+  }
+  const client = getSupabaseClient();
+  if (!client) {
+    recoverableAuthState.error = "Supabase не настроен: вход по email пока недоступен.";
+    recoverableAuthState.status = "";
+    renderProfileSheet();
+    return;
+  }
+  recoverableAuthState.loginSending = true;
+  recoverableAuthState.error = "";
+  recoverableAuthState.status = "";
+  renderProfileSheet();
+  try {
+    const result = await client.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: getRecoverableAuthRedirectUrl(),
+        shouldCreateUser: false,
+      },
+    });
+    if (result.error) throw result.error;
+    recoverableAuthState.status = "Письмо отправлено, проверьте почту.";
+    showToast("Письмо отправлено");
+  } catch {
+    recoverableAuthState.error = "Не удалось отправить ссылку. Проверьте email или сохраните доступ сначала.";
+  } finally {
+    recoverableAuthState.loginSending = false;
+    renderProfileSheet();
+  }
 }
 
 async function requireProfileForSharedAction(entryPoint, action) {
@@ -5609,6 +5844,7 @@ function trackOnboardingExit() {
 
 async function startApp() {
   trackAppOpen();
+  await handleRecoverableAuthCallback();
   const splashStatus = $("#appSplashStatus");
   if (splashStatus && getSharePayloadFromUrl()) splashStatus.textContent = "Открываем приглашение...";
   readOnlyShare = await loadReadOnlyShareFromUrl();
@@ -6999,6 +7235,8 @@ function bindEvents() {
   $("#homeShareButton").addEventListener("click", openHomeShareSheet);
   $("#homeProfileButton")?.addEventListener("click", () => openProfileSheet(null));
   $("#profileForm")?.addEventListener("submit", submitProfileForm);
+  $("#recoverableAuthUpgradeForm")?.addEventListener("submit", submitRecoverableAuthUpgradeForm);
+  $("#recoverableAuthLoginForm")?.addEventListener("submit", submitRecoverableAuthLoginForm);
   $("#homeInstallAppButton").addEventListener("click", installPwa);
   $("#iosInstallCloseButton")?.addEventListener("click", dismissIosInstallOnboarding);
   $("#saveReceivedTripButton")?.addEventListener("click", saveReceivedTrip);
@@ -7128,6 +7366,7 @@ setupDonationFlow();
 renderProductVersionInfo();
 switchView(currentView);
 render();
+subscribeRecoverableAuthChanges();
 window.setTimeout(startApp, 520);
 refreshExchangeRates();
 

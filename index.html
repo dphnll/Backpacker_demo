@@ -880,6 +880,28 @@
           <button class="primary-button" id="profileSaveButton" type="submit">Сохранить и продолжить</button>
           <p class="field-hint">Имя не является логином и не меняет доступ к поездкам.</p>
         </form>
+        <section class="recoverable-auth-card" id="recoverableAuthCard">
+          <div class="recoverable-auth-heading">
+            <h3>Сохранить доступ</h3>
+            <p id="recoverableAuthSummary">Email поможет вернуться к профилю и серверным ссылкам. Локальные поездки на другом устройстве не переносятся.</p>
+          </div>
+          <p class="recoverable-auth-status" id="recoverableAuthStatus" aria-live="polite"></p>
+          <form class="recoverable-auth-form" id="recoverableAuthUpgradeForm">
+            <label class="field wide">
+              Email для доступа
+              <input id="recoverableAuthEmailInput" name="recoverableEmail" type="email" autocomplete="email" placeholder="you@example.com" />
+            </label>
+            <button class="primary-button" id="recoverableAuthSendButton" type="submit">Отправить ссылку</button>
+          </form>
+          <form class="recoverable-auth-form recoverable-auth-login-form" id="recoverableAuthLoginForm">
+            <p class="field-hint">Уже сохраняли доступ? Войдите по email на этом устройстве.</p>
+            <label class="field wide">
+              Email
+              <input id="recoverableLoginEmailInput" name="recoverableLoginEmail" type="email" autocomplete="email" placeholder="you@example.com" />
+            </label>
+            <button class="ghost-button" id="recoverableAuthLoginButton" type="submit">Войти по email</button>
+          </form>
+        </section>
       </section>
     </div>
 
@@ -892,6 +914,7 @@
     <script src="./trip-date-core.js"></script>
     <script src="./trip-draft-quantity-core.js"></script>
     <script src="./link-intake-ui-core.js"></script>
+    <script src="./recoverable-auth-core.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

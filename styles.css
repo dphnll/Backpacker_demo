@@ -1350,6 +1350,59 @@ button[aria-disabled="true"] .home-support-icon {
   font-weight: 800;
 }
 
+.recoverable-auth-card {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid rgba(18, 54, 61, 0.14);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.82), rgba(242, 247, 245, 0.7)),
+    var(--paper);
+  box-shadow: 0 5px 0 rgba(18, 54, 61, 0.09);
+}
+
+.recoverable-auth-card[hidden],
+.recoverable-auth-form[hidden] {
+  display: none;
+}
+
+.recoverable-auth-heading h3 {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1.15;
+}
+
+.recoverable-auth-heading p,
+.recoverable-auth-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.recoverable-auth-status {
+  min-height: 18px;
+  margin-top: 8px;
+  color: var(--accent-strong);
+}
+
+.recoverable-auth-status.error {
+  color: var(--danger);
+}
+
+.recoverable-auth-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.recoverable-auth-login-form {
+  padding-top: 12px;
+  border-top: 1px solid rgba(18, 54, 61, 0.12);
+}
+
 .proposal-account-link {
   margin-top: 4px;
   color: var(--muted);
