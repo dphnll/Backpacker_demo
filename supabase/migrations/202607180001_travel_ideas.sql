@@ -61,12 +61,10 @@ create table if not exists public.travel_ideas (
   image_url text,
   image_alt text,
   image_source text,
-  added_to_trip_id text,
-  added_to_trip_item_id text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint travel_ideas_title_not_blank check (char_length(btrim(title)) > 0),
-  constraint travel_ideas_status_check check (status in ('inbox', 'added_to_trip', 'archived')),
+  constraint travel_ideas_status_check check (status in ('inbox', 'archived')),
   constraint travel_ideas_source_check check (source in ('manual', 'link_intake', 'browser_extension', 'ai_recommendation')),
   constraint travel_ideas_price_non_negative check (price_amount is null or price_amount >= 0)
 );

@@ -2,7 +2,6 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
-  buildTravelIdeaAddedToTripPatch,
   buildTravelIdeaArchivePatch,
   buildTravelIdeaCollectionInsertPayload,
   buildTravelIdeaInsertPayload,
@@ -142,19 +141,22 @@ test("TravelIdea output does not create TripItem fields", () => {
     order: 1,
     tripId: "trip-1",
     tripItemId: "item-1",
+    added_to_trip_id: "trip-1",
+    added_to_trip_item_id: "item-1",
   }, "user-1");
 
   assert.equal(payload.owner_user_id, "user-1");
   assert.equal(payload.title, "Museum");
   assert.equal(payload.semantic_type, "place");
   assert.equal(payload.status, "inbox");
-  ["date", "startTime", "durationMinutes", "paidAmount", "allocations", "order", "priority", "tripId", "tripItemId"].forEach((field) => {
+  ["date", "startTime", "durationMinutes", "paidAmount", "allocations", "order", "priority", "tripId", "tripItemId", "added_to_trip_id", "added_to_trip_item_id"].forEach((field) => {
     assert.equal(Object.hasOwn(payload, field), false);
   });
 });
 
 test("invalid status source and type are handled safely", () => {
   assert.equal(normalizeTravelIdeaStatus("paid"), "inbox");
+  assert.equal(normalizeTravelIdeaStatus("added_to_trip"), "inbox");
   assert.equal(normalizeTravelIdeaSource("extension-v2"), "manual");
   assert.equal(normalizeTravelIdeaType("concert"), "idea");
 
@@ -174,15 +176,15 @@ test("archive returns a soft archive update patch", () => {
   assert.deepEqual(buildTravelIdeaArchivePatch(), { status: "archived" });
 });
 
-test("added_to_trip patch sets status and ids", () => {
-  assert.deepEqual(buildTravelIdeaAddedToTripPatch({
-    tripId: "trip-123",
-    itemId: "item-456",
-  }), {
-    status: "added_to_trip",
-    added_to_trip_id: "trip-123",
-    added_to_trip_item_id: "item-456",
-  });
+test("TravelIdea remains reusable as an independent source", () => {
+  const payload = buildTravelIdeaInsertPayload({
+    title: "Reusable museum idea",
+    url: "https://example.com/museum",
+  }, "user-1");
+
+  assert.equal(payload.status, "inbox");
+  assert.equal(Object.hasOwn(payload, "added_to_trip_id"), false);
+  assert.equal(Object.hasOwn(payload, "added_to_trip_item_id"), false);
 });
 
 test("collection title is required and trimmed", () => {

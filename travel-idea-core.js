@@ -1,7 +1,10 @@
 (function initTravelIdeaCore(root) {
   "use strict";
 
-  const TRAVEL_IDEA_STATUSES = Object.freeze(["inbox", "added_to_trip", "archived"]);
+  // TravelIdea remains an independent cloud source. Future Ideas UI maps it into
+  // the existing generic card copy/create flow. Copying to one or several trips
+  // does not mutate or delete the TravelIdea.
+  const TRAVEL_IDEA_STATUSES = Object.freeze(["inbox", "archived"]);
   const TRAVEL_IDEA_SOURCES = Object.freeze(["manual", "link_intake", "browser_extension", "ai_recommendation"]);
   const TRAVEL_IDEA_SEMANTIC_TYPES = Object.freeze([
     "ticket",
@@ -125,8 +128,6 @@
       image_url: normalizeTravelIdeaUrl(input.imageUrl ?? input.image_url),
       image_alt: optionalText(input.imageAlt ?? input.image_alt, 160),
       image_source: optionalText(input.imageSource ?? input.image_source, 80),
-      added_to_trip_id: optionalText(input.addedToTripId ?? input.added_to_trip_id, 120),
-      added_to_trip_item_id: optionalText(input.addedToTripItemId ?? input.added_to_trip_item_id, 120),
     });
   }
 
@@ -180,20 +181,11 @@
     return { status: "archived" };
   }
 
-  function buildTravelIdeaAddedToTripPatch({ tripId = "", itemId = "" } = {}) {
-    return withoutNullValues({
-      status: "added_to_trip",
-      added_to_trip_id: optionalText(tripId, 120),
-      added_to_trip_item_id: optionalText(itemId, 120),
-    });
-  }
-
   const api = {
     SUPPORTED_CURRENCIES,
     TRAVEL_IDEA_SEMANTIC_TYPES,
     TRAVEL_IDEA_SOURCES,
     TRAVEL_IDEA_STATUSES,
-    buildTravelIdeaAddedToTripPatch,
     buildTravelIdeaArchivePatch,
     buildTravelIdeaCollectionInsertPayload,
     buildTravelIdeaInsertPayload,
