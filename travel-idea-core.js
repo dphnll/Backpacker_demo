@@ -181,16 +181,102 @@
     return { status: "archived" };
   }
 
+  function getTravelIdeaCollectionKey(row = {}) {
+    const collectionId = normalizeTravelIdeaCollectionId(row.collection_id ?? row.collectionId);
+    return collectionId ? `collection:${collectionId}` : "ungrouped";
+  }
+
+  function filterInboxTravelIdeas(ideas = [], activeCollectionKey = "all") {
+    const key = activeCollectionKey || "all";
+    return (Array.isArray(ideas) ? ideas : []).filter((idea) => {
+      if (normalizeTravelIdeaStatus(idea?.status) !== "inbox") return false;
+      if (key === "all") return true;
+      if (key === "ungrouped") return !normalizeTravelIdeaCollectionId(idea?.collection_id);
+      if (key.startsWith("collection:")) {
+        return normalizeTravelIdeaCollectionId(idea?.collection_id) === normalizeTravelIdeaCollectionId(key.slice("collection:".length));
+      }
+      return true;
+    });
+  }
+
+  function buildTravelIdeaCollectionMap(collections = []) {
+    return new Map((Array.isArray(collections) ? collections : [])
+      .map((collection) => [normalizeTravelIdeaCollectionId(collection?.id), collection])
+      .filter(([id]) => Boolean(id)));
+  }
+
+  function formatTravelIdeaMeta(row = {}, collections = []) {
+    const semanticType = normalizeTravelIdeaType(row.semantic_type ?? row.semanticType);
+    const collectionId = normalizeTravelIdeaCollectionId(row.collection_id ?? row.collectionId);
+    const collection = buildTravelIdeaCollectionMap(collections).get(collectionId);
+    const collectionTitle = collectionId
+      ? cleanTravelIdeaText(collection?.title, 120) || "Подборка"
+      : "Без подборки";
+    return {
+      collectionTitle,
+      hasLink: Boolean(normalizeTravelIdeaUrl(row.url)),
+      locationText: optionalText(row.location_text ?? row.locationText, 240),
+      priceAmount: normalizeTravelIdeaPriceAmount(row.price_amount ?? row.priceAmount),
+      priceCurrency: normalizeTravelIdeaCurrency(row.price_currency ?? row.priceCurrency),
+      semanticType,
+    };
+  }
+
+  function mapTravelIdeaRowToViewModel(row = {}, collections = []) {
+    const meta = formatTravelIdeaMeta(row, collections);
+    const imageUrl = normalizeTravelIdeaUrl(row.image_url ?? row.imageUrl);
+    const title = cleanTravelIdeaText(row.title, 160) || "Идея";
+    return {
+      id: cleanTravelIdeaText(row.id, 80),
+      title,
+      collectionId: normalizeTravelIdeaCollectionId(row.collection_id ?? row.collectionId),
+      collectionKey: getTravelIdeaCollectionKey(row),
+      collectionTitle: meta.collectionTitle,
+      excerpt: optionalText(row.excerpt, 700),
+      notes: optionalText(row.notes, 1000),
+      semanticType: meta.semanticType,
+      status: normalizeTravelIdeaStatus(row.status),
+      url: normalizeTravelIdeaUrl(row.url),
+      hasLink: meta.hasLink,
+      locationText: meta.locationText,
+      priceAmount: meta.priceAmount,
+      priceCurrency: meta.priceCurrency,
+      imageUrl,
+      imageAlt: optionalText(row.image_alt ?? row.imageAlt, 160) || title,
+      hasImage: Boolean(imageUrl),
+    };
+  }
+
+  function buildTravelIdeaEditablePatch(input = {}) {
+    const title = cleanTravelIdeaText(input.title, 160);
+    if (!title) return null;
+    return {
+      title,
+      collection_id: normalizeTravelIdeaCollectionId(input.collectionId ?? input.collection_id),
+      url: normalizeTravelIdeaUrl(input.url),
+      notes: optionalText(input.notes, 1000),
+      location_text: optionalText(input.locationText ?? input.location_text, 240),
+      price_amount: normalizeTravelIdeaPriceAmount(input.priceAmount ?? input.price_amount),
+      price_currency: normalizeTravelIdeaCurrency(input.priceCurrency ?? input.price_currency),
+      semantic_type: normalizeTravelIdeaType(input.semanticType ?? input.semantic_type ?? input.type),
+    };
+  }
+
   const api = {
     SUPPORTED_CURRENCIES,
     TRAVEL_IDEA_SEMANTIC_TYPES,
     TRAVEL_IDEA_SOURCES,
     TRAVEL_IDEA_STATUSES,
+    buildTravelIdeaEditablePatch,
     buildTravelIdeaArchivePatch,
     buildTravelIdeaCollectionInsertPayload,
     buildTravelIdeaInsertPayload,
     cleanTravelIdeaText,
+    filterInboxTravelIdeas,
+    formatTravelIdeaMeta,
+    getTravelIdeaCollectionKey,
     mapManualIdeaToTravelIdea,
+    mapTravelIdeaRowToViewModel,
     mapTravelCandidateToTravelIdea,
     normalizeTravelIdeaCollectionId,
     normalizeTravelIdeaCurrency,

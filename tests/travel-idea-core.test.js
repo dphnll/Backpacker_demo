@@ -4,7 +4,10 @@ const test = require("node:test");
 const {
   buildTravelIdeaArchivePatch,
   buildTravelIdeaCollectionInsertPayload,
+  buildTravelIdeaEditablePatch,
   buildTravelIdeaInsertPayload,
+  filterInboxTravelIdeas,
+  mapTravelIdeaRowToViewModel,
   mapManualIdeaToTravelIdea,
   mapTravelCandidateToTravelIdea,
   normalizeTravelIdeaCollectionId,
@@ -212,4 +215,104 @@ test("collection payload contains owner title and sort_order", () => {
     title: "Грузия",
     sort_order: 7,
   });
+});
+
+test("All ideas view shows every inbox idea and hides archived rows", () => {
+  const ideas = [
+    { id: "1", title: "Inbox without collection", status: "inbox", collection_id: null },
+    { id: "2", title: "Inbox in collection", status: "inbox", collection_id: COLLECTION_ID },
+    { id: "3", title: "Archived", status: "archived", collection_id: COLLECTION_ID },
+  ];
+
+  assert.deepEqual(filterInboxTravelIdeas(ideas, "all").map((idea) => idea.id), ["1", "2"]);
+});
+
+test("Ungrouped view shows only ideas without collection_id", () => {
+  const ideas = [
+    { id: "1", title: "No collection", status: "inbox", collection_id: null },
+    { id: "2", title: "Missing collection", status: "inbox" },
+    { id: "3", title: "Collection", status: "inbox", collection_id: COLLECTION_ID },
+  ];
+
+  assert.deepEqual(filterInboxTravelIdeas(ideas, "ungrouped").map((idea) => idea.id), ["1", "2"]);
+});
+
+test("collection view shows only the selected collection_id", () => {
+  const otherCollectionId = "650e8400-e29b-41d4-a716-446655440001";
+  const ideas = [
+    { id: "1", title: "Georgia", status: "inbox", collection_id: COLLECTION_ID },
+    { id: "2", title: "Serbia", status: "inbox", collection_id: otherCollectionId },
+    { id: "3", title: "No collection", status: "inbox", collection_id: null },
+  ];
+
+  assert.deepEqual(filterInboxTravelIdeas(ideas, `collection:${COLLECTION_ID}`).map((idea) => idea.id), ["1"]);
+});
+
+test("empty collections are represented by chips through collections list, not fake ideas", () => {
+  const viewModels = filterInboxTravelIdeas([], `collection:${COLLECTION_ID}`);
+  assert.deepEqual(viewModels, []);
+});
+
+test("view model uses fallback image state when image is missing or broken later", () => {
+  const noImage = mapTravelIdeaRowToViewModel({
+    id: "idea-1",
+    title: "Tea ceremony",
+    semantic_type: "food",
+    status: "inbox",
+  }, []);
+  assert.equal(noImage.hasImage, false);
+  assert.equal(noImage.imageUrl, null);
+  assert.equal(noImage.collectionTitle, "Без подборки");
+
+  const withImage = mapTravelIdeaRowToViewModel({
+    id: "idea-2",
+    title: "Museum",
+    semantic_type: "place",
+    status: "inbox",
+    image_url: "https://example.com/museum.jpg",
+  }, []);
+  assert.equal(withImage.hasImage, true);
+  assert.equal(withImage.imageUrl, "https://example.com/museum.jpg");
+});
+
+test("editable patch does not overwrite source image status or owner fields", () => {
+  const patch = buildTravelIdeaEditablePatch({
+    title: " Updated cafe ",
+    collection_id: COLLECTION_ID,
+    url: "https://example.com/cafe",
+    locationText: "Belgrade",
+    priceAmount: "12.50",
+    priceCurrency: "EUR",
+    semanticType: "food",
+    notes: "Nice terrace",
+    source: "browser_extension",
+    status: "archived",
+    image_url: "https://example.com/old.jpg",
+    owner_user_id: "user-2",
+  });
+
+  assert.deepEqual(patch, {
+    title: "Updated cafe",
+    collection_id: COLLECTION_ID,
+    url: "https://example.com/cafe",
+    notes: "Nice terrace",
+    location_text: "Belgrade",
+    price_amount: 12.5,
+    price_currency: "EUR",
+    semantic_type: "food",
+  });
+  ["source", "status", "image_url", "image_alt", "image_source", "owner_user_id"].forEach((field) => {
+    assert.equal(Object.hasOwn(patch, field), false);
+  });
+});
+
+test("manual create defaults source manual and status inbox", () => {
+  const payload = buildTravelIdeaInsertPayload({
+    title: "New idea",
+    source: "",
+    status: "",
+  }, "user-1");
+
+  assert.equal(payload.source, "manual");
+  assert.equal(payload.status, "inbox");
 });

@@ -15,8 +15,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.41";
-const APP_RELEASE_SUMMARY = "Выровнен recoverable access и уточнены ошибки email-ссылок.";
+const APP_VERSION = "1.1.2.42";
+const APP_RELEASE_SUMMARY = "Добавлен первый облачный раздел «Идеи» с подборками.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -73,6 +73,16 @@ let recoverableAuthState = {
   status: "",
   upgradeSending: false,
   user: null,
+};
+let ideasState = {
+  activeCollectionKey: "all",
+  collections: [],
+  editingIdeaId: "",
+  error: "",
+  ideas: [],
+  loaded: false,
+  loading: false,
+  saving: false,
 };
 let tripDraftAiState = { mode: "choice", inputMode: "text", isBusy: false, isCreating: false, isRecording: false, draft: null, sourceText: "", mediaRecorder: null, chunks: [] };
 let linkIntakeState = { isLoading: false, draft: null, status: "", error: "", previewOnlyImageUrl: "", appliedSnapshot: null };
@@ -806,6 +816,409 @@ async function callLinkIntakeFunction(action, payload = {}) {
     throw error;
   }
   return data;
+}
+
+function getTravelIdeaCore() {
+  return window.BackpackerTravelIdeas;
+}
+
+function getTravelIdeasClientApi() {
+  return window.BackpackerTravelIdeasClient;
+}
+
+function getIdeaCollectionIdFromKey(key = "") {
+  return String(key).startsWith("collection:") ? String(key).slice("collection:".length) : null;
+}
+
+function getIdeaCollectionKey(collectionId = "") {
+  const normalized = getTravelIdeaCore()?.normalizeTravelIdeaCollectionId?.(collectionId);
+  return normalized ? `collection:${normalized}` : "ungrouped";
+}
+
+function getCurrentIdeaCollectionTitle() {
+  if (ideasState.activeCollectionKey === "all") return "Все идеи";
+  if (ideasState.activeCollectionKey === "ungrouped") return "Без подборки";
+  const id = getIdeaCollectionIdFromKey(ideasState.activeCollectionKey);
+  return ideasState.collections.find((collection) => collection.id === id)?.title || "Подборка";
+}
+
+async function getCurrentSupabaseUserForIdeas(client) {
+  await ensureSupabaseOwnerSession();
+  const sessionResult = await client.auth.getSession();
+  let user = sessionResult.data.session?.user || null;
+  if (!user?.id && client.auth.getUser) {
+    const userResult = await client.auth.getUser();
+    user = userResult.data?.user || null;
+  }
+  if (!user?.id) throw new Error("anonymous_auth_failed");
+  return user;
+}
+
+function getTravelIdeasErrorCopy(error) {
+  return getTravelIdeasClientApi()?.getTravelIdeasClientErrorMessage?.(error)
+    || "Не удалось выполнить действие с идеями. Попробуйте ещё раз.";
+}
+
+function normalizeIdeasRows(rows) {
+  return Array.isArray(rows) ? rows : [];
+}
+
+async function loadTravelIdeas({ silent = false } = {}) {
+  const client = getSupabaseClient();
+  const api = getTravelIdeasClientApi();
+  if (!client || !api) {
+    ideasState = {
+      ...ideasState,
+      error: "Supabase не настроен: облачные идеи пока недоступны.",
+      loaded: true,
+      loading: false,
+    };
+    renderIdeasScreen();
+    return;
+  }
+  ideasState = { ...ideasState, error: "", loading: !silent, loaded: ideasState.loaded && silent };
+  renderIdeasScreen();
+  try {
+    await getCurrentSupabaseUserForIdeas(client);
+    const [collections, ideas] = await Promise.all([
+      api.fetchTravelIdeaCollections(client),
+      api.fetchInboxTravelIdeas(client),
+    ]);
+    const nextCollections = normalizeIdeasRows(collections);
+    const nextIdeas = normalizeIdeasRows(ideas);
+    const activeCollectionId = getIdeaCollectionIdFromKey(ideasState.activeCollectionKey);
+    const activeCollectionExists = !activeCollectionId || nextCollections.some((collection) => collection.id === activeCollectionId);
+    ideasState = {
+      ...ideasState,
+      collections: nextCollections,
+      ideas: nextIdeas,
+      activeCollectionKey: activeCollectionExists ? ideasState.activeCollectionKey : "all",
+      error: "",
+      loaded: true,
+      loading: false,
+    };
+  } catch (error) {
+    ideasState = {
+      ...ideasState,
+      error: getTravelIdeasErrorCopy(error),
+      loaded: true,
+      loading: false,
+    };
+  }
+  renderIdeasScreen();
+}
+
+function renderIdeaCollectionChips() {
+  const container = $("#ideaCollectionChips");
+  if (!container) return;
+  const chips = [
+    ["all", "Все идеи"],
+    ["ungrouped", "Без подборки"],
+    ...ideasState.collections.map((collection) => [`collection:${collection.id}`, collection.title || "Подборка"]),
+  ];
+  container.innerHTML = chips.map(([key, label]) => `
+    <button class="idea-collection-chip" type="button" data-idea-collection="${escapeAttr(key)}" aria-pressed="${ideasState.activeCollectionKey === key}">
+      <span>${escapeHtml(label)}</span>
+    </button>
+  `).join("");
+}
+
+function formatIdeaCardPrice(viewModel) {
+  if (viewModel.priceAmount === null || viewModel.priceAmount === undefined) return "";
+  return viewModel.priceCurrency
+    ? formatCurrencyAmount(viewModel.priceAmount, viewModel.priceCurrency)
+    : Number(viewModel.priceAmount).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
+}
+
+function renderIdeaCard(row) {
+  const core = getTravelIdeaCore();
+  const viewModel = core.mapTravelIdeaRowToViewModel(row, ideasState.collections);
+  const typeLabel = getTypeLabel(viewModel.semanticType);
+  const price = formatIdeaCardPrice(viewModel);
+  const extras = [
+    viewModel.locationText,
+    price,
+    viewModel.hasLink ? "есть ссылка" : "",
+  ].filter(Boolean).join(" · ");
+  const copy = viewModel.excerpt || viewModel.notes || "";
+  const icon = typeIcons[viewModel.semanticType] || typeIcons.idea;
+  return `
+    <button class="idea-card" type="button" data-open-idea="${escapeAttr(viewModel.id)}">
+      <span class="idea-card-thumb${viewModel.hasImage ? " has-image" : ""}" aria-hidden="true">
+        ${viewModel.hasImage ? `<img class="idea-thumb-image" src="${escapeAttr(viewModel.imageUrl)}" alt="${escapeAttr(viewModel.imageAlt)}" loading="lazy" />` : ""}
+        <span class="idea-card-thumb-fallback">${icon}</span>
+      </span>
+      <span class="idea-card-body">
+        <strong class="idea-card-title">${escapeHtml(viewModel.title)}</strong>
+        <span class="idea-card-meta">${escapeHtml(typeLabel)} · ${escapeHtml(viewModel.collectionTitle)}</span>
+        ${extras ? `<span class="idea-card-extra">${escapeHtml(extras)}</span>` : ""}
+        ${copy ? `<span class="idea-card-copy">${escapeHtml(copy)}</span>` : ""}
+      </span>
+    </button>
+  `;
+}
+
+function renderIdeasStateCard(kind) {
+  if (kind === "loading") {
+    return `<article class="ideas-state-card"><strong>Загружаем идеи...</strong><p>Подтягиваем облачные подборки и сохранённые места.</p></article>`;
+  }
+  if (kind === "error") {
+    return `
+      <article class="ideas-state-card is-error">
+        <strong>Не удалось открыть идеи</strong>
+        <p>${escapeHtml(ideasState.error)}</p>
+        <div class="ideas-state-actions">
+          <button class="ghost-button" type="button" data-ideas-retry>Повторить</button>
+          <button class="primary-button" type="button" data-open-idea-form>Добавить идею</button>
+        </div>
+      </article>
+    `;
+  }
+  if (kind === "empty-all") {
+    return `
+      <article class="ideas-state-card">
+        <strong>Пока нет идей</strong>
+        <p>Сохраняйте места, ссылки и хотелки до того, как появилась конкретная поездка.</p>
+        <div class="ideas-state-actions">
+          <button class="primary-button" type="button" data-open-idea-form>Добавить идею</button>
+          <button class="ghost-button" type="button" data-open-idea-collection-form>Создать подборку</button>
+        </div>
+      </article>
+    `;
+  }
+  return `
+    <article class="ideas-state-card">
+      <strong>В «${escapeHtml(getCurrentIdeaCollectionTitle())}» пока пусто</strong>
+      <p>Можно добавить новую идею сразу в эту подборку или выбрать другой chip сверху.</p>
+      <div class="ideas-state-actions">
+        <button class="primary-button" type="button" data-open-idea-form>Добавить идею</button>
+        <button class="ghost-button" type="button" data-open-idea-collection-form>Новая подборка</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderIdeasScreen() {
+  const list = $("#ideasList");
+  if (!list) return;
+  renderIdeaCollectionChips();
+  if (ideasState.loading) {
+    list.innerHTML = renderIdeasStateCard("loading");
+    return;
+  }
+  if (ideasState.error) {
+    list.innerHTML = renderIdeasStateCard("error");
+    return;
+  }
+  const core = getTravelIdeaCore();
+  const inboxIdeas = core.filterInboxTravelIdeas(ideasState.ideas, "all");
+  const filteredIdeas = core.filterInboxTravelIdeas(ideasState.ideas, ideasState.activeCollectionKey);
+  if (!inboxIdeas.length) {
+    list.innerHTML = renderIdeasStateCard("empty-all");
+    return;
+  }
+  if (!filteredIdeas.length) {
+    list.innerHTML = renderIdeasStateCard("empty-filter");
+    return;
+  }
+  list.innerHTML = filteredIdeas.map(renderIdeaCard).join("");
+}
+
+function getDefaultIdeaFormCollectionKey() {
+  if (ideasState.activeCollectionKey === "ungrouped" || ideasState.activeCollectionKey.startsWith("collection:")) {
+    return ideasState.activeCollectionKey;
+  }
+  return "ungrouped";
+}
+
+function renderIdeaFormSelects(selectedCollectionKey = "ungrouped", selectedType = "idea", selectedCurrency = "") {
+  const form = $("#ideaForm");
+  if (!form) return;
+  form.elements.semanticType.innerHTML = itemTypes
+    .map(([key, label]) => `<option value="${escapeAttr(key)}">${escapeHtml(label)}</option>`)
+    .join("");
+  form.elements.semanticType.value = selectedType || "idea";
+  form.elements.collectionKey.innerHTML = [
+    ["ungrouped", "Без подборки"],
+    ...ideasState.collections.map((collection) => [`collection:${collection.id}`, collection.title || "Подборка"]),
+  ].map(([key, label]) => `<option value="${escapeAttr(key)}">${escapeHtml(label)}</option>`).join("");
+  form.elements.collectionKey.value = selectedCollectionKey || "ungrouped";
+  form.elements.priceCurrency.innerHTML = [
+    ["", "—"],
+    ...getSupportedCurrencies().map((currency) => [currency, currency]),
+  ].map(([key, label]) => `<option value="${escapeAttr(key)}">${escapeHtml(label)}</option>`).join("");
+  form.elements.priceCurrency.value = selectedCurrency || "";
+}
+
+function openIdeaSheet(ideaId = "") {
+  const form = $("#ideaForm");
+  if (!form) return;
+  const idea = ideaId ? ideasState.ideas.find((entry) => entry.id === ideaId) : null;
+  ideasState.editingIdeaId = idea?.id || "";
+  $("#ideaSheetTitle").textContent = idea ? "Редактировать идею" : "Добавить идею";
+  $("#ideaFormError").textContent = "";
+  renderIdeaFormSelects(
+    idea ? getIdeaCollectionKey(idea.collection_id) : getDefaultIdeaFormCollectionKey(),
+    idea?.semantic_type || "idea",
+    idea?.price_currency || "",
+  );
+  form.elements.id.value = idea?.id || "";
+  form.elements.title.value = idea?.title || "";
+  form.elements.url.value = idea?.url || "";
+  form.elements.locationText.value = idea?.location_text || "";
+  form.elements.priceAmount.value = idea?.price_amount ?? "";
+  form.elements.notes.value = idea?.notes || "";
+  $("#ideaArchiveButton").hidden = !idea;
+  $("#ideaSaveButton").disabled = ideasState.saving;
+  $("#ideaArchiveButton").disabled = ideasState.saving;
+  openSheet("ideaSheet");
+  window.setTimeout(() => form.elements.title?.focus(), 80);
+}
+
+function readIdeaFormInput(form) {
+  const priceRaw = String(form.elements.priceAmount.value || "").trim();
+  const collectionId = getIdeaCollectionIdFromKey(form.elements.collectionKey.value);
+  return {
+    title: form.elements.title.value,
+    semanticType: form.elements.semanticType.value,
+    collection_id: collectionId,
+    url: form.elements.url.value,
+    locationText: form.elements.locationText.value,
+    priceAmount: priceRaw ? parseMoney(priceRaw) : null,
+    priceCurrency: form.elements.priceCurrency.value,
+    notes: form.elements.notes.value,
+  };
+}
+
+async function submitIdeaForm(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  if (ideasState.saving) return;
+  if (!validateMoneyFields(form, ["priceAmount"])) {
+    form.reportValidity();
+    $("#ideaFormError").textContent = MONEY_INPUT_ERROR;
+    return;
+  }
+  const client = getSupabaseClient();
+  const api = getTravelIdeasClientApi();
+  const core = getTravelIdeaCore();
+  if (!client || !api || !core) {
+    $("#ideaFormError").textContent = "Supabase не настроен: облачные идеи пока недоступны.";
+    return;
+  }
+  ideasState.saving = true;
+  $("#ideaFormError").textContent = "";
+  $("#ideaSaveButton").disabled = true;
+  $("#ideaArchiveButton").disabled = true;
+  try {
+    const input = readIdeaFormInput(form);
+    const editingId = form.elements.id.value;
+    let saved;
+    if (editingId) {
+      const patch = core.buildTravelIdeaEditablePatch(input);
+      if (!patch) {
+        $("#ideaFormError").textContent = "Введите название идеи.";
+        return;
+      }
+      saved = await api.updateTravelIdea(client, editingId, patch);
+      ideasState.ideas = ideasState.ideas.map((idea) => idea.id === editingId ? { ...idea, ...saved } : idea);
+      showToast("Идея сохранена");
+    } else {
+      const user = await getCurrentSupabaseUserForIdeas(client);
+      const payload = core.buildTravelIdeaInsertPayload({ ...input, source: "manual", status: "inbox" }, user.id);
+      if (!payload) {
+        $("#ideaFormError").textContent = "Введите название идеи.";
+        return;
+      }
+      saved = await api.insertTravelIdea(client, payload);
+      ideasState.ideas = [saved, ...ideasState.ideas];
+      ideasState.activeCollectionKey = getIdeaCollectionKey(saved.collection_id);
+      showToast("Идея добавлена");
+    }
+    closeSheet("ideaSheet");
+    renderIdeasScreen();
+  } catch (error) {
+    $("#ideaFormError").textContent = getTravelIdeasErrorCopy(error);
+  } finally {
+    ideasState.saving = false;
+    $("#ideaSaveButton").disabled = false;
+    $("#ideaArchiveButton").disabled = false;
+  }
+}
+
+async function archiveCurrentIdea() {
+  const ideaId = $("#ideaForm")?.elements.id.value || ideasState.editingIdeaId;
+  if (!ideaId || ideasState.saving) return;
+  const client = getSupabaseClient();
+  const api = getTravelIdeasClientApi();
+  if (!client || !api) return;
+  ideasState.saving = true;
+  $("#ideaFormError").textContent = "";
+  $("#ideaSaveButton").disabled = true;
+  $("#ideaArchiveButton").disabled = true;
+  try {
+    const archived = await api.archiveTravelIdea(client, ideaId);
+    ideasState.ideas = ideasState.ideas.map((idea) => idea.id === ideaId ? { ...idea, ...archived, status: "archived" } : idea);
+    closeSheet("ideaSheet");
+    renderIdeasScreen();
+    showToast("Идея отправлена в архив");
+  } catch (error) {
+    $("#ideaFormError").textContent = getTravelIdeasErrorCopy(error);
+  } finally {
+    ideasState.saving = false;
+    $("#ideaSaveButton").disabled = false;
+    $("#ideaArchiveButton").disabled = false;
+  }
+}
+
+function openIdeaCollectionSheet() {
+  const form = $("#ideaCollectionForm");
+  if (!form) return;
+  form.reset();
+  $("#ideaCollectionFormError").textContent = "";
+  $("#ideaCollectionSaveButton").disabled = ideasState.saving;
+  openSheet("ideaCollectionSheet");
+  window.setTimeout(() => form.elements.title?.focus(), 80);
+}
+
+async function submitIdeaCollectionForm(event) {
+  event.preventDefault();
+  if (ideasState.saving) return;
+  const form = event.currentTarget;
+  const client = getSupabaseClient();
+  const api = getTravelIdeasClientApi();
+  const core = getTravelIdeaCore();
+  if (!client || !api || !core) {
+    $("#ideaCollectionFormError").textContent = "Supabase не настроен: облачные идеи пока недоступны.";
+    return;
+  }
+  ideasState.saving = true;
+  $("#ideaCollectionFormError").textContent = "";
+  $("#ideaCollectionSaveButton").disabled = true;
+  try {
+    const user = await getCurrentSupabaseUserForIdeas(client);
+    const payload = core.buildTravelIdeaCollectionInsertPayload({ title: form.elements.title.value }, user.id);
+    if (!payload) {
+      $("#ideaCollectionFormError").textContent = "Введите название подборки.";
+      return;
+    }
+    const collection = await api.insertTravelIdeaCollection(client, payload);
+    ideasState.collections = [...ideasState.collections, collection]
+      .sort((a, b) => (Number(a.sort_order) - Number(b.sort_order)) || String(a.created_at || "").localeCompare(String(b.created_at || "")));
+    ideasState.activeCollectionKey = `collection:${collection.id}`;
+    const ideaForm = $("#ideaForm");
+    if (ideaForm && $("#ideaSheet")?.classList.contains("open")) {
+      renderIdeaFormSelects(ideasState.activeCollectionKey, ideaForm.elements.semanticType.value, ideaForm.elements.priceCurrency.value);
+    }
+    closeSheet("ideaCollectionSheet");
+    renderIdeasScreen();
+    showToast("Подборка создана");
+  } catch (error) {
+    $("#ideaCollectionFormError").textContent = getTravelIdeasErrorCopy(error);
+  } finally {
+    ideasState.saving = false;
+    $("#ideaCollectionSaveButton").disabled = false;
+  }
 }
 
 function normalizeDisplayName(value = "") {
@@ -5830,6 +6243,7 @@ function showIntroScreen(trigger = "first_open") {
   onboardingExitTracked = false;
   $("#introScreen").classList.remove("hidden");
   $("#homeScreen").classList.add("hidden");
+  $("#ideasScreen")?.classList.add("hidden");
   $(".app-shell").classList.add("hidden");
   trackEvent("onboarding_started", { onboarding_version: ONBOARDING_VERSION, trigger });
   showIntroSlide(0);
@@ -5890,6 +6304,7 @@ function showHomeScreen(source = null) {
   currentScreen = "home";
   $("#introScreen").classList.add("hidden");
   $("#homeScreen").classList.remove("hidden");
+  $("#ideasScreen")?.classList.add("hidden");
   $(".app-shell").classList.add("hidden");
   renderHome();
   loadMyProfile({ createSession: false }).catch(() => {});
@@ -5898,10 +6313,22 @@ function showHomeScreen(source = null) {
   trackEvent("home_opened", { trip_count: getUserTripCount(), ...(source ? { source } : {}) });
 }
 
+function showIdeasScreen() {
+  currentScreen = "ideas";
+  $("#introScreen").classList.add("hidden");
+  $("#homeScreen").classList.add("hidden");
+  $("#ideasScreen")?.classList.remove("hidden");
+  $(".app-shell").classList.add("hidden");
+  renderIdeasScreen();
+  loadTravelIdeas({ silent: ideasState.loaded }).catch(() => {});
+  trackEvent("ideas_opened", { loaded: ideasState.loaded });
+}
+
 function showTripScreen() {
   currentScreen = "trip";
   $("#introScreen").classList.add("hidden");
   $("#homeScreen").classList.add("hidden");
+  $("#ideasScreen")?.classList.add("hidden");
   $(".app-shell").classList.remove("hidden");
   $("#editTripButton").hidden = isReadOnlyMode();
   $("#shareButton").hidden = false;
@@ -7030,6 +7457,34 @@ function bindEvents() {
       renderBasket();
     }
 
+    const ideaCollectionButton = event.target.closest("[data-idea-collection]");
+    if (ideaCollectionButton) {
+      ideasState.activeCollectionKey = ideaCollectionButton.dataset.ideaCollection || "all";
+      renderIdeasScreen();
+      return;
+    }
+
+    const ideaCardButton = event.target.closest("[data-open-idea]");
+    if (ideaCardButton) {
+      openIdeaSheet(ideaCardButton.dataset.openIdea || "");
+      return;
+    }
+
+    if (event.target.closest("[data-ideas-retry]")) {
+      loadTravelIdeas();
+      return;
+    }
+
+    if (event.target.closest("[data-open-idea-form]")) {
+      openIdeaSheet();
+      return;
+    }
+
+    if (event.target.closest("[data-open-idea-collection-form]")) {
+      openIdeaCollectionSheet();
+      return;
+    }
+
     const closeTarget = event.target.closest("[data-close]");
     if (closeTarget) {
       if (closeTarget.dataset.close === "profile") pendingProfileAction = null;
@@ -7218,6 +7673,11 @@ function bindEvents() {
     }
   });
 
+  document.addEventListener("error", (event) => {
+    if (!event.target?.matches?.(".idea-thumb-image")) return;
+    event.target.closest(".idea-card-thumb")?.classList.add("image-broken");
+  }, true);
+
   $("#trainerTripCard").addEventListener("click", () => openTrip("trainer-kazan"));
   $("#trainerTripCard").addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -7226,6 +7686,13 @@ function bindEvents() {
     }
   });
   $("#createTripButton").addEventListener("click", openTripDraftAiSheet);
+  $("#openIdeasButton")?.addEventListener("click", showIdeasScreen);
+  $("#ideasBackButton")?.addEventListener("click", () => showHomeScreen("ideas_back"));
+  $("#ideasAddButton")?.addEventListener("click", () => openIdeaSheet());
+  $("#ideaForm")?.addEventListener("submit", submitIdeaForm);
+  $("#ideaArchiveButton")?.addEventListener("click", archiveCurrentIdea);
+  $("#ideaNewCollectionButton")?.addEventListener("click", openIdeaCollectionSheet);
+  $("#ideaCollectionForm")?.addEventListener("submit", submitIdeaCollectionForm);
   $("#tripDraftBackButton")?.addEventListener("click", () => {
     if (tripDraftAiState.isRecording) return;
     tripDraftAiState = { ...tripDraftAiState, mode: "choice", draft: null };

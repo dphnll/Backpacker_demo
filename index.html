@@ -166,6 +166,18 @@
           </span>
         </button>
 
+        <button class="home-card ideas-entry-card" id="openIdeasButton" type="button">
+          <span class="ideas-entry-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M9 18h6M10 21h4M8.2 14.2a6 6 0 1 1 7.6 0c-.8.6-1.3 1.4-1.5 2.3H9.7c-.2-.9-.7-1.7-1.5-2.3z"></path>
+            </svg>
+          </span>
+          <span>
+            <strong>Идеи</strong>
+            <small>Места, ссылки и хотелки до поездки</small>
+          </span>
+        </button>
+
         <div class="sheet" id="tripDraftAiSheet" aria-hidden="true">
           <div class="sheet-backdrop" data-close="tripDraftAi"></div>
           <section class="sheet-panel trip-draft-ai-panel" role="dialog" aria-modal="true" aria-labelledby="tripDraftAiTitle">
@@ -259,6 +271,21 @@
         </section>
       </main>
       <input id="coverInput" type="file" accept="image/*" hidden />
+    </section>
+
+    <section class="ideas-screen hidden" id="ideasScreen" aria-label="Идеи">
+      <header class="ideas-header">
+        <button class="icon-button ideas-back-button" id="ideasBackButton" type="button" aria-label="Вернуться на главную">←</button>
+        <div>
+          <h1>Идеи</h1>
+          <p>Места, ссылки и хотелки до поездки</p>
+        </div>
+        <button class="ghost-button compact" id="ideasAddButton" type="button">Добавить</button>
+      </header>
+      <main class="ideas-content">
+        <div class="ideas-collection-row" id="ideaCollectionChips" aria-label="Подборки идей"></div>
+        <section class="ideas-list" id="ideasList" aria-live="polite"></section>
+      </main>
     </section>
 
     <div class="app-shell hidden">
@@ -624,6 +651,75 @@
       </section>
     </div>
 
+    <div class="sheet" id="ideaSheet" aria-hidden="true">
+      <div class="sheet-backdrop" data-close="idea"></div>
+      <section class="sheet-panel idea-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="ideaSheetTitle">
+        <header class="sheet-header">
+          <h2 id="ideaSheetTitle">Добавить идею</h2>
+          <button class="icon-button" data-close="idea" type="button" aria-label="Закрыть">×</button>
+        </header>
+        <form id="ideaForm" class="sheet-form idea-form">
+          <input type="hidden" name="id" />
+          <label class="field wide">
+            Название
+            <input name="title" maxlength="160" placeholder="Баня, музей, кафе..." required />
+          </label>
+          <label class="field">
+            Тип
+            <select name="semanticType"></select>
+          </label>
+          <label class="field">
+            Подборка
+            <select name="collectionKey"></select>
+          </label>
+          <button class="ghost-button compact idea-new-collection-button" id="ideaNewCollectionButton" type="button">Новая подборка</button>
+          <label class="field wide">
+            Ссылка
+            <input name="url" inputmode="url" placeholder="https://..." />
+          </label>
+          <label class="field wide">
+            Локация
+            <input name="locationText" maxlength="240" placeholder="Адрес, район или город" />
+          </label>
+          <label class="field">
+            Цена
+            <input name="priceAmount" inputmode="decimal" placeholder="0" />
+          </label>
+          <label class="field">
+            Валюта
+            <select name="priceCurrency"></select>
+          </label>
+          <label class="field wide">
+            Заметка / описание
+            <textarea name="notes" rows="4" placeholder="Почему хочется, что важно проверить..."></textarea>
+          </label>
+          <p class="profile-error" id="ideaFormError" aria-live="polite"></p>
+          <div class="form-actions idea-form-actions">
+            <button class="primary-button" id="ideaSaveButton" type="submit">Сохранить</button>
+            <button class="ghost-button" id="ideaArchiveButton" type="button" hidden>Архивировать</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="sheet" id="ideaCollectionSheet" aria-hidden="true">
+      <div class="sheet-backdrop" data-close="ideaCollection"></div>
+      <section class="sheet-panel idea-collection-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="ideaCollectionSheetTitle">
+        <header class="sheet-header">
+          <h2 id="ideaCollectionSheetTitle">Новая подборка</h2>
+          <button class="icon-button" data-close="ideaCollection" type="button" aria-label="Закрыть">×</button>
+        </header>
+        <form id="ideaCollectionForm" class="sheet-form idea-collection-form">
+          <label class="field wide">
+            Название подборки
+            <input name="title" maxlength="120" placeholder="Грузия, Китай, Азия — пока не решила..." required />
+          </label>
+          <p class="profile-error" id="ideaCollectionFormError" aria-live="polite"></p>
+          <button class="primary-button" id="ideaCollectionSaveButton" type="submit">Создать подборку</button>
+        </form>
+      </section>
+    </div>
+
     <div class="sheet" id="tripSheet" aria-hidden="true">
       <div class="sheet-backdrop" data-close="trip"></div>
       <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="tripSheetTitle">
@@ -916,6 +1012,8 @@
     <script src="./trip-draft-quantity-core.js"></script>
     <script src="./link-intake-ui-core.js"></script>
     <script src="./recoverable-auth-core.js"></script>
+    <script src="./travel-idea-core.js"></script>
+    <script src="./travel-ideas-client.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>
