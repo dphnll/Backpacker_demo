@@ -1,13 +1,13 @@
 # Backpacker Context
 
-Актуальный handoff после local release checkpoint `1.1.2.43`.
+Актуальный handoff после local patch checkpoint `1.1.2.44`.
 
 ## Current release
 
-- Target version: `1.1.2.43`
+- Target version: `1.1.2.44`
 - Release commit: pending local commit
 - Public demo: `https://dphnll.github.io/Backpacker_demo/`
-- Cache: `backpacker-pwa-v75`
+- Cache: `backpacker-pwa-v76`
 
 ## Done
 
@@ -21,6 +21,7 @@
 - Cloud `TravelIdea` / `IdeaCollection` domain with owner-only RLS, optional collection, optional image metadata and soft archive.
 - Ideas UI `1.1.2.42`: home entry, mobile Ideas screen, chips for `Все идеи`, `Без подборки` and named collections, manual create/edit/archive.
 - Slice B `1.1.2.43`: an existing `TravelIdea` can choose a destination trip/day or `Без даты`, open an ordinary editable `TripItem` draft, and create the card only through normal `saveItem`.
+- Patch `1.1.2.44`: Ideas navigation/style polish; home Ideas entry matches the create-trip card, Ideas header uses a chrome back button, and creating a new idea remains available through a floating `+`.
 
 ## Current step
 
@@ -54,4 +55,4 @@ Extension / Backpacker contract audit.
 - Future ingestion should use stable source identifiers such as `sourceCollectionId` / `sourceIdeaId`.
 - Collection matching must not rely on display title alone.
 - Full two-way sync is outside the current scope.
-- No Extension UI, ingestion API, recommendations, map or join table is implemented in `1.1.2.43`.
+- No Extension UI, ingestion API, recommendations, map or join table is implemented in `1.1.2.44`.

@@ -2,7 +2,7 @@
 
 Mobile-first prototype of a personal trip planner for independent travelers.
 
-Current public version: `1.1.2.43`.
+Current public version: `1.1.2.44`.
 
 ## Current scope
 
@@ -49,7 +49,7 @@ This is not full account sync: personal trips are still local-first and are not 
 
 ## Cloud Ideas
 
-The `Идеи` entry on the home screen opens a mobile-first cloud list for places, links and wanted ideas before they belong to a specific trip.
+The `Идеи` entry on the home screen opens a mobile-first cloud list for places, links and wanted ideas before they belong to a specific trip. The screen keeps a permanent floating `+` action for creating a new idea, while empty states also offer `Добавить идею` and collection actions.
 
 - `travel_idea_collections`: optional user-owned collections.
 - `travel_ideas`: user-owned ideas with title, type, optional URL, location, notes, price/currency and optional image metadata.

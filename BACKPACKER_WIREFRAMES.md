@@ -52,9 +52,9 @@ CTO preference for first build:
 - put Share in the trip header;
 - keep one primary floating action button: Add.
 
-## Current mobile wireframes — 1.1.2.43
+## Current mobile wireframes — 1.1.2.44
 
-These wireframes describe the current shape after Cloud Ideas can open an editable ordinary trip card draft. They extend the original MVP notes below without rewriting the historical first-build baseline.
+These wireframes describe the current shape after Cloud Ideas can open an editable ordinary trip card draft and the Ideas entry/navigation polish. They extend the original MVP notes below without rewriting the historical first-build baseline.
 
 ### Home
 
@@ -68,7 +68,7 @@ These wireframes describe the current shape after Cloud Ideas can open an editab
 | [Create new trip]                              |
 | Manual or AI draft                             |
 +------------------------------------------------+
-| [Ideas]                                        |
+| [Ideas]              same chrome card style    |
 | Places, links and wanted ideas before a trip   |
 +------------------------------------------------+
 | My trips                                       |
@@ -90,7 +90,7 @@ Rules:
 
 ```text
 ------------------------------------------------+
-| ←  Ideas                                Add    |
+| ←  Ideas                                      |
 |    Places, links and wanted ideas before trip  |
 +------------------------------------------------+
 | [Все идеи] [Без подборки] [Грузия] [Бани]      |
@@ -100,6 +100,7 @@ Rules:
 |              Location · price · есть ссылка    |
 |              notes/excerpt preview             |
 +------------------------------------------------+
+|                                      [ + ]     |
 ```
 
 States:
@@ -108,6 +109,7 @@ States:
 - empty all: `Пока нет идей` + actions `Добавить идею` / `Создать подборку`;
 - empty collection: collection-specific empty card;
 - error: readable error with retry and add action.
+- filled lists keep a floating `+` action for adding a new idea; the top header does not use a text `Add` button.
 
 Collection chips:
 

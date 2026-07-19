@@ -483,6 +483,7 @@ a {
 
 .home-card-kicker {
   display: inline-flex;
+  max-width: 100%;
   margin-bottom: 8px;
   padding: 4px 8px;
   border-radius: 6px;
@@ -491,16 +492,25 @@ a {
   font-size: 11px;
   font-weight: 900;
   text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .home-card-meta {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .home-card-meta span {
   display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   min-height: 26px;
   align-items: center;
   padding: 4px 8px;
@@ -509,6 +519,9 @@ a {
   color: var(--ink);
   font-size: 12px;
   font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .home-trainer-shell {
@@ -577,6 +590,9 @@ a {
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.88);
   color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .trainer-card p {
@@ -616,58 +632,47 @@ a {
 }
 
 .create-trip-card strong,
+.ideas-entry-card strong,
 .create-trip-card small {
   display: block;
 }
 
-.create-trip-card strong {
+.create-trip-card strong,
+.ideas-entry-card strong {
   font-size: 17px;
+  font-weight: 900;
   line-height: 1.12;
 }
 
-.create-trip-card small {
+.create-trip-card small,
+.ideas-entry-card small {
   margin-top: 3px;
   color: var(--ink);
   font-size: 12px;
   font-weight: 400;
+  line-height: normal;
 }
 
 .ideas-entry-card {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-columns: 46px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
-  min-height: 58px;
-  padding: 9px 10px;
-  border-color: rgba(18, 54, 61, 0.16);
+  min-height: 68px;
+  padding: 10px;
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.86), rgba(227, 235, 232, 0.82)),
+    var(--app-gradient),
     var(--panel);
   text-align: left;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.82),
-    5px 5px 0 rgba(18, 54, 61, 0.08),
-    0 10px 22px rgba(18, 54, 61, 0.08);
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -8px 16px rgba(18, 54, 61, 0.05),
+    7px 7px 0 rgba(18, 54, 61, 0.1),
+    0 14px 28px rgba(18, 54, 61, 0.1);
 }
 
-.ideas-entry-card strong,
 .ideas-entry-card small {
   display: block;
-}
-
-.ideas-entry-card strong {
-  color: var(--ink);
-  font-size: 16px;
-  font-weight: 900;
-  line-height: 1.1;
-}
-
-.ideas-entry-card small {
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.2;
 }
 
 .cover-icon,
@@ -682,8 +687,8 @@ a {
 }
 
 .ideas-entry-icon {
-  width: 42px;
-  height: 42px;
+  width: 46px;
+  height: 46px;
 }
 
 .cover-icon svg,
@@ -1097,6 +1102,9 @@ button[aria-disabled="true"] .home-support-icon {
   color: var(--ink);
   font-size: 22px;
   line-height: 1.12;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .trip-card-title-block > span {
@@ -1113,16 +1121,18 @@ button[aria-disabled="true"] .home-support-icon {
 
 .trip-card-submeta {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
   min-width: 0;
   max-width: 100%;
+  overflow: hidden;
 }
 
 .trip-card-submeta > span {
   display: inline-flex;
-  width: fit-content;
-  max-width: 100%;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: calc(50% - 3px);
   min-height: 28px;
   align-items: center;
   padding: 3px 8px;
@@ -1132,6 +1142,9 @@ button[aria-disabled="true"] .home-support-icon {
   font-size: 13px;
   font-weight: 400;
   line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .trip-card-open .home-card-meta {
@@ -1359,7 +1372,7 @@ button[aria-disabled="true"] .home-support-icon {
   top: 0;
   z-index: 12;
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-columns: 46px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   margin: 0 -14px 12px;
@@ -1396,8 +1409,7 @@ button[aria-disabled="true"] .home-support-icon {
   white-space: nowrap;
 }
 
-.ideas-back-button,
-#ideasAddButton {
+.ideas-back-button {
   border-color: rgba(18, 54, 61, 0.34);
   background: var(--active-button-gradient);
   color: #fff;
@@ -1456,6 +1468,29 @@ button[aria-disabled="true"] .home-support-icon {
 .ideas-list {
   display: grid;
   gap: 10px;
+}
+
+.ideas-fab {
+  position: fixed;
+  right: max(16px, calc((100vw - 760px) / 2 + 16px));
+  bottom: 18px;
+  z-index: 14;
+  display: grid;
+  width: 62px;
+  height: 62px;
+  place-items: center;
+  border: 1px solid rgba(18, 54, 61, 0.34);
+  border-radius: 14px;
+  background: var(--active-button-gradient);
+  color: #fff;
+  box-shadow: var(--active-button-shadow);
+  font-size: 42px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.ideas-fab:active {
+  transform: translateY(1px);
 }
 
 .ideas-state-card {
@@ -2835,6 +2870,7 @@ h3 {
 .header-actions .ghost-button,
 .header-actions .icon-button,
 .header-actions .telegram-icon-button,
+.ideas-back-button,
 .home-share-button,
 .section-heading .primary-button[data-action="add"],
 #copyEstimateButton,
@@ -2895,6 +2931,14 @@ h3 {
   place-items: center;
   font-size: 18px;
   line-height: 1;
+}
+
+.ideas-back-button {
+  width: 46px;
+  min-width: 46px;
+  height: 46px;
+  min-height: 46px;
+  font-size: 22px;
 }
 
 .item-copy-button {
