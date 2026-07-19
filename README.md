@@ -2,11 +2,14 @@
 
 Mobile-first prototype of a personal trip planner for independent travelers.
 
+Current public version: `1.1.2.42`.
+
 ## Current scope
 
-- One active trip.
-- Trip items with type, status, day, time, price, paid amount, link and notes.
+- Local-first personal trips.
+- Trip items with type, status, day, time, price, paid amount, link, location and notes.
 - AI trip draft from text or voice: text is parsed into ordinary trip fields and cards, while voice is transcribed before the same parse flow.
+- AI Link Intake: a URL can fill an editable item draft, then the user saves an ordinary trip card.
 - Plan by days.
 - All events grouped by status.
 - Budget summary.
@@ -16,11 +19,13 @@ Mobile-first prototype of a personal trip planner for independent travelers.
 - Read-only trip sharing by link via Supabase, enabled only for trips the author publishes.
 - Separate `Со мной поделились` list for read-only trips saved from public links.
 - Guest participation on shared trips: expense-share proposals and new idea proposals, accepted or rejected by the author.
-- Minimal display profile for shared scenarios, still based on Supabase Anonymous Auth.
+- Minimal display profile for shared scenarios.
+- Recoverable email access for anonymous users: email can be linked to the current Supabase user to preserve server-side profile/share data.
+- Cloud Ideas: `TravelIdea` and `IdeaCollection` let the user keep places, links and wanted ideas before they belong to a concrete trip.
 - iPhone PWA install readiness: Home Screen launch in standalone mode.
 - Local persistence via `localStorage`.
-- Unshared personal trips stay local. Shared-link management uses Supabase Anonymous Auth without a registration screen.
-- No permanent accounts, collaborative editing, maps, booking integrations, or full multi-device sync.
+- Unshared personal trips stay local. Server-side data is used for published shares, received links, proposals, recoverable profile identity and Cloud Ideas.
+- No collaborative editing, maps, booking integrations, recommendations, Extension ingestion, or full multi-device trip sync.
 
 ## AI trip draft
 
@@ -34,11 +39,28 @@ Backpacker keeps personal unshared trips local. A trip is sent to Supabase only 
 
 The public link opens a read-only trip. A guest can save it to `Со мной поделились`, reopen the latest version later, propose taking part of an expense, and suggest a new idea or event. These proposals do not change the trip immediately: the author reviews them in the trip proposal block and then accepts or rejects them.
 
-If `Показывать смету` is disabled, financial fields are removed by the Edge Function response, not merely hidden in the UI. Shared actions use Supabase Anonymous Auth for technical ownership; there are no permanent accounts, email, phone, OAuth, contact lists, or cloud sync for personal trips yet.
+If `Показывать смету` is disabled, financial fields are removed by the Edge Function response, not merely hidden in the UI. Shared actions use Supabase Auth for technical ownership.
+
+## Recoverable access
+
+Anonymous users can link an email to the current Supabase user. This preserves access to server-side profile, owned shares, received trips, proposals and Cloud Ideas for the same identity.
+
+This is not full account sync: personal trips are still local-first and are not automatically restored on another device.
+
+## Cloud Ideas
+
+The `Идеи` entry on the home screen opens a mobile-first cloud list for places, links and wanted ideas before they belong to a specific trip.
+
+- `travel_idea_collections`: optional user-owned collections.
+- `travel_ideas`: user-owned ideas with title, type, optional URL, location, notes, price/currency and optional image metadata.
+- `Все идеи` is a view across inbox ideas.
+- `Без подборки` means `collection_id = null`.
+- Archive is a soft status change, not delete.
+- `TravelIdea → TripItem` is the next slice and is not implemented yet.
 
 ## Beta device model
 
-Backpacker is currently a beta. It is safest to plan a trip and use the app from one main device. Personal trips are stored locally, and shared actions are tied to the current anonymous browser or PWA session. A laptop browser, a mobile browser, and an installed PWA may be treated as different users.
+Backpacker is currently a beta. It is safest to plan a trip and use the app from one main device. Personal trips are stored locally. Email access can restore the same server-side identity, but it does not move local-only trips between a laptop browser, mobile browser and installed PWA.
 
 ## Demo
 
@@ -56,6 +78,7 @@ The prototype is static and does not require a build step.
 
 - `CHANGELOG.md`
 - `BACKLOG.md`
+- `BACKPACKER_CONTEXT.md`
 - `BACKPACKER_MVP_SCOPE.md`
 - `BACKPACKER_WIREFRAMES.md`
 - `BACKPACKER_STABLE_V1_1_0_0.md`

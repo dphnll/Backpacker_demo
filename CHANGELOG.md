@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.1.2.42 - 2026-07-19
+
+- Добавлен первый облачный раздел `Идеи` на главной: отдельный mobile-first экран для мест, ссылок и хотелок до конкретной поездки.
+- Поддержаны views `Все идеи`, `Без подборки` и именованные подборки `IdeaCollection`; подборка у идеи необязательна.
+- Добавлено ручное создание, редактирование и soft archive `TravelIdea`; архивирование не удаляет строку.
+- Карточки идей показывают тип, подборку, ссылку/локацию/цену и optional image thumbnail с fallback-иконкой.
+- Cloud CRUD работает через Supabase tables `travel_idea_collections` и `travel_ideas` с owner-only RLS, soft archive и без delete privilege для клиента.
+- `TravelIdea` остаётся независимым cloud source без `tripId`: добавление `TravelIdea` в обычную карточку поездки ещё не реализовано.
+
+## 1.1.2.41 - 2026-07-17
+
+- Profile/access entry стал понятнее для Recoverable Auth.
+- Форма профиля и кнопки сохранения доступа приведены к текущему mobile chrome style и нормальной ширине.
+- Добавлена понятная ошибка для Supabase email rate limit / `429`.
+- Уточнён copy: email помогает вернуться к server-side профилю и ссылкам, но local-only trips не переносятся на другое устройство.
+
+## 1.1.2.40 - 2026-07-17
+
+- Anonymous user может сохранить доступ через email без создания отдельной full-account модели.
+- Email связывается с текущим anonymous user: `auth.uid()` сохраняется после upgrade.
+- Server-side profile, owned shares, received trips и proposals продолжают принадлежать тому же user.
+- Добавлен passwordless email login для возврата к той же server-side identity.
+- Local-only trips остаются local-first: они не становятся multi-device и не восстанавливаются автоматически после входа на другом устройстве.
+
 ## 1.1.2.39 - 2026-07-13
 
 - AI-черновик получил явные правила количества для отдельных мест и событий.

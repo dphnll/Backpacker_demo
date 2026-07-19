@@ -52,6 +52,104 @@ CTO preference for first build:
 - put Share in the trip header;
 - keep one primary floating action button: Add.
 
+## Current mobile wireframes — 1.1.2.42
+
+These wireframes describe the current public shape after Cloud Ideas UI foundation. They extend the original MVP notes below without rewriting the historical first-build baseline.
+
+### Home
+
+```text
+------------------------------------------------+
+| [logo] BACKPACKER                         share|
+|        [profile / display name entry]          |
++------------------------------------------------+
+| [Trainer trip]                                 |
++------------------------------------------------+
+| [Create new trip]                              |
+| Manual or AI draft                             |
++------------------------------------------------+
+| [Ideas]                                        |
+| Places, links and wanted ideas before a trip   |
++------------------------------------------------+
+| My trips                                       |
+| [Trip card] [Trip card]                        |
++------------------------------------------------+
+| Shared with me                                 |
+| [Received read-only trip card]                 |
++------------------------------------------------+
+```
+
+Rules:
+
+- profile entry opens the same profile/recoverable access sheet;
+- `Ideas` is a first-class home entry, separate from personal trips;
+- local personal trips and server-side received/ideas data remain visually separate;
+- share button in the home header shares Backpacker itself, not a trip snapshot.
+
+### Ideas screen
+
+```text
+------------------------------------------------+
+| ←  Ideas                                Add    |
+|    Places, links and wanted ideas before trip  |
++------------------------------------------------+
+| [Все идеи] [Без подборки] [Грузия] [Бани]      |
++------------------------------------------------+
+| [thumb/icon] Title                             |
+|              Type · Collection                 |
+|              Location · price · есть ссылка    |
+|              notes/excerpt preview             |
++------------------------------------------------+
+```
+
+States:
+
+- loading: `Загружаем идеи...`;
+- empty all: `Пока нет идей` + actions `Добавить идею` / `Создать подборку`;
+- empty collection: collection-specific empty card;
+- error: readable error with retry and add action.
+
+Collection chips:
+
+- `Все идеи` is a view;
+- `Без подборки` means `collection_id = null`;
+- named collections come from `travel_idea_collections`.
+
+Idea cards:
+
+- optional thumbnail if image metadata is present;
+- fallback icon by semantic type;
+- title, type, collection, optional location, price and link marker;
+- notes/excerpt preview if available.
+
+### Idea form
+
+```text
+------------------------------------------------+
+| Add/Edit idea                              X   |
++------------------------------------------------+
+| Title                                          |
+| Type                                           |
+| Collection                                     |
+| [New collection]                               |
+| URL                                            |
+| Location                                       |
+| Price                  Currency               |
+| Notes / description                            |
+|                                                |
+| [Save]                         [Archive*]      |
+------------------------------------------------+
+```
+
+Rules:
+
+- title is required;
+- collection is optional;
+- archive is visible only for an existing idea;
+- technical fields are not shown: owner id, source, status, image source, timestamps;
+- no current `Добавить в поездку` action yet;
+- no Extension UI, source identifiers UI, rename/delete collection, recommendations or map in this release.
+
 ## Screen 1: Trip home / Plan
 
 Purpose:
