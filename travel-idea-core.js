@@ -262,6 +262,34 @@
     };
   }
 
+  function mapTravelIdeaToTripItemDraft(idea = {}, targetTripCurrency = "") {
+    const title = cleanTravelIdeaText(idea.title, 160);
+    const notes = optionalText(idea.notes, 1000) || optionalText(idea.excerpt, 700) || "";
+    const priceAmount = normalizeTravelIdeaPriceAmount(idea.price_amount ?? idea.priceAmount);
+    const ideaCurrency = normalizeTravelIdeaCurrency(idea.price_currency ?? idea.priceCurrency);
+    const tripCurrency = normalizeTravelIdeaCurrency(targetTripCurrency);
+    let price = 0;
+    let priceWarning = "";
+    if (priceAmount !== null) {
+      if (!ideaCurrency) {
+        priceWarning = "Валюта цены не указана. Цена не перенесена в карточку поездки.";
+      } else if (ideaCurrency !== tripCurrency) {
+        priceWarning = "В идее цена указана в другой валюте. Цена не перенесена в карточку поездки.";
+      } else {
+        price = priceAmount;
+      }
+    }
+    return {
+      title,
+      type: normalizeTravelIdeaType(idea.semantic_type ?? idea.semanticType ?? idea.type),
+      link: normalizeTravelIdeaUrl(idea.url) || "",
+      locationText: optionalText(idea.location_text ?? idea.locationText, 240) || "",
+      notes,
+      price,
+      priceWarning,
+    };
+  }
+
   const api = {
     SUPPORTED_CURRENCIES,
     TRAVEL_IDEA_SEMANTIC_TYPES,
@@ -276,6 +304,7 @@
     formatTravelIdeaMeta,
     getTravelIdeaCollectionKey,
     mapManualIdeaToTravelIdea,
+    mapTravelIdeaToTripItemDraft,
     mapTravelIdeaRowToViewModel,
     mapTravelCandidateToTravelIdea,
     normalizeTravelIdeaCollectionId,

@@ -294,7 +294,7 @@ Important link behavior:
 - For MVP, links are entered manually and displayed clearly.
 - Later, investigate mobile browser share-to-app flow: the user copies/sends a page from Aviasales, Tripster, cafe site, etc. directly into Backpacker, and Backpacker creates a draft item card.
 
-## Current MVP extensions — 1.1.2.42
+## Current MVP extensions — 1.1.2.43
 
 The original MVP baseline remains local-first. The current public product line adds several narrow extensions around that baseline:
 
@@ -305,6 +305,7 @@ The original MVP baseline remains local-first. The current public product line a
 - AI Link Intake: a URL can fill an editable item draft in the existing form; saving still uses ordinary `saveItem`.
 - Recoverable server identity: email can be linked to the current anonymous Supabase user to preserve server-side profile/share/received/proposal/Ideas ownership.
 - Cloud Ideas and collections: `TravelIdea` and `IdeaCollection` store places, links and wanted ideas before they belong to a concrete trip.
+- TravelIdea add-to-trip: an existing cloud idea can fill an ordinary editable `TripItem` draft after the user chooses a trip/day or `Без даты`; the actual `TripItem` appears only after user `Save`.
 
 Current limitations:
 
@@ -312,7 +313,7 @@ Current limitations:
 - Email access restores server-side identity, not local-only trips from another device.
 - There is no booking, payment, map, collaborative editing, full account workspace or AI Recommendations.
 - Extension Connect and ingestion API are not implemented yet.
-- `TravelIdea → TripItem` is the next planned slice; in `1.1.2.42` ideas do not yet create trip cards.
+- The next step is Extension contract/ingestion, not new AI functionality.
 
 ## Data model draft
 

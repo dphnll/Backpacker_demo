@@ -8,6 +8,7 @@ const {
   buildTravelIdeaInsertPayload,
   filterInboxTravelIdeas,
   mapTravelIdeaRowToViewModel,
+  mapTravelIdeaToTripItemDraft,
   mapManualIdeaToTravelIdea,
   mapTravelCandidateToTravelIdea,
   normalizeTravelIdeaCollectionId,
@@ -315,4 +316,88 @@ test("manual create defaults source manual and status inbox", () => {
 
   assert.equal(payload.source, "manual");
   assert.equal(payload.status, "inbox");
+});
+
+test("TravelIdea maps to a sanitized TripItem draft", () => {
+  const idea = {
+    id: "idea-1",
+    title: "  Wine bar  ",
+    semantic_type: "food",
+    url: "https://example.com/wine",
+    location_text: "Tbilisi",
+    notes: "Book a table",
+    excerpt: "Fallback excerpt",
+    price_amount: 42,
+    price_currency: "GEL",
+    image_url: "https://example.com/image.jpg",
+    image_alt: "Wine",
+    image_source: "metadata",
+    source: "browser_extension",
+    status: "inbox",
+    collection_id: COLLECTION_ID,
+    owner_user_id: "user-1",
+    created_at: "2026-07-18T00:00:00Z",
+    updated_at: "2026-07-18T00:00:00Z",
+    future_field: "do not copy",
+  };
+
+  const draft = mapTravelIdeaToTripItemDraft(idea, "GEL");
+
+  assert.deepEqual(draft, {
+    title: "Wine bar",
+    type: "food",
+    link: "https://example.com/wine",
+    locationText: "Tbilisi",
+    notes: "Book a table",
+    price: 42,
+    priceWarning: "",
+  });
+  ["image_url", "image_alt", "image_source", "source", "status", "collection_id", "owner_user_id", "created_at", "updated_at", "future_field"].forEach((field) => {
+    assert.equal(Object.hasOwn(draft, field), false);
+  });
+});
+
+test("TravelIdea draft uses excerpt only when notes are empty", () => {
+  assert.equal(mapTravelIdeaToTripItemDraft({ title: "Museum", notes: "Own notes", excerpt: "Excerpt" }, "RUB").notes, "Own notes");
+  assert.equal(mapTravelIdeaToTripItemDraft({ title: "Museum", notes: "   ", excerpt: "Excerpt" }, "RUB").notes, "Excerpt");
+});
+
+test("TravelIdea draft price requires explicit matching currency", () => {
+  const matching = mapTravelIdeaToTripItemDraft({
+    title: "Museum",
+    price_amount: 1500,
+    price_currency: "RUB",
+  }, "RUB");
+  assert.equal(matching.price, 1500);
+  assert.equal(matching.priceWarning, "");
+
+  const missing = mapTravelIdeaToTripItemDraft({
+    title: "Museum",
+    price_amount: 1500,
+  }, "RUB");
+  assert.equal(missing.price, 0);
+  assert.equal(missing.priceWarning, "Валюта цены не указана. Цена не перенесена в карточку поездки.");
+
+  const mismatched = mapTravelIdeaToTripItemDraft({
+    title: "Museum",
+    price_amount: 1500,
+    price_currency: "EUR",
+  }, "RUB");
+  assert.equal(mismatched.price, 0);
+  assert.equal(mismatched.priceWarning, "В идее цена указана в другой валюте. Цена не перенесена в карточку поездки.");
+});
+
+test("TravelIdea mapping is immutable and repeatable", () => {
+  const idea = Object.freeze({
+    title: "Reusable place",
+    semantic_type: "place",
+    url: "https://example.com/place",
+    price_amount: 10,
+    price_currency: "USD",
+  });
+  const first = mapTravelIdeaToTripItemDraft(idea, "USD");
+  const second = mapTravelIdeaToTripItemDraft(idea, "USD");
+
+  assert.deepEqual(first, second);
+  assert.equal(first.price, 10);
 });

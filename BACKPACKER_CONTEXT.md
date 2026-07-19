@@ -1,13 +1,13 @@
 # Backpacker Context
 
-Актуальный handoff после public release `1.1.2.42`.
+Актуальный handoff после local release checkpoint `1.1.2.43`.
 
 ## Current release
 
-- Public version: `1.1.2.42`
-- Release commit: `6a261c6f3a36d4dfd11941906f9bedaa4960aa77`
+- Target version: `1.1.2.43`
+- Release commit: pending local commit
 - Public demo: `https://dphnll.github.io/Backpacker_demo/`
-- Cache: `backpacker-pwa-v74`
+- Cache: `backpacker-pwa-v75`
 
 ## Done
 
@@ -20,23 +20,21 @@
 - Recoverable Auth: anonymous users can link email and later return to the same server-side identity.
 - Cloud `TravelIdea` / `IdeaCollection` domain with owner-only RLS, optional collection, optional image metadata and soft archive.
 - Ideas UI `1.1.2.42`: home entry, mobile Ideas screen, chips for `Все идеи`, `Без подборки` and named collections, manual create/edit/archive.
+- Slice B `1.1.2.43`: an existing `TravelIdea` can choose a destination trip/day or `Без даты`, open an ordinary editable `TripItem` draft, and create the card only through normal `saveItem`.
 
 ## Current step
 
-Slice B: `TravelIdea → existing generic card create/copy flow`.
-
-The intended product path:
-
-`TravelIdea → ordinary editable TripItem draft → existing destination picker → ordinary TripItem with a new id`.
+Extension / Backpacker contract audit.
 
 ## Fixed sequence
 
-1. Slice B: map `TravelIdea` into existing generic card create/copy flow.
-2. Extension / Backpacker contract audit.
-3. Idempotent ingestion identifiers.
-4. Extension Connect + Ingestion API.
-5. End-to-end smoke.
-6. Return to unified AI flow: `Рассказать о поездке`.
+1. Ideas UI v1 ✅
+2. TravelIdea → editable ordinary TripItem flow ✅
+3. Extension / Backpacker contract audit.
+4. Idempotent ingestion identifiers.
+5. Extension Connect + Ingestion API.
+6. End-to-end smoke.
+7. Return to unified AI flow: `Рассказать о поездке`.
 
 ## Invariants
 
@@ -56,4 +54,4 @@ The intended product path:
 - Future ingestion should use stable source identifiers such as `sourceCollectionId` / `sourceIdeaId`.
 - Collection matching must not rely on display title alone.
 - Full two-way sync is outside the current scope.
-- No Extension UI, ingestion API, recommendations, map or join table is implemented in `1.1.2.42`.
+- No Extension UI, ingestion API, recommendations, map or join table is implemented in `1.1.2.43`.

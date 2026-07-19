@@ -52,9 +52,9 @@ CTO preference for first build:
 - put Share in the trip header;
 - keep one primary floating action button: Add.
 
-## Current mobile wireframes — 1.1.2.42
+## Current mobile wireframes — 1.1.2.43
 
-These wireframes describe the current public shape after Cloud Ideas UI foundation. They extend the original MVP notes below without rewriting the historical first-build baseline.
+These wireframes describe the current shape after Cloud Ideas can open an editable ordinary trip card draft. They extend the original MVP notes below without rewriting the historical first-build baseline.
 
 ### Home
 
@@ -137,6 +137,7 @@ Idea cards:
 | Price                  Currency               |
 | Notes / description                            |
 |                                                |
+| [Добавить в поездку*]                          |
 | [Save]                         [Archive*]      |
 ------------------------------------------------+
 ```
@@ -146,8 +147,11 @@ Rules:
 - title is required;
 - collection is optional;
 - archive is visible only for an existing idea;
+- `Добавить в поездку` is visible only for an existing idea;
+- add-to-trip opens destination selection: existing trip first, then day or `Без даты`;
+- after destination selection, Backpacker opens the chosen trip and the ordinary editable item form with a sanitized draft;
+- `Save` creates the `TripItem`; `Cancel` returns to Ideas without creating a card;
 - technical fields are not shown: owner id, source, status, image source, timestamps;
-- no current `Добавить в поездку` action yet;
 - no Extension UI, source identifiers UI, rename/delete collection, recommendations or map in this release.
 
 ## Screen 1: Trip home / Plan

@@ -15,8 +15,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.42";
-const APP_RELEASE_SUMMARY = "Добавлен первый облачный раздел «Идеи» с подборками.";
+const APP_VERSION = "1.1.2.43";
+const APP_RELEASE_SUMMARY = "Идею можно добавить в выбранную поездку как обычную карточку.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -52,9 +52,20 @@ let donationDragCurrentY = 0;
 let cardCopySheetHistoryArmed = false;
 let cardCopyIgnoreNextPop = false;
 let itemFormOpenedAt = 0;
+let itemSheetHistoryArmed = false;
+let itemSheetIgnoreNextPop = false;
+let itemCreateContext = {
+  source: "",
+  creationMethod: "manual",
+  returnScreenOnCancel: "",
+  sourceIdeaId: "",
+  toastOnSave: "",
+};
 let analyticsIsReturningUser = false;
 let cardCopyState = {
+  sourceKind: "trip_item",
   sourceItemId: "",
+  sourceIdeaId: "",
   scope: "",
   targetTripId: "",
   targetDate: null,
@@ -1068,6 +1079,8 @@ function openIdeaSheet(ideaId = "") {
   form.elements.locationText.value = idea?.location_text || "";
   form.elements.priceAmount.value = idea?.price_amount ?? "";
   form.elements.notes.value = idea?.notes || "";
+  $("#ideaAddToTripButton").hidden = !idea;
+  $("#ideaAddToTripButton").disabled = ideasState.saving;
   $("#ideaArchiveButton").hidden = !idea;
   $("#ideaSaveButton").disabled = ideasState.saving;
   $("#ideaArchiveButton").disabled = ideasState.saving;
@@ -1142,6 +1155,7 @@ async function submitIdeaForm(event) {
   } finally {
     ideasState.saving = false;
     $("#ideaSaveButton").disabled = false;
+    $("#ideaAddToTripButton").disabled = false;
     $("#ideaArchiveButton").disabled = false;
   }
 }
@@ -1167,6 +1181,7 @@ async function archiveCurrentIdea() {
   } finally {
     ideasState.saving = false;
     $("#ideaSaveButton").disabled = false;
+    $("#ideaAddToTripButton").disabled = false;
     $("#ideaArchiveButton").disabled = false;
   }
 }
@@ -3712,6 +3727,47 @@ function applyLinkIntakeDraftToItemForm(draft) {
   return window.BackpackerLinkIntakeUiCore.createLinkIntakeAppliedSnapshot(beforeValues, getLinkIntakeFormValues());
 }
 
+function getDefaultItemCreateContext() {
+  return {
+    source: "",
+    creationMethod: "manual",
+    returnScreenOnCancel: "",
+    sourceIdeaId: "",
+    toastOnSave: "",
+  };
+}
+
+function resetItemCreateContext() {
+  itemCreateContext = getDefaultItemCreateContext();
+  renderItemDraftWarning("");
+}
+
+function renderItemDraftWarning(message = "") {
+  const warning = $("#itemDraftWarning");
+  if (!warning) return;
+  warning.textContent = message || "";
+  warning.classList.toggle("hidden", !message);
+}
+
+function applyInitialDraftToItemForm(initialDraft = {}) {
+  const form = $("#itemForm");
+  if (!form || !initialDraft) return;
+  if (initialDraft.title) form.elements.title.value = String(initialDraft.title || "");
+  if (initialDraft.type && Array.from(form.elements.type.options).some((option) => option.value === initialDraft.type)) {
+    form.elements.type.value = initialDraft.type;
+  }
+  form.elements.status.value = "want";
+  form.elements.priority.value = "nice";
+  form.elements.date.value = formatDateForInput(initialDraft.date || "");
+  if (initialDraft.link) form.elements.link.value = String(initialDraft.link || "");
+  if (initialDraft.locationText) form.elements.locationText.value = String(initialDraft.locationText || "");
+  if (initialDraft.notes) form.elements.notes.value = String(initialDraft.notes || "");
+  const price = parseMoney(initialDraft.price);
+  form.elements.price.value = price > 0 ? String(price) : "";
+  validateMoneyInput(form.elements.price);
+  updateOpenLinkButton();
+}
+
 async function previewLinkIntakeFromForm() {
   if (linkIntakeState.isLoading || isReadOnlyMode()) return;
   const form = $("#itemForm");
@@ -3756,7 +3812,7 @@ async function previewLinkIntakeFromForm() {
   }
 }
 
-function openItemSheet(itemId = null) {
+function openItemSheet(itemId = null, options = {}) {
   fillSelects();
   renderParticipantOwnerField();
   $("#deleteItemButton").style.display = itemId ? "inline-flex" : "none";
@@ -3764,13 +3820,29 @@ function openItemSheet(itemId = null) {
   $("#copyItemButton").hidden = !itemId;
   $("#itemSheetTitle").textContent = itemId ? "Редактировать элемент" : "Добавить в поездку";
   const trackedItem = itemId ? state.items.find((entry) => entry.id === itemId) : null;
+  resetItemCreateContext();
   fillItemForm(trackedItem);
+  if (!trackedItem && options.initialDraft) {
+    applyInitialDraftToItemForm(options.initialDraft);
+    itemCreateContext = {
+      source: options.source || "",
+      creationMethod: options.creationMethod || "manual",
+      returnScreenOnCancel: options.returnScreenOnCancel || "",
+      sourceIdeaId: options.sourceIdeaId || "",
+      toastOnSave: options.toastOnSave || "",
+    };
+    renderItemDraftWarning(options.inlineWarning || "");
+  }
   renderItemAllocationSummary(trackedItem);
   renderAcceptedExpenseControls(trackedItem);
   updateOpenLinkButton();
   resetLinkIntakeState();
   renderLinkIntakePanel({ visible: !itemId && !isReadOnlyMode() });
   openSheet("itemSheet");
+  if (!itemId && itemCreateContext.returnScreenOnCancel && !itemSheetHistoryArmed) {
+    history.pushState({ backpackerItemSheet: true }, "");
+    itemSheetHistoryArmed = true;
+  }
   itemFormOpenedAt = Date.now();
   if (trackedItem) {
     refreshAuthorExpenseProposals().then(() => {
@@ -3852,6 +3924,28 @@ function readItemFormDate(value, existing = null) {
   return "";
 }
 
+function clearItemSheetHistory({ fromPopState = false } = {}) {
+  if (itemSheetHistoryArmed && !fromPopState) {
+    itemSheetIgnoreNextPop = true;
+    history.back();
+  }
+  itemSheetHistoryArmed = false;
+}
+
+function closeItemSheetAfterSave() {
+  closeSheet("itemSheet");
+  clearItemSheetHistory();
+  resetItemCreateContext();
+}
+
+function dismissItemSheet(method = "close", { fromPopState = false } = {}) {
+  const returnScreen = itemCreateContext.returnScreenOnCancel;
+  closeSheet("itemSheet");
+  clearItemSheetHistory({ fromPopState });
+  resetItemCreateContext();
+  if (returnScreen === "ideas") showIdeasScreen();
+}
+
 function saveItem(event) {
   event.preventDefault();
   if (isReadOnlyMode()) return;
@@ -3864,6 +3958,7 @@ function saveItem(event) {
   const data = Object.fromEntries(new FormData(form).entries());
   const existing = state.items.find((entry) => entry.id === data.id);
   const isNew = !existing;
+  const createContext = isNew ? { ...itemCreateContext } : getDefaultItemCreateContext();
   const itemDate = readItemFormDate(data.date, existing);
   const participantId = state.trip.participants.some((participant) => participant.id === data.participantId)
     ? data.participantId
@@ -3896,9 +3991,9 @@ function saveItem(event) {
   if (existingIndex >= 0) state.items[existingIndex] = item;
   else state.items.push(item);
   saveState();
-  closeSheet("itemSheet");
+  closeItemSheetAfterSave();
   render();
-  showToast("Сохранено");
+  showToast(isNew && createContext.toastOnSave ? createContext.toastOnSave : "Сохранено");
   const changedFields = existing
     ? ["type", "status", "priority", "date", "startTime", "durationMinutes", "price", "paidAmount", "link", "locationText", "notes"]
         .filter((field) => String(existing[field] ?? "") !== String(item[field] ?? ""))
@@ -3907,7 +4002,7 @@ function saveItem(event) {
     ...getTripAnalyticsContext(),
     item_id: item.id,
     ...getItemAnalyticsFlags(item),
-    ...(isNew ? { creation_method: "manual" } : { changed_fields: changedFields }),
+    ...(isNew ? { creation_method: createContext.creationMethod || "manual" } : { changed_fields: changedFields }),
   });
   if (getTripOrigin() === "demo" && !isNew) {
     trackEvent("trainer_action_completed", {
@@ -3995,6 +4090,10 @@ function getCopyCandidateTrips() {
   return tripStore.trips.filter((entry) => !entry.isDemo && entry.id !== state.trip.id);
 }
 
+function getTravelIdeaDestinationTrips() {
+  return tripStore.trips.filter((entry) => !entry.isDemo);
+}
+
 function createTripItemCopy({ sourceItem, sourceTrip, targetState, targetDate }) {
   const sameCurrency = sourceTrip.currency === targetState.trip.currency;
   const now = new Date().toISOString();
@@ -4019,12 +4118,24 @@ function createTripItemCopy({ sourceItem, sourceTrip, targetState, targetDate })
 }
 
 function getCardCopySourceItem() {
+  if (cardCopyState.sourceKind !== "trip_item") return null;
   return state.items.find((item) => item.id === cardCopyState.sourceItemId) || null;
+}
+
+function getCardCopySourceIdea() {
+  if (cardCopyState.sourceKind !== "travel_idea") return null;
+  return ideasState.ideas.find((idea) => idea.id === cardCopyState.sourceIdeaId) || null;
 }
 
 function getCardCopyTargetState() {
   if (!cardCopyState.targetTripId) return null;
   return getTripState(cardCopyState.targetTripId);
+}
+
+function getCardCopyTripOptions() {
+  return cardCopyState.sourceKind === "travel_idea"
+    ? getTravelIdeaDestinationTrips()
+    : getCopyCandidateTrips();
 }
 
 function getCardCopyDateOptions(targetState, { omitSourceBucket = false } = {}) {
@@ -4047,7 +4158,9 @@ function openCardCopySheet() {
   const sourceItem = state.items.find((item) => item.id === sourceItemId);
   if (!sourceItem) return;
   cardCopyState = {
+    sourceKind: "trip_item",
     sourceItemId,
+    sourceIdeaId: "",
     scope: "",
     targetTripId: "",
     targetDate: null,
@@ -4069,6 +4182,32 @@ function openCardCopySheet() {
   });
 }
 
+function openTravelIdeaDestinationPicker() {
+  const ideaId = $("#ideaForm")?.elements.id.value || ideasState.editingIdeaId;
+  const sourceIdea = ideasState.ideas.find((idea) => idea.id === ideaId);
+  if (!sourceIdea) return;
+  if (!getTravelIdeaDestinationTrips().length) {
+    showToast("Сначала создайте поездку, чтобы добавить в неё идею.");
+    return;
+  }
+  cardCopyState = {
+    sourceKind: "travel_idea",
+    sourceItemId: "",
+    sourceIdeaId: sourceIdea.id,
+    scope: "another",
+    targetTripId: "",
+    targetDate: null,
+    isSubmitting: false,
+  };
+  closeSheet("ideaSheet");
+  renderCardCopySheet();
+  openSheet("cardCopySheet");
+  if (!cardCopySheetHistoryArmed) {
+    history.pushState({ backpackerCardCopySheet: true }, "");
+    cardCopySheetHistoryArmed = true;
+  }
+}
+
 function dismissCardCopySheet(method = "close") {
   const sourceItem = getCardCopySourceItem();
   closeSheet("cardCopySheet");
@@ -4077,14 +4216,22 @@ function dismissCardCopySheet(method = "close") {
     history.back();
   }
   cardCopySheetHistoryArmed = false;
-  trackEvent("item_copy_cancelled", {
-    ...getTripAnalyticsContext(),
-    item_id: sourceItem?.id || null,
-    method,
-  });
+  if (cardCopyState.sourceKind === "trip_item") {
+    trackEvent("item_copy_cancelled", {
+      ...getTripAnalyticsContext(),
+      item_id: sourceItem?.id || null,
+      method,
+    });
+  }
 }
 
 function renderCardCopySheet() {
+  $("#cardCopySheetTitle").textContent = cardCopyState.sourceKind === "travel_idea"
+    ? "Куда добавить идею?"
+    : "Куда скопировать карточку?";
+  $("#cardCopyConfirmButton").textContent = cardCopyState.sourceKind === "travel_idea"
+    ? "Добавить"
+    : "Скопировать";
   renderCardCopyScopeStep();
   renderCardCopyTripStep();
   renderCardCopyDateStep();
@@ -4094,6 +4241,11 @@ function renderCardCopySheet() {
 
 function renderCardCopyScopeStep() {
   const container = $("#cardCopyScopeStep");
+  if (cardCopyState.sourceKind === "travel_idea") {
+    container.classList.add("hidden");
+    container.innerHTML = "";
+    return;
+  }
   const hasOtherTrips = getCopyCandidateTrips().length > 0;
   container.classList.toggle("hidden", Boolean(cardCopyState.scope));
   container.innerHTML = `
@@ -4112,13 +4264,15 @@ function renderCardCopyScopeStep() {
 
 function renderCardCopyTripStep() {
   const container = $("#cardCopyTripStep");
-  const isVisible = cardCopyState.scope === "another" && !cardCopyState.targetTripId;
+  const isVisible = cardCopyState.sourceKind === "travel_idea"
+    ? !cardCopyState.targetTripId
+    : cardCopyState.scope === "another" && !cardCopyState.targetTripId;
   container.classList.toggle("hidden", !isVisible);
   if (!isVisible) {
     container.innerHTML = "";
     return;
   }
-  const trips = getCopyCandidateTrips();
+  const trips = getCardCopyTripOptions();
   container.innerHTML = trips.map((entry) => {
     const trip = entry.state.trip;
     return `
@@ -4140,7 +4294,7 @@ function renderCardCopyDateStep() {
     return;
   }
   const sameTrip = targetState.trip.id === state.trip.id;
-  const options = getCardCopyDateOptions(targetState, { omitSourceBucket: sameTrip });
+  const options = getCardCopyDateOptions(targetState, { omitSourceBucket: cardCopyState.sourceKind === "trip_item" && sameTrip });
   container.innerHTML = options.length
     ? options.map((option) => `
       <button class="card-copy-option" type="button" data-card-copy-date="${escapeAttr(option.value)}" aria-pressed="${cardCopyState.targetDate !== null && (cardCopyState.targetDate || "") === (option.value || "")}">
@@ -4154,6 +4308,15 @@ function renderCardCopyDateStep() {
 function renderCardCopyWarning() {
   const warning = $("#cardCopyWarning");
   const targetState = getCardCopyTargetState();
+  if (cardCopyState.sourceKind === "travel_idea") {
+    const sourceIdea = getCardCopySourceIdea();
+    const draft = sourceIdea && targetState
+      ? getTravelIdeaCore()?.mapTravelIdeaToTripItemDraft?.(sourceIdea, targetState.trip.currency)
+      : null;
+    warning.classList.toggle("hidden", !draft?.priceWarning);
+    warning.textContent = draft?.priceWarning || "";
+    return;
+  }
   const sourceItem = getCardCopySourceItem();
   const shouldWarn = Boolean(sourceItem && targetState && targetState.trip.id !== state.trip.id && targetState.trip.currency !== state.trip.currency);
   warning.classList.toggle("hidden", !shouldWarn);
@@ -4167,11 +4330,13 @@ function renderCardCopyActions() {
   const backButton = $("#cardCopyBackButton");
   const targetState = getCardCopyTargetState();
   const options = targetState
-    ? getCardCopyDateOptions(targetState, { omitSourceBucket: targetState.trip.id === state.trip.id })
+    ? getCardCopyDateOptions(targetState, { omitSourceBucket: cardCopyState.sourceKind === "trip_item" && targetState.trip.id === state.trip.id })
     : [];
   const hasSelectedTarget = Boolean(cardCopyState.scope && targetState && cardCopyState.targetDate !== null && options.some((option) => (option.value || "") === (cardCopyState.targetDate || "")));
   confirmButton.disabled = !hasSelectedTarget || cardCopyState.isSubmitting;
-  backButton.hidden = !cardCopyState.scope;
+  backButton.hidden = cardCopyState.sourceKind === "travel_idea"
+    ? !cardCopyState.targetTripId
+    : !cardCopyState.scope;
 }
 
 function handleCardCopyScope(scope) {
@@ -4193,6 +4358,12 @@ function handleCardCopyDate(targetDate) {
 }
 
 function goBackCardCopyStep() {
+  if (cardCopyState.sourceKind === "travel_idea") {
+    cardCopyState.targetTripId = "";
+    cardCopyState.targetDate = null;
+    renderCardCopySheet();
+    return;
+  }
   if (cardCopyState.scope === "another" && cardCopyState.targetTripId) {
     cardCopyState.targetTripId = "";
     cardCopyState.targetDate = null;
@@ -4204,15 +4375,65 @@ function goBackCardCopyStep() {
   renderCardCopySheet();
 }
 
+function closeCardCopySheetForTransition(afterClose) {
+  closeSheet("cardCopySheet");
+  if (cardCopySheetHistoryArmed) {
+    cardCopyIgnoreNextPop = true;
+    history.back();
+  }
+  cardCopySheetHistoryArmed = false;
+  window.setTimeout(afterClose, 0);
+}
+
+function openTravelIdeaItemDraft({ sourceIdea, targetState, targetDate }) {
+  const draft = getTravelIdeaCore().mapTravelIdeaToTripItemDraft(sourceIdea, targetState.trip.currency);
+  if (!draft.title) {
+    cardCopyState.isSubmitting = false;
+    renderCardCopyActions();
+    return;
+  }
+  const targetTripId = targetState.trip.id;
+  const initialDraft = {
+    title: draft.title,
+    type: draft.type,
+    link: draft.link,
+    locationText: draft.locationText,
+    notes: draft.notes,
+    price: draft.price,
+    date: targetDate || "",
+  };
+  closeCardCopySheetForTransition(() => {
+    cardCopyState.isSubmitting = false;
+    openTrip(targetTripId, { persistNavigation: false, refreshProposals: false });
+    openItemSheet(null, {
+      initialDraft,
+      creationMethod: "other",
+      returnScreenOnCancel: "ideas",
+      inlineWarning: draft.priceWarning || "",
+      source: "travel_idea",
+      sourceIdeaId: sourceIdea.id,
+      toastOnSave: "Добавлено в поездку",
+    });
+  });
+}
+
 function confirmCardCopy() {
   if (cardCopyState.isSubmitting) return;
   const sourceItem = getCardCopySourceItem();
+  const sourceIdea = getCardCopySourceIdea();
   const targetState = getCardCopyTargetState();
-  if (!sourceItem || !targetState) return;
-  const options = getCardCopyDateOptions(targetState, { omitSourceBucket: targetState.trip.id === state.trip.id });
+  if (cardCopyState.sourceKind === "trip_item" && !sourceItem) return;
+  if (cardCopyState.sourceKind === "travel_idea" && !sourceIdea) return;
+  if (!targetState) return;
+  const options = getCardCopyDateOptions(targetState, { omitSourceBucket: cardCopyState.sourceKind === "trip_item" && targetState.trip.id === state.trip.id });
   if (cardCopyState.targetDate === null || !options.some((option) => (option.value || "") === (cardCopyState.targetDate || ""))) return;
   cardCopyState.isSubmitting = true;
   renderCardCopyActions();
+
+  if (cardCopyState.sourceKind === "travel_idea") {
+    openTravelIdeaItemDraft({ sourceIdea, targetState, targetDate: cardCopyState.targetDate });
+    return;
+  }
 
   const copiedItem = createTripItemCopy({
     sourceItem,
@@ -4220,6 +4441,11 @@ function confirmCardCopy() {
     targetState,
     targetDate: cardCopyState.targetDate,
   });
+  if (!copiedItem.title) {
+    cardCopyState.isSubmitting = false;
+    renderCardCopyActions();
+    return;
+  }
   targetState.items.push(copiedItem);
 
   if (targetState.trip.id === state.trip.id) {
@@ -6324,7 +6550,7 @@ function showIdeasScreen() {
   trackEvent("ideas_opened", { loaded: ideasState.loaded });
 }
 
-function showTripScreen() {
+function showTripScreen(options = {}) {
   currentScreen = "trip";
   $("#introScreen").classList.add("hidden");
   $("#homeScreen").classList.add("hidden");
@@ -6337,26 +6563,28 @@ function showTripScreen() {
   });
   renderSaveReceivedTripButton();
   render();
-  refreshAuthorExpenseProposals();
+  if (options.refreshProposals !== false) refreshAuthorExpenseProposals();
   if (isReadOnlyMode()) {
     refreshShareProposalContext();
     refreshItemProposalContext();
   }
 }
 
-function openTrip(tripId) {
+function openTrip(tripId, options = {}) {
   const entry = tripStore.trips.find((trip) => trip.id === tripId);
   if (!entry) return;
   readOnlyShare = null;
   state = normalizeState(structuredClone(entry.state));
-  try {
-    localStorage.setItem(ACTIVE_TRIP_STORAGE_KEY, tripId);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // Opening still works even without persistence.
+  if (options.persistNavigation !== false) {
+    try {
+      localStorage.setItem(ACTIVE_TRIP_STORAGE_KEY, tripId);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      // Opening still works even without persistence.
+    }
   }
   switchView(currentView);
-  showTripScreen();
+  showTripScreen({ refreshProposals: options.refreshProposals });
   if (entry.isDemo) {
     trackEvent("trainer_opened", {
       ...getTripAnalyticsContext(),
@@ -7487,6 +7715,12 @@ function bindEvents() {
 
     const closeTarget = event.target.closest("[data-close]");
     if (closeTarget) {
+      if (closeTarget.dataset.close === "item") {
+        event.preventDefault();
+        event.stopPropagation();
+        dismissItemSheet("close");
+        return;
+      }
       if (closeTarget.dataset.close === "profile") pendingProfileAction = null;
       if (closeTarget.dataset.close === "tripDraftAi") cleanupTripDraftAiRecording();
       closeSheet(`${closeTarget.dataset.close}Sheet`);
@@ -7690,6 +7924,7 @@ function bindEvents() {
   $("#ideasBackButton")?.addEventListener("click", () => showHomeScreen("ideas_back"));
   $("#ideasAddButton")?.addEventListener("click", () => openIdeaSheet());
   $("#ideaForm")?.addEventListener("submit", submitIdeaForm);
+  $("#ideaAddToTripButton")?.addEventListener("click", openTravelIdeaDestinationPicker);
   $("#ideaArchiveButton")?.addEventListener("click", archiveCurrentIdea);
   $("#ideaNewCollectionButton")?.addEventListener("click", openIdeaCollectionSheet);
   $("#ideaCollectionForm")?.addEventListener("submit", submitIdeaCollectionForm);
@@ -7868,6 +8103,14 @@ window.addEventListener("popstate", () => {
   }
   if ($("#cardCopySheet")?.classList.contains("open")) {
     dismissCardCopySheet("back");
+    return;
+  }
+  if (itemSheetIgnoreNextPop) {
+    itemSheetIgnoreNextPop = false;
+    return;
+  }
+  if ($("#itemSheet")?.classList.contains("open") && itemCreateContext.returnScreenOnCancel) {
+    dismissItemSheet("back", { fromPopState: true });
     return;
   }
   if (donationIgnoreNextPop) {

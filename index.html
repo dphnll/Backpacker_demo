@@ -547,6 +547,7 @@
             Цена
             <input name="price" inputmode="decimal" placeholder="0" />
           </label>
+          <p class="card-copy-warning item-draft-warning hidden" id="itemDraftWarning"></p>
           <label class="field">
             Оплачено
             <input name="paidAmount" inputmode="decimal" placeholder="0" />
@@ -696,6 +697,7 @@
           <p class="profile-error" id="ideaFormError" aria-live="polite"></p>
           <div class="form-actions idea-form-actions">
             <button class="primary-button" id="ideaSaveButton" type="submit">Сохранить</button>
+            <button class="ghost-button" id="ideaAddToTripButton" type="button" hidden>Добавить в поездку</button>
             <button class="ghost-button" id="ideaArchiveButton" type="button" hidden>Архивировать</button>
           </div>
         </form>

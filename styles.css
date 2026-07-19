@@ -3714,6 +3714,7 @@ h3 {
 }
 
 .field.wide,
+.item-draft-warning,
 .form-actions {
   grid-column: 1 / -1;
 }

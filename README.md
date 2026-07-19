@@ -2,7 +2,7 @@
 
 Mobile-first prototype of a personal trip planner for independent travelers.
 
-Current public version: `1.1.2.42`.
+Current public version: `1.1.2.43`.
 
 ## Current scope
 
@@ -21,7 +21,7 @@ Current public version: `1.1.2.42`.
 - Guest participation on shared trips: expense-share proposals and new idea proposals, accepted or rejected by the author.
 - Minimal display profile for shared scenarios.
 - Recoverable email access for anonymous users: email can be linked to the current Supabase user to preserve server-side profile/share data.
-- Cloud Ideas: `TravelIdea` and `IdeaCollection` let the user keep places, links and wanted ideas before they belong to a concrete trip.
+- Cloud Ideas: `TravelIdea` and `IdeaCollection` let the user keep places, links and wanted ideas before they belong to a concrete trip, then turn an idea into an editable ordinary trip card draft.
 - iPhone PWA install readiness: Home Screen launch in standalone mode.
 - Local persistence via `localStorage`.
 - Unshared personal trips stay local. Server-side data is used for published shares, received links, proposals, recoverable profile identity and Cloud Ideas.
@@ -56,7 +56,9 @@ The `Идеи` entry on the home screen opens a mobile-first cloud list for plac
 - `Все идеи` is a view across inbox ideas.
 - `Без подборки` means `collection_id = null`.
 - Archive is a soft status change, not delete.
-- `TravelIdea → TripItem` is the next slice and is not implemented yet.
+- Current add-to-trip flow: `TravelIdea → destination → editable ordinary item form → Save → TripItem`.
+- `TravelIdea` remains an independent reusable cloud source: adding it to one trip does not archive, delete or link it to that trip.
+- Extension ingestion is still absent; ideas are created manually in Backpacker for now.
 
 ## Beta device model
 
