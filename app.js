@@ -85,6 +85,12 @@ let recoverableAuthState = {
   upgradeSending: false,
   user: null,
 };
+let extensionConnectState = {
+  request: null,
+  status: "idle",
+  error: "",
+};
+const IDENTITY_BRIDGE_PENDING_EXTENSION_CONNECT_KEY = "backpacker.identityBridge.pendingExtensionConnect.v1";
 let ideasState = {
   activeCollectionKey: "all",
   collections: [],
@@ -602,6 +608,16 @@ function getLinkIntakeFunctionUrl() {
   return `${String(config.url).replace(/\/+$/, "")}/functions/v1/link-intake`;
 }
 
+function getExtensionConnectFunctionUrl() {
+  const config = getSupabaseConfig();
+  const core = getExtensionConnectUiCore();
+  if (core?.resolveExtensionConnectFunctionUrl) {
+    return core.resolveExtensionConnectFunctionUrl(config);
+  }
+  if (!config.url) return "";
+  return `${String(config.url).replace(/\/+$/, "")}/functions/v1/extension-connect`;
+}
+
 function isSupabaseConfigured() {
   const config = getSupabaseConfig();
   return Boolean(config.url && config.anonKey && window.supabase?.createClient);
@@ -623,6 +639,14 @@ function getSupabaseClient() {
 
 function getRecoverableAuthCore() {
   return window.BackpackerRecoverableAuth;
+}
+
+function getExtensionConnectUiCore() {
+  return window.BackpackerExtensionConnectUI;
+}
+
+function getIdentityBridgeCore() {
+  return window.BackpackerIdentityBridge;
 }
 
 function getRecoverableAuthRedirectUrl() {
@@ -703,6 +727,7 @@ async function handleRecoverableAuthCallback() {
       ? "Готово: доступ сохранён."
       : "Вход выполнен.";
     showToast(recoverableAuthState.status);
+    await resumePendingExtensionConnectAfterRecoverableAuth(user);
     return user;
   } catch {
     recoverableAuthState.error = "Ссылка открылась, но сессию не удалось восстановить. Попробуйте отправить ссылку ещё раз.";
@@ -829,6 +854,115 @@ async function callLinkIntakeFunction(action, payload = {}) {
   return data;
 }
 
+async function callExtensionConnectFunction(action, payload = {}) {
+  const config = getSupabaseConfig();
+  const url = getExtensionConnectFunctionUrl();
+  if (!url || !config.anonKey) throw new Error("supabase_not_configured");
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: config.anonKey,
+      Authorization: `Bearer ${await ensureSupabaseOwnerSession()}`,
+    },
+    cache: "no-store",
+    body: JSON.stringify({ action, ...payload }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data.error || `extension_connect_${action}_failed`);
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+
+function storePendingExtensionConnectIntent(request) {
+  const bridge = getIdentityBridgeCore();
+  if (!bridge?.serializePendingExtensionConnectIntent) return null;
+  const serialized = bridge.serializePendingExtensionConnectIntent(request);
+  let stored = false;
+  [window.sessionStorage, window.localStorage].forEach((storage) => {
+    try {
+      storage?.setItem(IDENTITY_BRIDGE_PENDING_EXTENSION_CONNECT_KEY, serialized);
+      stored = true;
+    } catch {
+      // Optional browser storage can be unavailable in private or restricted contexts.
+    }
+  });
+  if (!stored) return null;
+  return serialized;
+}
+
+function clearPendingExtensionConnectIntent() {
+  [window.sessionStorage, window.localStorage].forEach((storage) => {
+    try {
+      storage?.removeItem(IDENTITY_BRIDGE_PENDING_EXTENSION_CONNECT_KEY);
+    } catch {
+      // Nothing to clean if this storage is unavailable.
+    }
+  });
+}
+
+function readPendingExtensionConnectIntent() {
+  const bridge = getIdentityBridgeCore();
+  if (!bridge?.restorePendingExtensionConnectIntent) return null;
+  let sawStoredIntent = false;
+  for (const storage of [window.sessionStorage, window.localStorage]) {
+    let serialized = "";
+    try {
+      serialized = storage?.getItem(IDENTITY_BRIDGE_PENDING_EXTENSION_CONNECT_KEY) || "";
+    } catch {
+      serialized = "";
+    }
+    if (!serialized) continue;
+    sawStoredIntent = true;
+    try {
+      const restored = bridge.restorePendingExtensionConnectIntent(serialized);
+      if (restored?.request) return restored;
+    } catch {
+      // Corrupted or unsafe pending data is ignored and cleaned below.
+    }
+  }
+  if (sawStoredIntent) clearPendingExtensionConnectIntent();
+  return null;
+}
+
+async function resumePendingExtensionConnectAfterRecoverableAuth(user) {
+  const pending = readPendingExtensionConnectIntent();
+  if (!pending?.request) return false;
+  const bridge = getIdentityBridgeCore();
+  const state = bridge?.getIdentityBridgeState?.({ user, extensionConnectRequest: pending.request });
+  extensionConnectState = {
+    request: pending.request,
+    status: state?.identityRequired ? "identity_required" : "idle",
+    error: "",
+  };
+  renderExtensionConnectCard();
+  if (state?.identityRequired) return false;
+  clearPendingExtensionConnectIntent();
+  await connectBackpackerExtension();
+  return true;
+}
+
+async function requireRecoverableIdentityForExtensionConnect(request) {
+  const bridge = getIdentityBridgeCore();
+  if (!bridge?.getIdentityBridgeState) {
+    return { status: "connect_allowed", connectAllowed: true, identityRequired: false, request };
+  }
+  await ensureSupabaseOwnerSession();
+  const user = await refreshRecoverableAuthSession();
+  const state = bridge.getIdentityBridgeState({ user, extensionConnectRequest: request });
+  if (state.identityRequired) {
+    try {
+      storePendingExtensionConnectIntent(request);
+    } catch {
+      // Identity gate still blocks Extension Connect if browser session storage is unavailable.
+    }
+  }
+  return state;
+}
+
 function getTravelIdeaCore() {
   return window.BackpackerTravelIdeas;
 }
@@ -868,6 +1002,230 @@ async function getCurrentSupabaseUserForIdeas(client) {
 function getTravelIdeasErrorCopy(error) {
   return getTravelIdeasClientApi()?.getTravelIdeasClientErrorMessage?.(error)
     || "Не удалось выполнить действие с идеями. Попробуйте ещё раз.";
+}
+
+function getExtensionConnectErrorCopy(error) {
+  const status = Number(error?.status || 0);
+  const message = String(error?.message || "").toLowerCase();
+  if (error?.message === "supabase_not_configured") return "Supabase не настроен: подключение расширения пока недоступно.";
+  if (status === 401 || status === 403) return "Нужна текущая сессия Backpacker. Войдите или восстановите доступ по email и попробуйте снова.";
+  if (message.includes("extension_channel_unavailable")) return "Не удалось связаться с расширением. Откройте страницу из установленного Backpacker Travel Capture.";
+  if (message.includes("extension_rejected")) return "Расширение не приняло подключение. Нажмите «Подключить Backpacker» в расширении ещё раз.";
+  if (message.includes("failed to fetch") || message.includes("network")) return "Сеть не ответила. Проверьте интернет и попробуйте ещё раз.";
+  return "Не удалось подключить расширение. Попробуйте ещё раз.";
+}
+
+function ensureExtensionConnectCard() {
+  let card = $("#extensionConnectCard");
+  if (card) return card;
+  card = document.createElement("section");
+  card.id = "extensionConnectCard";
+  card.className = "extension-connect-card";
+  card.style.cssText = "position:fixed;inset:16px;z-index:1200;display:grid;place-items:center;background:rgba(18,54,61,.18);";
+  card.innerHTML = `
+    <div class="extension-connect-card__body" style="max-width:420px;padding:18px;border-radius:18px;background:#fffdf8;box-shadow:0 22px 60px rgba(18,54,61,.22);color:#12363d;">
+      <p class="home-card-kicker">Backpacker Travel Capture</p>
+      <h2>Подключить расширение?</h2>
+      <p id="extensionConnectSummary">Идеи из расширения будут сохраняться в текущий аккаунт Backpacker.</p>
+      <p class="extension-connect-card__status" id="extensionConnectStatus" aria-live="polite"></p>
+      <form class="recoverable-auth-form" id="extensionConnectIdentityForm" hidden>
+        <label class="field wide">
+          Email для доступа
+          <input id="extensionConnectEmailInput" name="extensionConnectEmail" type="email" autocomplete="email" placeholder="you@example.com" />
+        </label>
+        <button class="primary-button" id="extensionConnectEmailButton" type="submit">Отправить ссылку</button>
+      </form>
+      <div class="extension-connect-card__actions" style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="primary-button" id="extensionConnectConfirmButton" type="button">Подключить</button>
+        <button class="ghost-button" id="extensionConnectDismissButton" type="button">Не сейчас</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(card);
+  $("#extensionConnectConfirmButton")?.addEventListener("click", connectBackpackerExtension);
+  $("#extensionConnectDismissButton")?.addEventListener("click", dismissExtensionConnectCard);
+  $("#extensionConnectIdentityForm")?.addEventListener("submit", submitExtensionConnectIdentityForm);
+  return card;
+}
+
+function renderExtensionConnectCard() {
+  const request = extensionConnectState.request;
+  const existing = $("#extensionConnectCard");
+  if (!request) {
+    if (existing) existing.hidden = true;
+    return;
+  }
+  const card = ensureExtensionConnectCard();
+  const status = $("#extensionConnectStatus");
+  const button = $("#extensionConnectConfirmButton");
+  const dismissButton = $("#extensionConnectDismissButton");
+  const summary = $("#extensionConnectSummary");
+  const identityForm = $("#extensionConnectIdentityForm");
+  const emailButton = $("#extensionConnectEmailButton");
+  const connected = extensionConnectState.status === "connected";
+  const connecting = extensionConnectState.status === "connecting";
+  const identityRequired = extensionConnectState.status === "identity_required";
+  const blocked = extensionConnectState.status === "error" && Boolean(extensionConnectState.error);
+  card.hidden = false;
+  card.classList.toggle("extension-connect-card--error", Boolean(extensionConnectState.error));
+  card.classList.toggle("extension-connect-card--connected", connected);
+  if (summary) {
+    summary.textContent = identityRequired
+      ? "Сохраните доступ по email — так идеи из браузера попадут в Backpacker и будут видны на других устройствах."
+      : "Идеи из расширения будут сохраняться в текущий аккаунт Backpacker.";
+  }
+  if (status) {
+    status.textContent = extensionConnectState.error
+      || (connected
+        ? "Готово: расширение подключено к текущему Backpacker."
+        : (identityRequired
+          ? "Введите email — отправим ссылку для подтверждения доступа."
+          : "Подключение будет передано напрямую в расширение, не через URL."));
+  }
+  if (identityForm) {
+    identityForm.hidden = !identityRequired;
+  }
+  if (emailButton) {
+    emailButton.disabled = recoverableAuthState.upgradeSending;
+    emailButton.textContent = recoverableAuthState.upgradeSending ? "Отправляем..." : "Отправить ссылку";
+  }
+  if (button) {
+    button.hidden = identityRequired;
+    button.disabled = connecting || connected || blocked;
+    button.textContent = connecting ? "Подключаем..." : (connected ? "Подключено" : "Подключить");
+  }
+  if (dismissButton) {
+    dismissButton.textContent = connected ? "Закрыть" : "Не сейчас";
+  }
+}
+
+function dismissExtensionConnectCard() {
+  extensionConnectState = { ...extensionConnectState, request: null, error: "" };
+  const core = getExtensionConnectUiCore();
+  if (core?.stripExtensionConnectParams && window.history?.replaceState) {
+    window.history.replaceState({}, document.title, core.stripExtensionConnectParams(window.location.href));
+  }
+  renderExtensionConnectCard();
+}
+
+function sendCredentialToExtension(extensionId, message) {
+  return new Promise((resolve, reject) => {
+    const runtime = window.chrome?.runtime;
+    if (!runtime?.sendMessage) {
+      reject(new Error("extension_channel_unavailable"));
+      return;
+    }
+    runtime.sendMessage(extensionId, message, (response) => {
+      const lastError = runtime.lastError?.message;
+      if (lastError) {
+        reject(new Error("extension_rejected"));
+        return;
+      }
+      if (!response?.ok) {
+        reject(new Error(`extension_rejected:${response?.error || "unknown"}`));
+        return;
+      }
+      resolve(response);
+    });
+  });
+}
+
+async function submitExtensionConnectIdentityForm(event) {
+  event.preventDefault();
+  const request = extensionConnectState.request;
+  if (!request || recoverableAuthState.upgradeSending) return;
+  const { email, error } = getRecoverableAuthEmailFromInput("#extensionConnectEmailInput");
+  if (error) {
+    extensionConnectState = { ...extensionConnectState, status: "identity_required", error };
+    renderExtensionConnectCard();
+    return;
+  }
+  const client = getSupabaseClient();
+  if (!client) {
+    extensionConnectState = {
+      ...extensionConnectState,
+      status: "identity_required",
+      error: "Supabase не настроен: доступ по email пока недоступен.",
+    };
+    renderExtensionConnectCard();
+    return;
+  }
+  recoverableAuthState.upgradeSending = true;
+  extensionConnectState = { ...extensionConnectState, status: "identity_required", error: "" };
+  renderExtensionConnectCard();
+  renderProfileSheet();
+  try {
+    await ensureSupabaseOwnerSession();
+    storePendingExtensionConnectIntent(request);
+    const result = await client.auth.updateUser({ email }, { emailRedirectTo: getRecoverableAuthRedirectUrl() });
+    if (result.error) throw result.error;
+    recoverableAuthState.status = "Письмо отправлено, проверьте почту.";
+    showToast("Письмо отправлено");
+    await refreshRecoverableAuthSession();
+  } catch (error) {
+    extensionConnectState = {
+      ...extensionConnectState,
+      status: "identity_required",
+      error: getRecoverableAuthSendErrorMessage(error),
+    };
+  } finally {
+    recoverableAuthState.upgradeSending = false;
+    renderProfileSheet();
+    renderExtensionConnectCard();
+  }
+}
+
+async function connectBackpackerExtension() {
+  const request = extensionConnectState.request;
+  const core = getExtensionConnectUiCore();
+  if (!request || !core?.buildCredentialBridgeMessage) return;
+  extensionConnectState = { ...extensionConnectState, status: "connecting", error: "" };
+  renderExtensionConnectCard();
+  try {
+    const identityState = await requireRecoverableIdentityForExtensionConnect(request);
+    if (identityState.identityRequired) {
+      extensionConnectState = { ...extensionConnectState, status: "identity_required", error: "" };
+      renderExtensionConnectCard();
+      return;
+    }
+    const payload = await callExtensionConnectFunction("connect", { clientKey: request.clientKey });
+    const message = core.buildCredentialBridgeMessage({
+      request,
+      credential: payload.credential,
+      connection: payload.connection,
+    });
+    await sendCredentialToExtension(request.extensionId, message);
+    extensionConnectState = { ...extensionConnectState, status: "connected", error: "" };
+    if (core.stripExtensionConnectParams && window.history?.replaceState) {
+      window.history.replaceState({}, document.title, core.stripExtensionConnectParams(window.location.href));
+    }
+    showToast("Расширение подключено");
+  } catch (error) {
+    extensionConnectState = { ...extensionConnectState, status: "error", error: getExtensionConnectErrorCopy(error) };
+  }
+  renderExtensionConnectCard();
+}
+
+function initializeExtensionConnectBridge() {
+  const core = getExtensionConnectUiCore();
+  if (!core?.parseExtensionConnectRequest) return;
+  try {
+    core.assertNoCredentialInUrl?.(window.location.href);
+    const request = core.parseExtensionConnectRequest(window.location.href);
+    if (!request) return;
+    extensionConnectState = { request, status: "idle", error: "" };
+  } catch {
+    extensionConnectState = {
+      request: {
+        extensionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        clientKey: "invalid-client",
+        nonce: "invalid-nonce-value-invalid-nonce-value",
+      },
+      status: "error",
+      error: "Ссылка подключения повреждена. Запустите подключение из расширения ещё раз.",
+    };
+  }
+  renderExtensionConnectCard();
 }
 
 function normalizeIdeasRows(rows) {
@@ -8081,6 +8439,7 @@ setupDonationFlow();
 renderProductVersionInfo();
 switchView(currentView);
 render();
+initializeExtensionConnectBridge();
 subscribeRecoverableAuthChanges();
 window.setTimeout(startApp, 520);
 refreshExchangeRates();

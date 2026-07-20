@@ -1008,12 +1008,19 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="./supabase-config.public.js?v=1"></script>
     <script src="./supabase-config.js?v=local"></script>
+    <script>
+      if (["localhost", "127.0.0.1"].includes(window.location.hostname)) {
+        document.write('<script src="./supabase-config.e2e-local.js?v=local-e2e"><\/script>');
+      }
+    </script>
     <script src="./vendor/pdf-lib.min.js"></script>
     <script src="./financial-core.js"></script>
     <script src="./trip-date-core.js"></script>
     <script src="./trip-draft-quantity-core.js"></script>
     <script src="./link-intake-ui-core.js"></script>
     <script src="./recoverable-auth-core.js"></script>
+    <script src="./extension-connect-ui-core.js"></script>
+    <script src="./identity-bridge-core.js"></script>
     <script src="./travel-idea-core.js"></script>
     <script src="./travel-ideas-client.js"></script>
     <script src="./app.js"></script>
