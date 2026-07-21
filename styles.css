@@ -1147,6 +1147,26 @@ button[aria-disabled="true"] .home-support-icon {
   white-space: nowrap;
 }
 
+.trainer-card .trip-card-submeta {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.trainer-card .trip-card-submeta > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trainer-card .trip-card-submeta > span:last-child {
+  flex: 0 0 auto;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+}
+
 .trip-card-open .home-card-meta {
   min-width: 0;
   padding-right: 86px;

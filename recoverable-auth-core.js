@@ -3,6 +3,7 @@
 
   const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const AUTH_QUERY_PARAMS = new Set(["code", "error", "error_code", "error_description", "error_uri", "type"]);
+  const DEFAULT_PUBLIC_APP_URL = "https://dphnll.github.io/Backpacker_demo/";
 
   function normalizeEmail(value = "") {
     return String(value || "").trim().toLowerCase();
@@ -42,6 +43,44 @@
     return url.toString();
   }
 
+  function normalizeRedirectBaseUrl(value = "") {
+    const text = String(value || "").trim();
+    if (!text) return "";
+    try {
+      const url = new URL(text);
+      if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+      url.search = "";
+      url.hash = "";
+      return url.toString();
+    } catch {
+      return "";
+    }
+  }
+
+  function isLocalAppUrl(url) {
+    return url.protocol === "file:" || url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  }
+
+  function resolveRecoverableAuthRedirectUrl({
+    href = "",
+    configuredUrl = "",
+    defaultUrl = DEFAULT_PUBLIC_APP_URL,
+  } = {}) {
+    const current = new URL(href || defaultUrl);
+    current.search = "";
+    current.hash = "";
+    if (isLocalAppUrl(current)) return current.toString();
+
+    const configured = normalizeRedirectBaseUrl(configuredUrl);
+    if (configured) {
+      const configuredParsed = new URL(configured);
+      if (!isLocalAppUrl(configuredParsed)) return configured;
+    }
+
+    if (current.protocol === "http:" || current.protocol === "https:") return current.toString();
+    return normalizeRedirectBaseUrl(defaultUrl) || DEFAULT_PUBLIC_APP_URL;
+  }
+
   function summarizeAuthUser(user = null) {
     const identities = Array.isArray(user?.identities) ? user.identities : [];
     const providers = identities
@@ -61,6 +100,7 @@
     getCleanAuthCallbackUrl,
     getEmailError,
     normalizeEmail,
+    resolveRecoverableAuthRedirectUrl,
     summarizeAuthUser,
   };
 

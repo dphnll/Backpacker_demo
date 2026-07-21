@@ -42,6 +42,13 @@
     return text;
   }
 
+  function normalizeAccountEmail(value) {
+    if (typeof value !== "string") return "";
+    const text = value.trim().toLowerCase();
+    if (!text || text.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) return "";
+    return text;
+  }
+
   function parseExtensionConnectRequest(href) {
     const url = new URL(href);
     if (url.searchParams.get(CONNECT_QUERY_PARAM) !== "1") return null;
@@ -105,9 +112,11 @@
     return baseUrl ? `${baseUrl}/functions/v1/extension-connect` : "";
   }
 
-  function buildCredentialBridgeMessage({ request, credential, connection }) {
+  function buildCredentialBridgeMessage({ request, credential, connection, account }) {
     const token = trim(credential, "credential");
     if (!/^bpxc_v1_[a-f0-9]{64}$/i.test(token)) fail("invalid_credential", "credential");
+    const email = normalizeAccountEmail(account?.email);
+    if (!email) fail("invalid_account", "account.email");
     return {
       type: CONNECT_MESSAGE_TYPE,
       schemaVersion: 1,
@@ -118,6 +127,7 @@
         clientKey: normalizeClientKey(connection?.clientKey || request?.clientKey || ""),
         expiresAt: trim(connection?.expiresAt || "", "expiresAt"),
       },
+      account: { email },
     };
   }
 
@@ -128,6 +138,7 @@
     assertNoCredentialInUrl,
     buildCredentialBridgeMessage,
     normalizeClientKey,
+    normalizeAccountEmail,
     normalizeExtensionId,
     normalizeLocalExtensionConnectFunctionUrl,
     normalizeNonce,

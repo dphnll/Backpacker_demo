@@ -650,6 +650,14 @@ function getIdentityBridgeCore() {
 }
 
 function getRecoverableAuthRedirectUrl() {
+  const config = getSupabaseConfig();
+  const core = getRecoverableAuthCore();
+  if (core?.resolveRecoverableAuthRedirectUrl) {
+    return core.resolveRecoverableAuthRedirectUrl({
+      href: window.location.href,
+      configuredUrl: config.authRedirectUrl,
+    });
+  }
   const url = new URL(window.location.href);
   url.search = "";
   url.hash = "";
@@ -727,6 +735,7 @@ async function handleRecoverableAuthCallback() {
       ? "Готово: доступ сохранён."
       : "Вход выполнен.";
     showToast(recoverableAuthState.status);
+    closeRecoverableAuthSheetAfterSuccess(user);
     await resumePendingExtensionConnectAfterRecoverableAuth(user);
     return user;
   } catch {
@@ -738,6 +747,17 @@ async function handleRecoverableAuthCallback() {
   } finally {
     cleanRecoverableAuthCallbackUrl();
   }
+}
+
+function closeRecoverableAuthSheetAfterSuccess(user) {
+  if (!user?.hasEmailIdentity) return;
+  const sheet = $("#profileSheet");
+  if (!sheet?.classList.contains("open")) return;
+  window.setTimeout(() => {
+    if ($("#profileSheet")?.classList.contains("open") && !recoverableAuthState.error) {
+      closeSheet("profileSheet");
+    }
+  }, 900);
 }
 
 function subscribeRecoverableAuthChanges() {
@@ -1026,7 +1046,7 @@ function ensureExtensionConnectCard() {
     <div class="extension-connect-card__body" style="max-width:420px;padding:18px;border-radius:18px;background:#fffdf8;box-shadow:0 22px 60px rgba(18,54,61,.22);color:#12363d;">
       <p class="home-card-kicker">Backpacker Travel Capture</p>
       <h2>Подключить расширение?</h2>
-      <p id="extensionConnectSummary">Идеи из расширения будут сохраняться в текущий аккаунт Backpacker.</p>
+      <p id="extensionConnectSummary">Идеи из расширения будут сохраняться в Backpacker после подключения.</p>
       <p class="extension-connect-card__status" id="extensionConnectStatus" aria-live="polite"></p>
       <form class="recoverable-auth-form" id="extensionConnectIdentityForm" hidden>
         <label class="field wide">
@@ -1069,17 +1089,23 @@ function renderExtensionConnectCard() {
   card.hidden = false;
   card.classList.toggle("extension-connect-card--error", Boolean(extensionConnectState.error));
   card.classList.toggle("extension-connect-card--connected", connected);
+  const authUser = getCurrentRecoverableAuthUser();
+  const connectedEmail = authUser?.hasEmailIdentity ? authUser.email : "";
   if (summary) {
-    summary.textContent = identityRequired
-      ? "Сохраните доступ по email — так идеи из браузера попадут в Backpacker и будут видны на других устройствах."
-      : "Идеи из расширения будут сохраняться в текущий аккаунт Backpacker.";
+    summary.textContent = connected
+      ? "Подключено к Backpacker."
+      : identityRequired
+      ? "Сохраните доступ по email — так идеи из браузера будут видны в Backpacker и на других устройствах."
+      : "Идеи из расширения будут сохраняться в Backpacker после подключения.";
   }
   if (status) {
     status.textContent = extensionConnectState.error
       || (connected
-        ? "Готово: расширение подключено к текущему Backpacker."
+        ? (connectedEmail
+          ? `Идеи из расширения будут сохраняться для ${connectedEmail}.`
+          : "Идеи из расширения будут сохраняться в этот Backpacker.")
         : (identityRequired
-          ? "Введите email — отправим ссылку для подтверждения доступа."
+          ? "Введите email — пришлём ссылку для входа. После неё подключение продолжится."
           : "Подключение будет передано напрямую в расширение, не через URL."));
   }
   if (identityForm) {
@@ -1097,6 +1123,7 @@ function renderExtensionConnectCard() {
   if (dismissButton) {
     dismissButton.textContent = connected ? "Закрыть" : "Не сейчас";
   }
+  renderHomeProfile();
 }
 
 function dismissExtensionConnectCard() {
@@ -1191,6 +1218,7 @@ async function connectBackpackerExtension() {
     const payload = await callExtensionConnectFunction("connect", { clientKey: request.clientKey });
     const message = core.buildCredentialBridgeMessage({
       request,
+      account: payload.account,
       credential: payload.credential,
       connection: payload.connection,
     });
@@ -1393,6 +1421,19 @@ function renderIdeasScreen() {
   list.innerHTML = filteredIdeas.map(renderIdeaCard).join("");
 }
 
+function scrollIdeasScreenToTopAfterSave() {
+  const active = document.activeElement;
+  if (active && typeof active.blur === "function") active.blur();
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      const screen = $("#ideasScreen");
+      if (!screen || screen.classList.contains("hidden")) return;
+      screen.scrollIntoView({ block: "start" });
+      window.scrollTo({ top: Math.max(0, screen.offsetTop), left: 0, behavior: "auto" });
+    });
+  });
+}
+
 function getDefaultIdeaFormCollectionKey() {
   if (ideasState.activeCollectionKey === "ungrouped" || ideasState.activeCollectionKey.startsWith("collection:")) {
     return ideasState.activeCollectionKey;
@@ -1508,6 +1549,7 @@ async function submitIdeaForm(event) {
     }
     closeSheet("ideaSheet");
     renderIdeasScreen();
+    scrollIdeasScreenToTopAfterSave();
   } catch (error) {
     $("#ideaFormError").textContent = getTravelIdeasErrorCopy(error);
   } finally {
@@ -1653,7 +1695,17 @@ function renderHomeProfile() {
   if (!button || !name) return;
   const shouldShow = isSupabaseConfigured() && currentScreen === "home";
   button.classList.toggle("hidden", !shouldShow);
-  name.textContent = userProfile.displayName || "Добавьте имя или ник";
+  name.textContent = getHomeProfileLabel();
+}
+
+function getHomeProfileLabel() {
+  if (userProfile.displayName) return userProfile.displayName;
+  if (extensionConnectState.request && extensionConnectState.status === "identity_required") {
+    if (recoverableAuthState.upgradeSending) return "Отправляем письмо...";
+    if (recoverableAuthState.status) return "Проверьте почту";
+    return "Сохраните доступ по email";
+  }
+  return "Добавьте имя или ник";
 }
 
 function getHomeTripStatusLabel(tripId) {
@@ -1686,8 +1738,8 @@ function renderProfileSheet() {
   const isAnonymous = authUser?.isAnonymous === true;
   if (authSummary) {
     authSummary.textContent = isLinked
-      ? "Email уже привязан: можно вернуться к серверному профилю и ссылкам с другого браузера."
-      : "Email поможет вернуться к профилю и серверным ссылкам. Локальные поездки на другом устройстве не переносятся.";
+      ? `Вы вошли как ${authUser.email}. Cloud Ideas и идеи из расширения сохраняются в этот Backpacker.`
+      : "Сохраните доступ по email — так Cloud Ideas и идеи из расширения будут видны в Backpacker на телефоне и ноутбуке.";
   }
   if (authStatus) {
     authStatus.classList.toggle("error", Boolean(recoverableAuthState.error));
