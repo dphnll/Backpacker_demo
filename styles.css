@@ -1149,6 +1149,7 @@ button[aria-disabled="true"] .home-support-icon {
 
 .trainer-card .trip-card-submeta {
   flex-wrap: nowrap;
+  width: 100%;
   overflow: hidden;
 }
 
@@ -1158,6 +1159,11 @@ button[aria-disabled="true"] .home-support-icon {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.trainer-card .trip-card-submeta > span:first-child {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .trainer-card .trip-card-submeta > span:last-child {
@@ -4480,6 +4486,14 @@ textarea:focus {
 }
 
 @media (max-width: 520px) {
+  .trainer-card {
+    padding-right: 12px;
+  }
+
+  .trainer-card .home-card-meta {
+    padding-right: 118px;
+  }
+
   .trip-header {
     padding-inline: 12px;
   }
