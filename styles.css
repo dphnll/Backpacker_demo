@@ -1152,6 +1152,7 @@ button[aria-disabled="true"] .home-support-icon {
 }
 
 .trainer-card .trip-card-submeta {
+  justify-self: stretch;
   flex-wrap: nowrap;
   width: 100%;
   overflow: hidden;
