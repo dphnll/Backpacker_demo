@@ -1161,11 +1161,6 @@ button[aria-disabled="true"] .home-support-icon {
   text-overflow: ellipsis;
 }
 
-.trainer-card .trip-card-submeta > span:first-child {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-
 .trainer-card .trip-card-submeta > span:last-child {
   flex: 0 0 auto;
   max-width: none;
