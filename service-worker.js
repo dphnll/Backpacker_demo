@@ -1,8 +1,8 @@
-const CACHE_NAME = "backpacker-pwa-v79";
+const CACHE_NAME = "backpacker-pwa-v80";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css",
+  "./styles.css?v=travel-idea-sticky-actions-20260801",
   "./financial-core.js",
   "./trip-date-core.js",
   "./trip-draft-quantity-core.js",

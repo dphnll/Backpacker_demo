@@ -4258,7 +4258,7 @@ textarea:focus {
 .card-copy-panel {
   display: grid;
   gap: 12px;
-  padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  padding-bottom: 0;
 }
 
 .card-copy-body,
@@ -4337,6 +4337,9 @@ textarea:focus {
 }
 
 .card-copy-actions {
+  position: sticky;
+  z-index: 2;
+  bottom: -14px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
