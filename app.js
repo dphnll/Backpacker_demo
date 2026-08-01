@@ -1129,6 +1129,8 @@ function renderExtensionConnectCard() {
     button.textContent = connecting ? "Подключаем..." : (connected ? "Подключено" : "Подключить");
   }
   if (dismissButton) {
+    dismissButton.disabled = false;
+    dismissButton.onclick = dismissExtensionConnectCard;
     dismissButton.textContent = connected ? "Закрыть" : "Не сейчас";
   }
   renderHomeProfile();
