@@ -675,6 +675,10 @@ function getRecoverableAuthUserSummary(user = null) {
   };
 }
 
+function getCurrentRecoverableAuthUser() {
+  return recoverableAuthState.user || getRecoverableAuthUserSummary(null);
+}
+
 async function refreshRecoverableAuthSession({ refreshProfile = false } = {}) {
   const client = getSupabaseClient();
   if (!client) {
