@@ -1030,6 +1030,10 @@ function getExtensionConnectErrorCopy(error) {
   if (error?.message === "supabase_not_configured") return "Supabase не настроен: подключение расширения пока недоступно.";
   if (status === 401 || status === 403) return "Нужна текущая сессия Backpacker. Войдите или восстановите доступ по email и попробуйте снова.";
   if (message.includes("extension_channel_unavailable")) return "Не удалось связаться с расширением. Откройте страницу из установленного Backpacker Travel Capture.";
+  if (message.includes("extension_handoff_timeout")) return "Расширение не ответило на подключение. Перезагрузите Backpacker Capture в chrome://extensions и нажмите «Подключить Backpacker» ещё раз.";
+  if (message.includes("extension_rejected:bad_nonce")) return "Запрос подключения устарел. Нажмите «Подключить Backpacker» в расширении ещё раз.";
+  if (message.includes("extension_rejected:bad_origin")) return "Расширение отклонило страницу подключения. Проверьте, что открыт Backpacker demo, и начните подключение из расширения ещё раз.";
+  if (message.includes("extension_rejected:bad_account")) return "Backpacker не передал email аккаунта в расширение. Войдите по email и попробуйте подключить расширение ещё раз.";
   if (message.includes("extension_rejected")) return "Расширение не приняло подключение. Нажмите «Подключить Backpacker» в расширении ещё раз.";
   if (message.includes("failed to fetch") || message.includes("network")) return "Сеть не ответила. Проверьте интернет и попробуйте ещё раз.";
   return "Не удалось подключить расширение. Попробуйте ещё раз.";
@@ -1135,6 +1139,8 @@ function dismissExtensionConnectCard() {
   renderExtensionConnectCard();
 }
 
+const EXTENSION_CONNECT_HANDOFF_TIMEOUT_MS = 12000;
+
 function sendCredentialToExtension(extensionId, message) {
   return new Promise((resolve, reject) => {
     const runtime = window.chrome?.runtime;
@@ -1142,17 +1148,27 @@ function sendCredentialToExtension(extensionId, message) {
       reject(new Error("extension_channel_unavailable"));
       return;
     }
+    let settled = false;
+    const finish = (callback) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      callback();
+    };
+    const timeoutId = window.setTimeout(() => {
+      finish(() => reject(new Error("extension_handoff_timeout")));
+    }, EXTENSION_CONNECT_HANDOFF_TIMEOUT_MS);
     runtime.sendMessage(extensionId, message, (response) => {
       const lastError = runtime.lastError?.message;
       if (lastError) {
-        reject(new Error("extension_rejected"));
+        finish(() => reject(new Error(`extension_rejected:${lastError}`)));
         return;
       }
       if (!response?.ok) {
-        reject(new Error(`extension_rejected:${response?.error || "unknown"}`));
+        finish(() => reject(new Error(`extension_rejected:${response?.error || "unknown"}`)));
         return;
       }
-      resolve(response);
+      finish(() => resolve(response));
     });
   });
 }
