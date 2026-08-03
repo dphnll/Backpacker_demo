@@ -66,7 +66,7 @@
     const tripId = normalizeTripId(row.trip_id ?? row.tripId);
     const syncToken = normalizeSyncToken(row.sync_token ?? row.syncToken);
     const deletedAt = String((row.deleted_at ?? row.deletedAt) || "");
-    const entry = deletedAt ? null : normalizeTripEntry(row.snapshot);
+    const entry = deletedAt ? null : normalizeTripEntry(row.snapshot ?? row.entry);
     if (entry && entry.id !== tripId) throw syncError("trip_sync_snapshot_invalid");
     return {
       clientUpdatedAt: String((row.client_updated_at ?? row.clientUpdatedAt) || ""),

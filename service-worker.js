@@ -1,4 +1,4 @@
-const CACHE_NAME = "backpacker-pwa-v83";
+const CACHE_NAME = "backpacker-pwa-v84";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -14,7 +14,7 @@ const APP_SHELL = [
   "./trip-item-attachments-client.js",
   "./private-trip-sync-core.js",
   "./private-trip-sync-client.js",
-  "./app.js?v=private-trip-sync-20260803",
+  "./app.js?v=private-trip-sync-contract-fix-20260803",
   "./analytics-config.js",
   "./supabase-config.public.js",
   "./vendor/pdf-lib.min.js",
