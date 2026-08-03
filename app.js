@@ -15,8 +15,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.44";
-const APP_RELEASE_SUMMARY = "Уточнены навигация раздела «Идеи» и мобильный вид карточек поездок.";
+const APP_VERSION = "1.1.2.45";
+const APP_RELEASE_SUMMARY = "Вложения теперь можно добавить сразу при создании карточки поездки.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -295,6 +295,7 @@ let tripItemAttachmentsState = {
   error: "",
   itemId: "",
   loading: false,
+  pendingFiles: [],
   tripId: "",
   uploading: false,
   uploadingName: "",
@@ -4271,7 +4272,8 @@ function resetTripItemAttachmentsState(item = null) {
     error: "",
     itemId: item?.id || "",
     loading: false,
-    tripId: item ? state.trip.id : "",
+    pendingFiles: [],
+    tripId: state.trip.id || "",
     uploading: false,
     uploadingName: "",
   };
@@ -4289,7 +4291,7 @@ function renderTripItemAttachments() {
   const addButton = $("#itemAttachmentAddButton");
   if (!section || !list || !status || !addButton) return;
 
-  const visible = Boolean(tripItemAttachmentsState.itemId) && !isReadOnlyMode();
+  const visible = Boolean(tripItemAttachmentsState.tripId) && !isReadOnlyMode();
   const busy = tripItemAttachmentsState.uploading || Boolean(tripItemAttachmentsState.deletingId);
   $("#itemSaveButton").disabled = visible && tripItemAttachmentsState.uploading;
   $("#resetItemButton").disabled = visible && tripItemAttachmentsState.uploading;
@@ -4306,7 +4308,10 @@ function renderTripItemAttachments() {
     ? "Загружаем вложения…"
     : tripItemAttachmentsState.uploading
       ? `Загружаем ${tripItemAttachmentsState.uploadingName}…`
-      : tripItemAttachmentsState.error || "";
+      : tripItemAttachmentsState.error
+        || (tripItemAttachmentsState.pendingFiles.length
+          ? "Будут загружены после сохранения карточки"
+          : "");
   status.classList.toggle("is-error", Boolean(tripItemAttachmentsState.error));
   addButton.disabled = busy || tripItemAttachmentsState.loading;
   addButton.textContent = tripItemAttachmentsState.uploading ? "Загрузка…" : "+ Добавить вложение";
@@ -4329,13 +4334,29 @@ function renderTripItemAttachments() {
     `;
   }).join("");
 
-  const empty = !tripItemAttachmentsState.loading && !rows
+  const pendingRows = tripItemAttachmentsState.pendingFiles.map((pending) => {
+    const type = core?.getAttachmentTypeLabel?.(pending.mimeType) || "Файл";
+    const size = core?.formatAttachmentSize?.(pending.fileSizeBytes) || "";
+    return `
+      <article class="item-attachment-row is-pending">
+        <div class="item-attachment-copy">
+          <span class="item-attachment-name" title="${escapeAttr(pending.fileName)}">📎 ${escapeHtml(pending.fileName)}</span>
+          <span class="item-attachment-meta">${escapeHtml([type, size, "После сохранения"].filter(Boolean).join(" · "))}</span>
+        </div>
+        <div class="item-attachment-actions">
+          <button class="ghost-button compact item-attachment-delete" type="button" data-attachment-pending-remove="${escapeAttr(pending.id)}" ${busy ? "disabled" : ""}>Убрать</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+
+  const empty = !tripItemAttachmentsState.loading && !rows && !pendingRows
     ? `<p class="item-attachment-empty">Нет вложений</p>`
     : "";
   const retry = tripItemAttachmentsState.error && !tripItemAttachmentsState.uploading
     ? `<button class="ghost-button compact item-attachment-retry" type="button" data-attachment-retry>Повторить</button>`
     : "";
-  list.innerHTML = `${rows}${empty}${retry}`;
+  list.innerHTML = `${rows}${pendingRows}${empty}${retry}`;
 }
 
 async function loadTripItemAttachments() {
@@ -4372,7 +4393,29 @@ async function loadTripItemAttachments() {
 async function uploadCurrentTripItemAttachment(file) {
   const itemId = tripItemAttachmentsState.itemId;
   const tripId = tripItemAttachmentsState.tripId;
-  if (!file || !itemId || !tripId || tripItemAttachmentsState.uploading) return;
+  if (!file || !tripId || tripItemAttachmentsState.uploading) return;
+  if (!itemId) {
+    try {
+      const normalized = getTripItemAttachmentsCore().validateAttachmentFile(file);
+      const pendingId = globalThis.crypto?.randomUUID?.() || `pending-${Date.now()}`;
+      tripItemAttachmentsState = {
+        ...tripItemAttachmentsState,
+        error: "",
+        pendingFiles: [
+          ...tripItemAttachmentsState.pendingFiles,
+          { ...normalized, file, id: pendingId },
+        ],
+      };
+      showToast("Вложение добавится после сохранения карточки");
+    } catch (error) {
+      tripItemAttachmentsState = {
+        ...tripItemAttachmentsState,
+        error: getTripItemAttachmentsClientApi()?.getTripItemAttachmentErrorMessage?.(error) || "Не удалось добавить вложение.",
+      };
+    }
+    renderTripItemAttachments();
+    return;
+  }
   tripItemAttachmentsState = {
     ...tripItemAttachmentsState,
     error: "",
@@ -4407,6 +4450,47 @@ async function uploadCurrentTripItemAttachment(file) {
       tripItemAttachmentsState = { ...tripItemAttachmentsState, uploading: false, uploadingName: "" };
       renderTripItemAttachments();
     }
+  }
+}
+
+async function uploadPendingTripItemAttachments(item) {
+  if (!item?.id || tripItemAttachmentsState.pendingFiles.length === 0) return;
+  const pendingFiles = [...tripItemAttachmentsState.pendingFiles];
+  tripItemAttachmentsState = {
+    ...tripItemAttachmentsState,
+    error: "",
+    itemId: item.id,
+    loading: false,
+    tripId: state.trip.id,
+    uploading: true,
+    uploadingName: pendingFiles[0].fileName,
+  };
+  renderTripItemAttachments();
+  try {
+    await ensureSupabaseOwnerSession();
+    for (const pending of pendingFiles) {
+      tripItemAttachmentsState = { ...tripItemAttachmentsState, uploadingName: pending.fileName };
+      renderTripItemAttachments();
+      const attachment = await getTripItemAttachmentsClientApi().uploadTripItemAttachment(
+        getSupabaseClient(),
+        { tripId: state.trip.id, tripItemId: item.id },
+        pending.file,
+      );
+      tripItemAttachmentsState = {
+        ...tripItemAttachmentsState,
+        attachments: [...tripItemAttachmentsState.attachments, attachment],
+        pendingFiles: tripItemAttachmentsState.pendingFiles.filter((entry) => entry.id !== pending.id),
+      };
+    }
+  } catch (error) {
+    tripItemAttachmentsState = {
+      ...tripItemAttachmentsState,
+      error: `Карточка сохранена. ${getTripItemAttachmentsClientApi()?.getTripItemAttachmentErrorMessage?.(error) || "Не удалось загрузить вложение."}`,
+    };
+    throw error;
+  } finally {
+    tripItemAttachmentsState = { ...tripItemAttachmentsState, uploading: false, uploadingName: "" };
+    renderTripItemAttachments();
   }
 }
 
@@ -4463,12 +4547,30 @@ async function deleteCurrentTripItemAttachment(attachmentId) {
 function handleTripItemAttachmentsClick(event) {
   const retry = event.target.closest("[data-attachment-retry]");
   if (retry) {
+    if (tripItemAttachmentsState.pendingFiles.length && tripItemAttachmentsState.itemId) {
+      uploadPendingTripItemAttachments({ id: tripItemAttachmentsState.itemId })
+        .then(() => showToast("Вложения добавлены"))
+        .catch(() => {});
+      return;
+    }
     loadTripItemAttachments();
     return;
   }
   const openButton = event.target.closest("[data-attachment-open]");
   if (openButton) {
     openTripItemAttachment(openButton.dataset.attachmentOpen);
+    return;
+  }
+  const pendingRemoveButton = event.target.closest("[data-attachment-pending-remove]");
+  if (pendingRemoveButton) {
+    tripItemAttachmentsState = {
+      ...tripItemAttachmentsState,
+      error: "",
+      pendingFiles: tripItemAttachmentsState.pendingFiles.filter(
+        (entry) => entry.id !== pendingRemoveButton.dataset.attachmentPendingRemove,
+      ),
+    };
+    renderTripItemAttachments();
     return;
   }
   const deleteButton = event.target.closest("[data-attachment-delete]");
@@ -4605,6 +4707,10 @@ function closeItemSheetAfterSave() {
 }
 
 function dismissItemSheet(method = "close", { fromPopState = false } = {}) {
+  if (tripItemAttachmentsState.uploading) {
+    showToast("Дождитесь загрузки вложения");
+    return;
+  }
   const returnScreen = itemCreateContext.returnScreenOnCancel;
   closeSheet("itemSheet");
   clearItemSheetHistory({ fromPopState });
@@ -4613,7 +4719,7 @@ function dismissItemSheet(method = "close", { fromPopState = false } = {}) {
   if (returnScreen === "ideas") showIdeasScreen();
 }
 
-function saveItem(event) {
+async function saveItem(event) {
   event.preventDefault();
   if (isReadOnlyMode()) return;
   if (tripItemAttachmentsState.uploading) {
@@ -4662,9 +4768,6 @@ function saveItem(event) {
   if (existingIndex >= 0) state.items[existingIndex] = item;
   else state.items.push(item);
   saveState();
-  closeItemSheetAfterSave();
-  render();
-  showToast(isNew && createContext.toastOnSave ? createContext.toastOnSave : "Сохранено");
   const changedFields = existing
     ? ["type", "status", "priority", "date", "startTime", "durationMinutes", "price", "paidAmount", "link", "locationText", "notes"]
         .filter((field) => String(existing[field] ?? "") !== String(item[field] ?? ""))
@@ -4684,6 +4787,23 @@ function saveItem(event) {
   }
   if (isNew) scheduleDonationPrompt();
   checkTripMilestones();
+  if (tripItemAttachmentsState.pendingFiles.length) {
+    try {
+      await uploadPendingTripItemAttachments(item);
+    } catch {
+      form.elements.id.value = item.id;
+      $("#deleteItemButton").style.display = "inline-flex";
+      $("#resetItemButton").style.display = "inline-flex";
+      $("#copyItemButton").hidden = false;
+      $("#itemSheetTitle").textContent = "Редактировать элемент";
+      render();
+      showToast("Карточка сохранена, но не все вложения загрузились");
+      return;
+    }
+  }
+  closeItemSheetAfterSave();
+  render();
+  showToast(isNew && createContext.toastOnSave ? createContext.toastOnSave : "Сохранено");
 }
 
 function getItemFormChangedFields(item) {
