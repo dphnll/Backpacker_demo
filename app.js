@@ -1,5 +1,6 @@
 const STORAGE_KEY = "backpacker.mvp.v1";
 const TRIPS_STORAGE_KEY = "backpacker.trips.v1";
+const PRIVATE_TRIP_SYNC_METADATA_KEY = "backpacker.privateTripSync.v1";
 const ACTIVE_TRIP_STORAGE_KEY = "backpacker.activeTrip.v1";
 const VIEW_STORAGE_KEY = "backpacker.currentView.v1";
 const SHARE_RECORDS_STORAGE_KEY = "backpacker.shareRecords.v1";
@@ -15,8 +16,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.45";
-const APP_RELEASE_SUMMARY = "Вложения теперь можно добавить сразу при создании карточки поездки.";
+const APP_VERSION = "1.1.2.46";
+const APP_RELEASE_SUMMARY = "Личные поездки объединяются между устройствами после входа по email.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -267,6 +268,14 @@ const seedState = {
   ],
 };
 
+var privateTripSyncState = {
+  applyingRemote: false,
+  pending: false,
+  ready: false,
+  running: false,
+  timer: null,
+};
+var privateTripSyncMetadata = loadPrivateTripSyncMetadata();
 let tripStore = loadTripStore();
 let shareRecords = loadShareRecords();
 let receivedShareCards = [];
@@ -784,7 +793,13 @@ function subscribeRecoverableAuthChanges() {
     renderProfileSheet();
     renderHomeProfile();
     if (["SIGNED_IN", "USER_UPDATED"].includes(event)) {
-      window.setTimeout(() => loadMyProfile({ createSession: false }).catch(() => null), 0);
+      privateTripSyncState.ready = true;
+      window.setTimeout(() => {
+        loadMyProfile({ createSession: false }).catch(() => null);
+        syncPrivateTripsWithCloud({ silent: true }).catch(() => null);
+      }, 0);
+    } else if (event === "SIGNED_OUT") {
+      privateTripSyncState.ready = false;
     }
   });
 }
@@ -1013,6 +1028,246 @@ function getTripItemAttachmentsCore() {
 
 function getTripItemAttachmentsClientApi() {
   return window.BackpackerTripItemAttachmentsClient;
+}
+
+function getPrivateTripSyncCore() {
+  return window.BackpackerPrivateTripSync;
+}
+
+function getPrivateTripSyncClientApi() {
+  return window.BackpackerPrivateTripSyncClient;
+}
+
+function loadPrivateTripSyncMetadata() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PRIVATE_TRIP_SYNC_METADATA_KEY) || "{}");
+    return parsed && typeof parsed === "object" && parsed.owners && typeof parsed.owners === "object"
+      ? parsed
+      : { owners: {} };
+  } catch {
+    return { owners: {} };
+  }
+}
+
+function persistPrivateTripSyncMetadata() {
+  try {
+    localStorage.setItem(PRIVATE_TRIP_SYNC_METADATA_KEY, JSON.stringify(privateTripSyncMetadata));
+  } catch {
+    // Sync remains best-effort if browser storage is temporarily unavailable.
+  }
+}
+
+function getPrivateTripSyncOwnerMetadata(userId, { create = true } = {}) {
+  const ownerId = String(userId || "");
+  if (!ownerId) return null;
+  const existing = privateTripSyncMetadata.owners[ownerId];
+  if (existing && typeof existing === "object") {
+    existing.trips ||= {};
+    existing.pendingDeletes ||= [];
+    return existing;
+  }
+  if (!create) return null;
+  privateTripSyncMetadata.owners[ownerId] = { pendingDeletes: [], trips: {} };
+  return privateTripSyncMetadata.owners[ownerId];
+}
+
+function getKnownPrivateTripOwnerId(tripId) {
+  return Object.entries(privateTripSyncMetadata.owners).find(([, metadata]) => (
+    metadata?.trips && Object.prototype.hasOwnProperty.call(metadata.trips, tripId)
+  ))?.[0] || "";
+}
+
+function canSyncPrivateTrips() {
+  const user = getCurrentRecoverableAuthUser();
+  return Boolean(
+    privateTripSyncState.ready
+    && user?.id
+    && user.hasEmailIdentity
+    && getPrivateTripSyncCore()
+    && getPrivateTripSyncClientApi()
+    && getSupabaseClient(),
+  );
+}
+
+function createPrivateTripSyncToken() {
+  const token = globalThis.crypto?.randomUUID?.();
+  if (!token) throw new Error("trip_sync_uuid_unavailable");
+  return token;
+}
+
+function rememberPrivateTripSyncRow(ownerMetadata, row) {
+  ownerMetadata.trips[row.tripId] = {
+    deleted: Boolean(row.deletedAt),
+    lastFingerprint: row.entry ? getPrivateTripSyncCore().fingerprintTripEntry(row.entry) : "",
+    syncToken: row.syncToken,
+  };
+}
+
+function normalizePrivateTripSyncEntry(entry) {
+  return createTripEntry(entry.state, {
+    id: entry.id,
+    isDemo: false,
+    createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt,
+    coverDataUrl: entry.coverDataUrl,
+  });
+}
+
+function replacePrivateTripSyncEntry(entry) {
+  const normalized = normalizePrivateTripSyncEntry(entry);
+  const index = tripStore.trips.findIndex((candidate) => candidate.id === normalized.id);
+  if (index >= 0) tripStore.trips[index] = normalized;
+  else tripStore.trips.push(normalized);
+  return normalized;
+}
+
+function removePrivateTripSyncEntry(tripId) {
+  tripStore.trips = tripStore.trips.filter((entry) => entry.isDemo || entry.id !== tripId);
+}
+
+function createPrivateTripConflictId() {
+  return `trip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function queuePrivateTripDeletion(tripId) {
+  if (!canSyncPrivateTrips()) return;
+  const user = getCurrentRecoverableAuthUser();
+  const ownerMetadata = getPrivateTripSyncOwnerMetadata(user.id);
+  if (!ownerMetadata.pendingDeletes.includes(tripId)) ownerMetadata.pendingDeletes.push(tripId);
+  persistPrivateTripSyncMetadata();
+}
+
+function schedulePrivateTripSync(delay = 700) {
+  if (!canSyncPrivateTrips() || privateTripSyncState.applyingRemote) return;
+  window.clearTimeout(privateTripSyncState.timer);
+  privateTripSyncState.timer = window.setTimeout(() => {
+    syncPrivateTripsWithCloud({ silent: true }).catch(() => {});
+  }, delay);
+}
+
+async function writePrivateTripSnapshot(client, localEntry, remoteRow = null) {
+  const api = getPrivateTripSyncClientApi();
+  const nextToken = createPrivateTripSyncToken();
+  return remoteRow
+    ? api.updatePrivateTripSnapshot(client, localEntry, remoteRow.syncToken, nextToken)
+    : api.insertPrivateTripSnapshot(client, localEntry, nextToken);
+}
+
+async function syncPrivateTripsWithCloud({ silent = false } = {}) {
+  if (!canSyncPrivateTrips()) return { status: "identity_required" };
+  if (privateTripSyncState.running) {
+    privateTripSyncState.pending = true;
+    return { status: "already_running" };
+  }
+  privateTripSyncState.running = true;
+  privateTripSyncState.pending = false;
+  const user = getCurrentRecoverableAuthUser();
+  const ownerMetadata = getPrivateTripSyncOwnerMetadata(user.id);
+  const client = getSupabaseClient();
+  const api = getPrivateTripSyncClientApi();
+  const core = getPrivateTripSyncCore();
+  const previousTripCount = tripStore.trips.filter((entry) => !entry.isDemo).length;
+  let conflictCount = 0;
+  try {
+    let remoteRows = await api.listPrivateTripSnapshots(client);
+    const remoteById = new Map(remoteRows.map((row) => [row.tripId, row]));
+
+    const remainingDeletes = [];
+    for (const tripId of ownerMetadata.pendingDeletes) {
+      const remote = remoteById.get(tripId);
+      if (!remote || remote.deletedAt) {
+        if (remote) rememberPrivateTripSyncRow(ownerMetadata, remote);
+        continue;
+      }
+      const metadata = ownerMetadata.trips[tripId];
+      if (!metadata?.syncToken || metadata.syncToken !== remote.syncToken) {
+        conflictCount += 1;
+        continue;
+      }
+      try {
+        const tombstone = await api.tombstonePrivateTripSnapshot(
+          client,
+          tripId,
+          remote.syncToken,
+          createPrivateTripSyncToken(),
+        );
+        remoteById.set(tripId, tombstone);
+        rememberPrivateTripSyncRow(ownerMetadata, tombstone);
+      } catch (error) {
+        if (error?.code === "trip_sync_conflict") {
+          conflictCount += 1;
+          remainingDeletes.push(tripId);
+        } else {
+          throw error;
+        }
+      }
+    }
+    ownerMetadata.pendingDeletes = remainingDeletes;
+
+    const foreignLocalIds = new Set();
+    const localById = new Map(tripStore.trips.filter((entry) => {
+      if (entry.isDemo) return false;
+      const knownOwnerId = getKnownPrivateTripOwnerId(entry.id);
+      if (knownOwnerId && knownOwnerId !== user.id) {
+        foreignLocalIds.add(entry.id);
+        return false;
+      }
+      return true;
+    }).map((entry) => [entry.id, entry]));
+    const tripIds = new Set([
+      ...localById.keys(),
+      ...Array.from(remoteById.keys()).filter((tripId) => !foreignLocalIds.has(tripId)),
+    ]);
+    for (const tripId of tripIds) {
+      const local = localById.get(tripId) || null;
+      const remote = remoteById.get(tripId) || null;
+      const metadata = ownerMetadata.trips[tripId] || null;
+      const decision = core.decideTripReconciliation({ localEntry: local, remoteRow: remote, metadata });
+      if (decision.action === "upload_local") {
+        const saved = await writePrivateTripSnapshot(client, local, remote);
+        remoteById.set(tripId, saved);
+        rememberPrivateTripSyncRow(ownerMetadata, saved);
+      } else if (decision.action === "import_remote") {
+        replacePrivateTripSyncEntry(remote.entry);
+        rememberPrivateTripSyncRow(ownerMetadata, remote);
+      } else if (decision.action === "in_sync" || decision.action === "remember_deleted") {
+        rememberPrivateTripSyncRow(ownerMetadata, remote);
+      } else if (decision.action === "remove_local") {
+        removePrivateTripSyncEntry(tripId);
+        rememberPrivateTripSyncRow(ownerMetadata, remote);
+      } else if (["fork_local_and_import", "fork_local_and_remove"].includes(decision.action)) {
+        const copy = core.createConflictCopy(local, createPrivateTripConflictId());
+        const savedCopy = await writePrivateTripSnapshot(client, copy);
+        replacePrivateTripSyncEntry(copy);
+        rememberPrivateTripSyncRow(ownerMetadata, savedCopy);
+        if (decision.action === "fork_local_and_import") replacePrivateTripSyncEntry(remote.entry);
+        else removePrivateTripSyncEntry(tripId);
+        rememberPrivateTripSyncRow(ownerMetadata, remote);
+        conflictCount += 1;
+      }
+    }
+
+    privateTripSyncState.applyingRemote = true;
+    persistTripStore(tripStore);
+    const currentEntry = tripStore.trips.find((entry) => entry.id === state.trip.id);
+    if (currentEntry && !isReadOnlyMode()) state = normalizeState(structuredClone(currentEntry.state));
+    persistPrivateTripSyncMetadata();
+    privateTripSyncState.applyingRemote = false;
+
+    const nextTripCount = tripStore.trips.filter((entry) => !entry.isDemo).length;
+    if (currentScreen === "home") renderHome();
+    else if (currentScreen === "trip" && !isReadOnlyMode()) render();
+    if (nextTripCount > previousTripCount) showToast("Поездки на устройствах объединены");
+    if (conflictCount && !silent) showToast("Найдены разные версии поездки — обе сохранены");
+    return { conflictCount, status: "synced", tripCount: nextTripCount };
+  } catch (error) {
+    privateTripSyncState.applyingRemote = false;
+    if (!silent) showToast("Не удалось синхронизировать поездки. Локальные данные сохранены.");
+    throw error;
+  } finally {
+    privateTripSyncState.running = false;
+    if (privateTripSyncState.pending) schedulePrivateTripSync(100);
+  }
 }
 
 function getIdeaCollectionIdFromKey(key = "") {
@@ -2133,6 +2388,7 @@ function saveState() {
 
 function persistTripStore(store = tripStore) {
   localStorage.setItem(TRIPS_STORAGE_KEY, JSON.stringify(store));
+  if (privateTripSyncState.ready && !privateTripSyncState.applyingRemote) schedulePrivateTripSync();
 }
 
 function getDefaultDonationState() {
@@ -7288,7 +7544,7 @@ function trackOnboardingExit() {
 
 async function startApp() {
   trackAppOpen();
-  await handleRecoverableAuthCallback();
+  const recoverableUser = await handleRecoverableAuthCallback();
   const splashStatus = $("#appSplashStatus");
   if (splashStatus && getSharePayloadFromUrl()) splashStatus.textContent = "Открываем приглашение...";
   readOnlyShare = await loadReadOnlyShareFromUrl();
@@ -7298,6 +7554,10 @@ async function startApp() {
     hideAppSplash();
     showTripScreen();
     return;
+  }
+  privateTripSyncState.ready = true;
+  if (recoverableUser?.hasEmailIdentity) {
+    await syncPrivateTripsWithCloud({ silent: true }).catch(() => null);
   }
   hideAppSplash();
   const params = new URLSearchParams(window.location.search);
@@ -7325,6 +7585,7 @@ function showHomeScreen(source = null) {
   $(".app-shell").classList.add("hidden");
   renderHome();
   loadMyProfile({ createSession: false }).catch(() => {});
+  syncPrivateTripsWithCloud({ silent: true }).catch(() => {});
   renderIosInstallOnboarding();
   refreshReceivedTrips();
   trackEvent("home_opened", { trip_count: getUserTripCount(), ...(source ? { source } : {}) });
@@ -8059,6 +8320,7 @@ function deleteTrip(tripId) {
   const title = entry.state.trip.title || "поездку";
   if (!window.confirm(`Удалить «${title}»? Это действие нельзя отменить.`)) return;
 
+  queuePrivateTripDeletion(tripId);
   tripStore.trips = tripStore.trips.filter((trip) => trip.id !== tripId);
   persistTripStore(tripStore);
   if (state.trip.id === tripId) {
