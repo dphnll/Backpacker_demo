@@ -288,6 +288,17 @@ let onboardingExitTracked = false;
 let supabaseClient = null;
 let tripShareSyncTimer = null;
 let tripShareSyncInFlight = false;
+let tripItemAttachmentsRequestVersion = 0;
+let tripItemAttachmentsState = {
+  attachments: [],
+  deletingId: "",
+  error: "",
+  itemId: "",
+  loading: false,
+  tripId: "",
+  uploading: false,
+  uploadingName: "",
+};
 const analyticsSessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const $ = (selector) => document.querySelector(selector);
@@ -993,6 +1004,14 @@ function getTravelIdeaCore() {
 
 function getTravelIdeasClientApi() {
   return window.BackpackerTravelIdeasClient;
+}
+
+function getTripItemAttachmentsCore() {
+  return window.BackpackerTripItemAttachments;
+}
+
+function getTripItemAttachmentsClientApi() {
+  return window.BackpackerTripItemAttachmentsClient;
 }
 
 function getIdeaCollectionIdFromKey(key = "") {
@@ -4244,6 +4263,218 @@ async function previewLinkIntakeFromForm() {
   }
 }
 
+function resetTripItemAttachmentsState(item = null) {
+  tripItemAttachmentsRequestVersion += 1;
+  tripItemAttachmentsState = {
+    attachments: [],
+    deletingId: "",
+    error: "",
+    itemId: item?.id || "",
+    loading: false,
+    tripId: item ? state.trip.id : "",
+    uploading: false,
+    uploadingName: "",
+  };
+  renderTripItemAttachments();
+}
+
+function getTripItemAttachmentById(attachmentId) {
+  return tripItemAttachmentsState.attachments.find((attachment) => attachment.id === attachmentId) || null;
+}
+
+function renderTripItemAttachments() {
+  const section = $("#itemAttachmentsSection");
+  const list = $("#itemAttachmentsList");
+  const status = $("#itemAttachmentsStatus");
+  const addButton = $("#itemAttachmentAddButton");
+  if (!section || !list || !status || !addButton) return;
+
+  const visible = Boolean(tripItemAttachmentsState.itemId) && !isReadOnlyMode();
+  const busy = tripItemAttachmentsState.uploading || Boolean(tripItemAttachmentsState.deletingId);
+  $("#itemSaveButton").disabled = visible && tripItemAttachmentsState.uploading;
+  $("#resetItemButton").disabled = visible && tripItemAttachmentsState.uploading;
+  $("#deleteItemButton").disabled = visible && (busy || tripItemAttachmentsState.loading);
+  section.classList.toggle("hidden", !visible);
+  if (!visible) {
+    list.innerHTML = "";
+    status.textContent = "";
+    return;
+  }
+
+  const core = getTripItemAttachmentsCore();
+  status.textContent = tripItemAttachmentsState.loading
+    ? "Загружаем вложения…"
+    : tripItemAttachmentsState.uploading
+      ? `Загружаем ${tripItemAttachmentsState.uploadingName}…`
+      : tripItemAttachmentsState.error || "";
+  status.classList.toggle("is-error", Boolean(tripItemAttachmentsState.error));
+  addButton.disabled = busy || tripItemAttachmentsState.loading;
+  addButton.textContent = tripItemAttachmentsState.uploading ? "Загрузка…" : "+ Добавить вложение";
+
+  const rows = tripItemAttachmentsState.attachments.map((attachment) => {
+    const deleting = tripItemAttachmentsState.deletingId === attachment.id;
+    const type = core?.getAttachmentTypeLabel?.(attachment.mimeType) || "Файл";
+    const size = core?.formatAttachmentSize?.(attachment.fileSizeBytes) || "";
+    return `
+      <article class="item-attachment-row">
+        <div class="item-attachment-copy">
+          <span class="item-attachment-name" title="${escapeAttr(attachment.fileName)}">📎 ${escapeHtml(attachment.fileName)}</span>
+          <span class="item-attachment-meta">${escapeHtml([type, size].filter(Boolean).join(" · "))}</span>
+        </div>
+        <div class="item-attachment-actions">
+          <button class="ghost-button compact" type="button" data-attachment-open="${escapeAttr(attachment.id)}" ${deleting ? "disabled" : ""}>Открыть</button>
+          <button class="ghost-button compact item-attachment-delete" type="button" data-attachment-delete="${escapeAttr(attachment.id)}" ${deleting ? "disabled" : ""}>${deleting ? "Удаляем…" : "Удалить"}</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+
+  const empty = !tripItemAttachmentsState.loading && !rows
+    ? `<p class="item-attachment-empty">Нет вложений</p>`
+    : "";
+  const retry = tripItemAttachmentsState.error && !tripItemAttachmentsState.uploading
+    ? `<button class="ghost-button compact item-attachment-retry" type="button" data-attachment-retry>Повторить</button>`
+    : "";
+  list.innerHTML = `${rows}${empty}${retry}`;
+}
+
+async function loadTripItemAttachments() {
+  const itemId = tripItemAttachmentsState.itemId;
+  const tripId = tripItemAttachmentsState.tripId;
+  if (!itemId || !tripId) return;
+  const requestVersion = ++tripItemAttachmentsRequestVersion;
+  tripItemAttachmentsState = {
+    ...tripItemAttachmentsState,
+    attachments: [],
+    error: "",
+    loading: true,
+  };
+  renderTripItemAttachments();
+  try {
+    await ensureSupabaseOwnerSession();
+    const attachments = await getTripItemAttachmentsClientApi().listTripItemAttachments(
+      getSupabaseClient(),
+      { tripId, tripItemId: itemId },
+    );
+    if (requestVersion !== tripItemAttachmentsRequestVersion || tripItemAttachmentsState.itemId !== itemId) return;
+    tripItemAttachmentsState = { ...tripItemAttachmentsState, attachments, error: "", loading: false };
+  } catch (error) {
+    if (requestVersion !== tripItemAttachmentsRequestVersion || tripItemAttachmentsState.itemId !== itemId) return;
+    tripItemAttachmentsState = {
+      ...tripItemAttachmentsState,
+      error: getTripItemAttachmentsClientApi()?.getTripItemAttachmentErrorMessage?.(error) || "Не удалось загрузить вложения.",
+      loading: false,
+    };
+  }
+  renderTripItemAttachments();
+}
+
+async function uploadCurrentTripItemAttachment(file) {
+  const itemId = tripItemAttachmentsState.itemId;
+  const tripId = tripItemAttachmentsState.tripId;
+  if (!file || !itemId || !tripId || tripItemAttachmentsState.uploading) return;
+  tripItemAttachmentsState = {
+    ...tripItemAttachmentsState,
+    error: "",
+    uploading: true,
+    uploadingName: String(file.name || "файл"),
+  };
+  renderTripItemAttachments();
+  try {
+    await ensureSupabaseOwnerSession();
+    const attachment = await getTripItemAttachmentsClientApi().uploadTripItemAttachment(
+      getSupabaseClient(),
+      { tripId, tripItemId: itemId },
+      file,
+    );
+    if (tripItemAttachmentsState.itemId === itemId) {
+      tripItemAttachmentsState = {
+        ...tripItemAttachmentsState,
+        attachments: [...tripItemAttachmentsState.attachments, attachment],
+        error: "",
+      };
+      showToast("Вложение добавлено");
+    }
+  } catch (error) {
+    if (tripItemAttachmentsState.itemId === itemId) {
+      tripItemAttachmentsState = {
+        ...tripItemAttachmentsState,
+        error: getTripItemAttachmentsClientApi()?.getTripItemAttachmentErrorMessage?.(error) || "Не удалось загрузить вложение.",
+      };
+    }
+  } finally {
+    if (tripItemAttachmentsState.itemId === itemId) {
+      tripItemAttachmentsState = { ...tripItemAttachmentsState, uploading: false, uploadingName: "" };
+      renderTripItemAttachments();
+    }
+  }
+}
+
+async function openTripItemAttachment(attachmentId) {
+  const attachment = getTripItemAttachmentById(attachmentId);
+  if (!attachment) return;
+  const previewWindow = window.open("about:blank", "_blank");
+  if (previewWindow) previewWindow.opener = null;
+  try {
+    await ensureSupabaseOwnerSession();
+    const signedUrl = await getTripItemAttachmentsClientApi().createTripItemAttachmentSignedUrl(
+      getSupabaseClient(),
+      attachment,
+      120,
+    );
+    if (!previewWindow) throw new Error("attachment_window_blocked");
+    previewWindow.location.replace(signedUrl);
+  } catch (error) {
+    previewWindow?.close();
+    const message = error?.message === "attachment_window_blocked"
+      ? "Браузер заблокировал открытие файла. Разрешите всплывающие окна и попробуйте ещё раз."
+      : getTripItemAttachmentsClientApi()?.getTripItemAttachmentErrorMessage?.(error) || "Не удалось открыть вложение.";
+    tripItemAttachmentsState = { ...tripItemAttachmentsState, error: message };
+    renderTripItemAttachments();
+  }
+}
+
+async function deleteCurrentTripItemAttachment(attachmentId) {
+  const attachment = getTripItemAttachmentById(attachmentId);
+  if (!attachment || tripItemAttachmentsState.deletingId) return;
+  if (!window.confirm(`Удалить вложение «${attachment.fileName}»?`)) return;
+  tripItemAttachmentsState = { ...tripItemAttachmentsState, deletingId: attachmentId, error: "" };
+  renderTripItemAttachments();
+  try {
+    await ensureSupabaseOwnerSession();
+    await getTripItemAttachmentsClientApi().deleteTripItemAttachment(getSupabaseClient(), attachment);
+    tripItemAttachmentsState = {
+      ...tripItemAttachmentsState,
+      attachments: tripItemAttachmentsState.attachments.filter((entry) => entry.id !== attachmentId),
+      error: "",
+    };
+    showToast("Вложение удалено");
+  } catch (error) {
+    tripItemAttachmentsState = {
+      ...tripItemAttachmentsState,
+      error: getTripItemAttachmentsClientApi()?.getTripItemAttachmentErrorMessage?.(error) || "Не удалось удалить вложение.",
+    };
+  } finally {
+    tripItemAttachmentsState = { ...tripItemAttachmentsState, deletingId: "" };
+    renderTripItemAttachments();
+  }
+}
+
+function handleTripItemAttachmentsClick(event) {
+  const retry = event.target.closest("[data-attachment-retry]");
+  if (retry) {
+    loadTripItemAttachments();
+    return;
+  }
+  const openButton = event.target.closest("[data-attachment-open]");
+  if (openButton) {
+    openTripItemAttachment(openButton.dataset.attachmentOpen);
+    return;
+  }
+  const deleteButton = event.target.closest("[data-attachment-delete]");
+  if (deleteButton) deleteCurrentTripItemAttachment(deleteButton.dataset.attachmentDelete);
+}
+
 function openItemSheet(itemId = null, options = {}) {
   fillSelects();
   renderParticipantOwnerField();
@@ -4254,6 +4485,7 @@ function openItemSheet(itemId = null, options = {}) {
   const trackedItem = itemId ? state.items.find((entry) => entry.id === itemId) : null;
   resetItemCreateContext();
   fillItemForm(trackedItem);
+  resetTripItemAttachmentsState(trackedItem);
   if (!trackedItem && options.initialDraft) {
     applyInitialDraftToItemForm(options.initialDraft);
     itemCreateContext = {
@@ -4271,6 +4503,7 @@ function openItemSheet(itemId = null, options = {}) {
   resetLinkIntakeState();
   renderLinkIntakePanel({ visible: !itemId && !isReadOnlyMode() });
   openSheet("itemSheet");
+  if (trackedItem) loadTripItemAttachments();
   if (!itemId && itemCreateContext.returnScreenOnCancel && !itemSheetHistoryArmed) {
     history.pushState({ backpackerItemSheet: true }, "");
     itemSheetHistoryArmed = true;
@@ -4368,6 +4601,7 @@ function closeItemSheetAfterSave() {
   closeSheet("itemSheet");
   clearItemSheetHistory();
   resetItemCreateContext();
+  resetTripItemAttachmentsState();
 }
 
 function dismissItemSheet(method = "close", { fromPopState = false } = {}) {
@@ -4375,12 +4609,17 @@ function dismissItemSheet(method = "close", { fromPopState = false } = {}) {
   closeSheet("itemSheet");
   clearItemSheetHistory({ fromPopState });
   resetItemCreateContext();
+  resetTripItemAttachmentsState();
   if (returnScreen === "ideas") showIdeasScreen();
 }
 
 function saveItem(event) {
   event.preventDefault();
   if (isReadOnlyMode()) return;
+  if (tripItemAttachmentsState.uploading) {
+    showToast("Дождитесь загрузки вложения");
+    return;
+  }
   const form = event.currentTarget;
   if (!validateMoneyFields(form, ["price", "paidAmount"])) {
     form.reportValidity();
@@ -8435,6 +8674,18 @@ function bindEvents() {
   $("#copyItemButton").addEventListener("click", openCardCopySheet);
   $("#resetItemButton").addEventListener("click", resetCurrentItemForm);
   $("#deleteItemButton").addEventListener("click", deleteCurrentItem);
+  $("#itemAttachmentAddButton")?.addEventListener("click", () => {
+    const input = $("#itemAttachmentInput");
+    input.value = "";
+    input.click();
+  });
+  $("#itemAttachmentInput")?.addEventListener("change", (event) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0] || null;
+    input.value = "";
+    if (file) uploadCurrentTripItemAttachment(file);
+  });
+  $("#itemAttachmentsSection")?.addEventListener("click", handleTripItemAttachmentsClick);
   $("#cardCopyBackButton").addEventListener("click", goBackCardCopyStep);
   $("#cardCopyConfirmButton").addEventListener("click", confirmCardCopy);
   $("#itemForm").elements.link.addEventListener("input", () => {

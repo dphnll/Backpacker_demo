@@ -578,8 +578,22 @@
             Заметка
             <textarea name="notes" rows="3" placeholder="Почему хочу, что важно, запасной план..."></textarea>
           </label>
+          <section class="item-attachments hidden" id="itemAttachmentsSection" aria-labelledby="itemAttachmentsTitle">
+            <div class="item-attachments-header">
+              <h3 id="itemAttachmentsTitle">Вложения</h3>
+              <span class="item-attachments-status" id="itemAttachmentsStatus" aria-live="polite"></span>
+            </div>
+            <div class="item-attachments-list" id="itemAttachmentsList"></div>
+            <input
+              id="itemAttachmentInput"
+              type="file"
+              accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp"
+              hidden
+            />
+            <button class="ghost-button compact item-attachment-add" id="itemAttachmentAddButton" type="button">+ Добавить вложение</button>
+          </section>
           <div class="form-actions">
-            <button class="primary-button" type="submit">Сохранить</button>
+            <button class="primary-button" id="itemSaveButton" type="submit">Сохранить</button>
             <button class="primary-button" id="resetItemButton" type="button">Сбросить</button>
             <button class="danger-button" id="deleteItemButton" type="button">Удалить</button>
           </div>
@@ -1023,6 +1037,8 @@
     <script src="./identity-bridge-core.js"></script>
     <script src="./travel-idea-core.js"></script>
     <script src="./travel-ideas-client.js"></script>
+    <script src="./trip-item-attachments-core.js"></script>
+    <script src="./trip-item-attachments-client.js"></script>
     <script src="./app.js?v=extension-connect-dismiss-20260801"></script>
   </body>
 </html>
