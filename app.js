@@ -4,6 +4,10 @@ const PRIVATE_TRIP_SYNC_METADATA_KEY = "backpacker.privateTripSync.v1";
 const PRIVATE_TRIP_SYNC_CONFLICT_KEY = "backpacker.privateTripSync.conflicts.v1";
 const TRIP_ITEM_PREVIEW_TTL_SECONDS = 600;
 const TRIP_ITEM_PREVIEW_RENEW_MS = 60 * 1000;
+// Icon actions instead of labels: with a thumbnail in the row, two text buttons left the
+// file name almost no width. Each button keeps a title and an aria-label with the file name.
+const ATTACHMENT_OPEN_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+const ATTACHMENT_DELETE_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 7V5.5h4V7M6.5 7l1 12.5h9L17.5 7M10.5 10.5v6M13.5 10.5v6"></path></svg>`;
 const ACTIVE_TRIP_STORAGE_KEY = "backpacker.activeTrip.v1";
 const VIEW_STORAGE_KEY = "backpacker.currentView.v1";
 const SHARE_RECORDS_STORAGE_KEY = "backpacker.shareRecords.v1";
@@ -19,8 +23,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.52";
-const APP_RELEASE_SUMMARY = "Фото во вложениях показываются превью, направление в карточке использует всю ширину.";
+const APP_VERSION = "1.1.2.53";
+const APP_RELEASE_SUMMARY = "Имена файлов во вложениях видны целиком: действия стали иконками.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -4702,12 +4706,12 @@ function renderTripItemAttachments() {
       <article class="item-attachment-row${previewable ? " has-thumb" : ""}">
         ${thumb}
         <div class="item-attachment-copy">
-          <span class="item-attachment-name" title="${escapeAttr(attachment.fileName)}">${previewable ? "🖼" : "📎"} ${escapeHtml(attachment.fileName)}</span>
+          <span class="item-attachment-name" title="${escapeAttr(attachment.fileName)}">${previewable ? "" : "📎 "}${escapeHtml(attachment.fileName)}</span>
           <span class="item-attachment-meta">${escapeHtml([type, size].filter(Boolean).join(" · "))}</span>
         </div>
         <div class="item-attachment-actions">
-          <button class="ghost-button compact" type="button" data-attachment-open="${escapeAttr(attachment.id)}" ${deleting ? "disabled" : ""}>Открыть</button>
-          <button class="ghost-button compact item-attachment-delete" type="button" data-attachment-delete="${escapeAttr(attachment.id)}" ${deleting ? "disabled" : ""}>${deleting ? "Удаляем…" : "Удалить"}</button>
+          <button class="icon-button item-attachment-action" type="button" data-attachment-open="${escapeAttr(attachment.id)}" ${deleting ? "disabled" : ""} title="Открыть" aria-label="Открыть ${escapeAttr(attachment.fileName)}">${ATTACHMENT_OPEN_ICON}</button>
+          <button class="icon-button item-attachment-action item-attachment-delete" type="button" data-attachment-delete="${escapeAttr(attachment.id)}" ${deleting ? "disabled" : ""} title="${deleting ? "Удаляем…" : "Удалить"}" aria-label="${deleting ? "Удаляем" : "Удалить"} ${escapeAttr(attachment.fileName)}">${ATTACHMENT_DELETE_ICON}</button>
         </div>
       </article>
     `;
@@ -4723,7 +4727,7 @@ function renderTripItemAttachments() {
           <span class="item-attachment-meta">${escapeHtml([type, size, "После сохранения"].filter(Boolean).join(" · "))}</span>
         </div>
         <div class="item-attachment-actions">
-          <button class="ghost-button compact item-attachment-delete" type="button" data-attachment-pending-remove="${escapeAttr(pending.id)}" ${busy ? "disabled" : ""}>Убрать</button>
+          <button class="icon-button item-attachment-action item-attachment-delete" type="button" data-attachment-pending-remove="${escapeAttr(pending.id)}" ${busy ? "disabled" : ""} title="Убрать" aria-label="Убрать ${escapeAttr(pending.fileName)}">${ATTACHMENT_DELETE_ICON}</button>
         </div>
       </article>
     `;

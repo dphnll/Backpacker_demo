@@ -3999,6 +3999,17 @@ h3 {
   white-space: nowrap;
 }
 
+/* The thumbnail makes the row tall enough for a second line, so a camera file name
+   like IMG_20260804_102714_170.jpg can be read instead of ending in an ellipsis. */
+.item-attachment-row.has-thumb .item-attachment-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  white-space: normal;
+  word-break: break-word;
+}
+
 .item-attachment-meta {
   display: block;
   margin-top: 2px;
@@ -4013,15 +4024,39 @@ h3 {
   gap: 6px;
 }
 
-.item-attachment-actions button,
 .item-attachment-add,
 .item-attachment-retry {
   min-height: 36px;
   border-radius: 999px;
 }
 
+.item-attachment-action {
+  flex: 0 0 auto;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  border-radius: 999px;
+}
+
+.item-attachment-action svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.item-attachment-action:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
 .item-attachment-delete {
   color: #8b2f28;
+  border-color: rgba(139, 47, 40, 0.35);
 }
 
 .item-attachment-add {
