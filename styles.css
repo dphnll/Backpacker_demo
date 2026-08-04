@@ -783,6 +783,69 @@ a {
   line-height: 1;
 }
 
+.sync-conflict-card {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 14px 44px 14px 14px;
+  border: 1px solid rgba(196, 122, 32, 0.45);
+  border-left: 4px solid rgba(196, 122, 32, 0.75);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 252, 245, 0.95), rgba(250, 240, 224, 0.9)),
+    var(--panel);
+  box-shadow: 0 12px 28px rgba(18, 54, 61, 0.12);
+}
+
+.sync-conflict-card h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.sync-conflict-card p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.sync-conflict-hint {
+  opacity: 0.78;
+}
+
+.sync-conflict-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.sync-conflict-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border: 1px solid rgba(18, 54, 61, 0.18);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 850;
+  line-height: 1;
+}
+
 .home-support {
   display: grid;
   gap: 4px;

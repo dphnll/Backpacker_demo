@@ -1,6 +1,7 @@
 const STORAGE_KEY = "backpacker.mvp.v1";
 const TRIPS_STORAGE_KEY = "backpacker.trips.v1";
 const PRIVATE_TRIP_SYNC_METADATA_KEY = "backpacker.privateTripSync.v1";
+const PRIVATE_TRIP_SYNC_CONFLICT_KEY = "backpacker.privateTripSync.conflicts.v1";
 const ACTIVE_TRIP_STORAGE_KEY = "backpacker.activeTrip.v1";
 const VIEW_STORAGE_KEY = "backpacker.currentView.v1";
 const SHARE_RECORDS_STORAGE_KEY = "backpacker.shareRecords.v1";
@@ -16,8 +17,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.48";
-const APP_RELEASE_SUMMARY = "Справка обновлена: синхронизация между устройствами, идеи и вложения.";
+const APP_VERSION = "1.1.2.49";
+const APP_RELEASE_SUMMARY = "Понятное объяснение, если поездку меняли на двух устройствах сразу.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -276,6 +277,7 @@ var privateTripSyncState = {
   timer: null,
 };
 var privateTripSyncMetadata = loadPrivateTripSyncMetadata();
+var privateTripSyncConflicts = loadPrivateTripSyncConflicts();
 let tripStore = loadTripStore();
 let shareRecords = loadShareRecords();
 let receivedShareCards = [];
@@ -1057,6 +1059,46 @@ function persistPrivateTripSyncMetadata() {
   }
 }
 
+function loadPrivateTripSyncConflicts() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PRIVATE_TRIP_SYNC_CONFLICT_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((entry) => entry && entry.copyId) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistPrivateTripSyncConflicts() {
+  try {
+    localStorage.setItem(PRIVATE_TRIP_SYNC_CONFLICT_KEY, JSON.stringify(privateTripSyncConflicts));
+  } catch {
+    // The notice is best-effort if browser storage is temporarily unavailable.
+  }
+}
+
+function rememberPrivateTripSyncConflict(baseTitle, copyId) {
+  if (privateTripSyncConflicts.some((entry) => entry.copyId === copyId)) return;
+  privateTripSyncConflicts.push({ baseTitle: String(baseTitle || "Поездка").trim(), copyId });
+  persistPrivateTripSyncConflicts();
+}
+
+function dismissPrivateTripSyncConflicts() {
+  privateTripSyncConflicts = [];
+  persistPrivateTripSyncConflicts();
+  renderSyncConflictNotice();
+}
+
+// A conflict copy the user already deleted no longer needs an explanation on the home screen.
+function getActivePrivateTripSyncConflicts() {
+  const known = new Set(tripStore.trips.map((entry) => entry.id));
+  const active = privateTripSyncConflicts.filter((entry) => known.has(entry.copyId));
+  if (active.length !== privateTripSyncConflicts.length) {
+    privateTripSyncConflicts = active;
+    persistPrivateTripSyncConflicts();
+  }
+  return active;
+}
+
 function getPrivateTripSyncOwnerMetadata(userId, { create = true } = {}) {
   const ownerId = String(userId || "");
   if (!ownerId) return null;
@@ -1243,6 +1285,7 @@ async function syncPrivateTripsWithCloud({ silent = false } = {}) {
         if (decision.action === "fork_local_and_import") replacePrivateTripSyncEntry(remote.entry);
         else removePrivateTripSyncEntry(tripId);
         rememberPrivateTripSyncRow(ownerMetadata, remote);
+        rememberPrivateTripSyncConflict(local.state?.trip?.title, copy.id);
         conflictCount += 1;
       }
     }
@@ -1257,8 +1300,10 @@ async function syncPrivateTripsWithCloud({ silent = false } = {}) {
     const nextTripCount = tripStore.trips.filter((entry) => !entry.isDemo).length;
     if (currentScreen === "home") renderHome();
     else if (currentScreen === "trip" && !isReadOnlyMode()) render();
-    if (nextTripCount > previousTripCount) showToast("Поездки на устройствах объединены");
-    if (conflictCount && !silent) showToast("Найдены разные версии поездки — обе сохранены");
+    // Every automatic sync passes silent, so a conflict must announce itself regardless:
+    // the home screen notice explains it in full, the toast only draws attention to it.
+    if (conflictCount) showToast("Поездку меняли на двух устройствах — сохранены обе версии");
+    else if (nextTripCount > previousTripCount) showToast("Поездки на устройствах объединены");
     return { conflictCount, status: "synced", tripCount: nextTripCount };
   } catch (error) {
     privateTripSyncState.applyingRemote = false;
@@ -3037,6 +3082,26 @@ function renderHomeSupport() {
   }
 }
 
+function renderSyncConflictNotice() {
+  const card = $("#syncConflictCard");
+  if (!card) return;
+  const conflicts = getActivePrivateTripSyncConflicts();
+  card.classList.toggle("hidden", !conflicts.length);
+  if (!conflicts.length) return;
+  const single = conflicts.length === 1;
+  $("#syncConflictTitle").textContent = single ? "Две версии одной поездки" : "Разные версии поездок";
+  $("#syncConflictSummary").textContent = single
+    ? `Поездку «${conflicts[0].baseTitle}» меняли на двух устройствах, пока они не видели друг друга. Backpacker сохранил обе версии — ни одна правка не потерялась.`
+    : `Несколько поездок меняли на двух устройствах, пока они не видели друг друга. Backpacker сохранил обе версии каждой — ни одна правка не потерялась.`;
+  const list = $("#syncConflictList");
+  list.innerHTML = "";
+  conflicts.forEach((entry) => {
+    const item = document.createElement("li");
+    item.textContent = `${entry.baseTitle} — копия с этого устройства`;
+    list.append(item);
+  });
+}
+
 function renderProductVersionInfo() {
   const target = $("#productVersionInfo");
   if (!target) return;
@@ -3196,6 +3261,7 @@ function renderHome() {
   if (!list) return;
   renderHomeSupport();
   renderHomeProfile();
+  renderSyncConflictNotice();
   renderReceivedTrips();
   const trips = tripStore.trips
     .filter((entry) => !entry.isDemo)
@@ -9045,6 +9111,7 @@ function bindEvents() {
     setHomeTrainerHidden(true);
     renderHomeSupport();
   });
+  $("#syncConflictCloseButton")?.addEventListener("click", () => dismissPrivateTripSyncConflicts());
   $("#homeTelegramButton")?.addEventListener("click", () => trackEvent("feedback_channel_opened", { channel: "telegram", source: "home_support" }));
   $("#feedbackButton").addEventListener("click", () => trackEvent("feedback_channel_opened", { channel: "telegram" }));
   $("#homeButton").addEventListener("click", () => showHomeScreen("trip_bottom_bar"));

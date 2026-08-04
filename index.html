@@ -13,7 +13,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icons/backpacker-192.png" type="image/png" />
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
-    <link rel="stylesheet" href="./styles.css?v=trip-item-attachment-create-20260803" />
+    <link rel="stylesheet" href="./styles.css?v=sync-conflict-notice-20260804" />
     <script src="./analytics-config.js?v=1"></script>
   </head>
   <body>
@@ -132,6 +132,14 @@
       </header>
 
       <main class="home-content">
+        <section class="sync-conflict-card hidden" id="syncConflictCard" aria-live="polite">
+          <button class="sync-conflict-close" id="syncConflictCloseButton" type="button" aria-label="Скрыть">×</button>
+          <h2 id="syncConflictTitle">Две версии одной поездки</h2>
+          <p id="syncConflictSummary"></p>
+          <ul class="sync-conflict-list" id="syncConflictList"></ul>
+          <p class="sync-conflict-hint">Сравните версии, перенесите нужное в одну поездку и удалите лишнюю. Backpacker не выбирает сам, чтобы ничего не пропало.</p>
+        </section>
+
         <section class="home-trainer-shell" id="homeTrainerShell">
           <button class="home-trainer-hide" id="hideTrainerButton" type="button">Скрыть тренажер</button>
           <section class="home-card trainer-card" id="trainerTripCard" role="button" tabindex="0">
@@ -833,7 +841,8 @@
             <summary>Как работать с нескольких устройств</summary>
             <p>Сохраните доступ по email в профиле — и личные поездки начнут синхронизироваться между устройствами. Ноутбук, мобильный браузер и установленное приложение увидят один и тот же список поездок.</p>
             <p>Первый вход на новом устройстве объединяет поездки, а не заменяет их: то, что было создано на этом устройстве раньше, складывается с тем, что уже в облаке. Ничего не теряется.</p>
-            <p>Если одну и ту же поездку успели изменить на двух устройствах по-разному, Backpacker сохранит обе версии: рядом появится поездка с пометкой «копия с этого устройства», чтобы вы сами решили, что оставить.</p>
+            <p>Если одну и ту же поездку успели изменить на двух устройствах по-разному — например, пока телефон был без интернета, — Backpacker сохранит обе версии. Рядом появится поездка с пометкой «копия с этого устройства», а на главной — плашка с объяснением.</p>
+            <p>Приложение намеренно не выбирает победителя: иначе чьи-то правки пришлось бы стереть. Сравните версии, перенесите нужное в одну поездку и удалите лишнюю. Плашка закрывается крестиком.</p>
             <p>Без сохранённого email приложение работает как раньше: поездки остаются только в этом браузере и никуда не отправляются.</p>
             <p>Тренажёр и поездки из «Со мной поделились» не синхронизируются: это демо и чужие поездки.</p>
           </details>
