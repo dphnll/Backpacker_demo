@@ -17,8 +17,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.50";
-const APP_RELEASE_SUMMARY = "Удалённая поездка больше не возвращается копией с другого устройства.";
+const APP_VERSION = "1.1.2.51";
+const APP_RELEASE_SUMMARY = "Даты в карточке поездки видны целиком, скрытый тренажер возвращается с главной.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -3077,6 +3077,8 @@ function renderHomeSupport() {
   const trainerButton = $("#trainerVisibilityButton");
   const isHidden = isHomeTrainerHidden();
   trainerShell?.classList.toggle("hidden", isHidden);
+  // Hiding the trainer is one tap, so the way back has to live on the home screen too.
+  $("#showTrainerButton")?.classList.toggle("hidden", !isHidden);
   if (trainerButton) {
     trainerButton.textContent = isHidden ? "Показать тренажер на главной" : "Скрыть тренажер на главной";
   }
@@ -9109,6 +9111,10 @@ function bindEvents() {
   });
   $("#hideTrainerButton")?.addEventListener("click", () => {
     setHomeTrainerHidden(true);
+    renderHomeSupport();
+  });
+  $("#showTrainerButton")?.addEventListener("click", () => {
+    setHomeTrainerHidden(false);
     renderHomeSupport();
   });
   $("#syncConflictCloseButton")?.addEventListener("click", () => dismissPrivateTripSyncConflicts());

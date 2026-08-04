@@ -560,7 +560,7 @@ a {
   grid-template-rows: auto 1fr auto;
   gap: 12px;
   min-height: 181px;
-  padding: 12px 126px 12px 12px;
+  padding: 12px;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.85),
     inset 0 -10px 18px rgba(18, 54, 61, 0.05);
@@ -609,8 +609,10 @@ a {
   color: var(--brand);
 }
 
+/* The hide button sits in the bottom-right corner, so only the bottom row needs to make
+   room for it. Reserving on the card itself also narrowed the title and destination rows. */
 .trainer-card .home-card-meta {
-  padding-right: 0;
+  padding-right: 126px;
 }
 
 .trainer-card .trip-card-title-block {
@@ -781,6 +783,21 @@ a {
   font-size: 22px;
   font-weight: 850;
   line-height: 1;
+}
+
+/* The only way back after hiding the trainer, so it stays where the trainer was. */
+.home-trainer-restore {
+  justify-self: start;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  opacity: 0.7;
 }
 
 .sync-conflict-card {
@@ -1190,16 +1207,20 @@ button[aria-disabled="true"] .home-support-icon {
   display: flex;
   flex-wrap: nowrap;
   gap: 6px;
+  justify-self: stretch;
+  width: 100%;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
 }
 
+/* The destination takes every spare pixel, pushing the dates to the right edge,
+   and truncates once it runs out of room. The dates never shrink. */
 .trip-card-submeta > span {
   display: inline-flex;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-width: 0;
-  max-width: calc(50% - 3px);
+  max-width: 100%;
   min-height: 28px;
   align-items: center;
   padding: 3px 8px;
@@ -1214,26 +1235,10 @@ button[aria-disabled="true"] .home-support-icon {
   white-space: nowrap;
 }
 
-.trainer-card .trip-card-submeta {
-  justify-self: stretch;
-  flex-wrap: nowrap;
-  width: 100%;
-  overflow: hidden;
-}
-
-.trainer-card .trip-card-submeta > span {
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.trainer-card .trip-card-submeta > span:last-child {
+/* Dates size to their content and are the last thing to give way. max-width keeps an
+   extreme range from spilling out of the card instead of letting it overflow unclipped. */
+.trip-card-submeta > span:last-child {
   flex: 0 0 auto;
-  max-width: none;
-  overflow: visible;
-  text-overflow: clip;
 }
 
 .trip-card-open .home-card-meta {
@@ -4656,10 +4661,6 @@ textarea:focus {
 }
 
 @media (max-width: 520px) {
-  .trainer-card {
-    padding-right: 12px;
-  }
-
   .trainer-card .home-card-meta {
     padding-right: 118px;
   }
