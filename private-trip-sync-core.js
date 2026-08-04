@@ -100,7 +100,9 @@
     const lastFingerprint = String(metadata?.lastFingerprint || "");
     const lastSyncToken = String(metadata?.syncToken || "").toLowerCase();
     if (remote.deletedAt) {
-      if (lastSyncToken === remote.syncToken && lastFingerprint === localFingerprint) {
+      // A tombstone always mints a fresh sync token, so a peer device can never still hold it.
+      // Only the content decides: an untouched local copy follows the deletion, an edited one forks.
+      if (lastFingerprint && lastFingerprint === localFingerprint) {
         return { action: "remove_local" };
       }
       return { action: "fork_local_and_remove" };
