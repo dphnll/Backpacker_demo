@@ -2,6 +2,8 @@ const STORAGE_KEY = "backpacker.mvp.v1";
 const TRIPS_STORAGE_KEY = "backpacker.trips.v1";
 const PRIVATE_TRIP_SYNC_METADATA_KEY = "backpacker.privateTripSync.v1";
 const PRIVATE_TRIP_SYNC_CONFLICT_KEY = "backpacker.privateTripSync.conflicts.v1";
+const TRIP_ITEM_PREVIEW_TTL_SECONDS = 600;
+const TRIP_ITEM_PREVIEW_RENEW_MS = 60 * 1000;
 const ACTIVE_TRIP_STORAGE_KEY = "backpacker.activeTrip.v1";
 const VIEW_STORAGE_KEY = "backpacker.currentView.v1";
 const SHARE_RECORDS_STORAGE_KEY = "backpacker.shareRecords.v1";
@@ -17,8 +19,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.51";
-const APP_RELEASE_SUMMARY = "Даты в карточке поездки видны целиком, скрытый тренажер возвращается с главной.";
+const APP_VERSION = "1.1.2.52";
+const APP_RELEASE_SUMMARY = "Фото во вложениях показываются превью, направление в карточке использует всю ширину.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -300,6 +302,7 @@ let supabaseClient = null;
 let tripShareSyncTimer = null;
 let tripShareSyncInFlight = false;
 let tripItemAttachmentsRequestVersion = 0;
+let tripItemAttachmentsPreviewsInFlight = false;
 let tripItemAttachmentsState = {
   attachments: [],
   deletingId: "",
@@ -307,6 +310,7 @@ let tripItemAttachmentsState = {
   itemId: "",
   loading: false,
   pendingFiles: [],
+  previews: {},
   tripId: "",
   uploading: false,
   uploadingName: "",
@@ -4597,6 +4601,7 @@ function resetTripItemAttachmentsState(item = null) {
     itemId: item?.id || "",
     loading: false,
     pendingFiles: [],
+    previews: {},
     tripId: state.trip.id || "",
     uploading: false,
     uploadingName: "",
@@ -4606,6 +4611,47 @@ function resetTripItemAttachmentsState(item = null) {
 
 function getTripItemAttachmentById(attachmentId) {
   return tripItemAttachmentsState.attachments.find((attachment) => attachment.id === attachmentId) || null;
+}
+
+function getFreshTripItemAttachmentPreview(attachmentId) {
+  const preview = tripItemAttachmentsState.previews[attachmentId];
+  // Renew a little before the signed URL actually lapses so a thumbnail never 403s on screen.
+  return preview && preview.expiresAt - TRIP_ITEM_PREVIEW_RENEW_MS > Date.now() ? preview : null;
+}
+
+// Signed URLs cannot be embedded straight from the row: each one is a network call, so they
+// are fetched after the list renders and the list is redrawn once they arrive.
+async function ensureTripItemAttachmentPreviews() {
+  const core = getTripItemAttachmentsCore();
+  const api = getTripItemAttachmentsClientApi();
+  if (!core || !api || tripItemAttachmentsPreviewsInFlight) return;
+  const itemId = tripItemAttachmentsState.itemId;
+  const missing = tripItemAttachmentsState.attachments.filter(
+    (attachment) => core.isPreviewableAttachment(attachment.mimeType) && !getFreshTripItemAttachmentPreview(attachment.id),
+  );
+  if (!missing.length) return;
+  tripItemAttachmentsPreviewsInFlight = true;
+  const requestVersion = tripItemAttachmentsRequestVersion;
+  const resolved = {};
+  try {
+    for (const attachment of missing) {
+      try {
+        const url = await api.createTripItemAttachmentSignedUrl(getSupabaseClient(), attachment, TRIP_ITEM_PREVIEW_TTL_SECONDS);
+        resolved[attachment.id] = { expiresAt: Date.now() + TRIP_ITEM_PREVIEW_TTL_SECONDS * 1000, url };
+      } catch {
+        // A single unavailable preview must not break the rest of the list.
+      }
+    }
+  } finally {
+    tripItemAttachmentsPreviewsInFlight = false;
+  }
+  if (requestVersion !== tripItemAttachmentsRequestVersion || tripItemAttachmentsState.itemId !== itemId) return;
+  if (!Object.keys(resolved).length) return;
+  tripItemAttachmentsState = {
+    ...tripItemAttachmentsState,
+    previews: { ...tripItemAttachmentsState.previews, ...resolved },
+  };
+  renderTripItemAttachments();
 }
 
 function renderTripItemAttachments() {
@@ -4644,10 +4690,19 @@ function renderTripItemAttachments() {
     const deleting = tripItemAttachmentsState.deletingId === attachment.id;
     const type = core?.getAttachmentTypeLabel?.(attachment.mimeType) || "Файл";
     const size = core?.formatAttachmentSize?.(attachment.fileSizeBytes) || "";
+    const previewable = Boolean(core?.isPreviewableAttachment?.(attachment.mimeType));
+    const preview = previewable ? getFreshTripItemAttachmentPreview(attachment.id) : null;
+    // A photo says what it is; a file name like IMG_20260804_102714 does not.
+    const thumb = previewable
+      ? `<button class="item-attachment-thumb${preview ? "" : " is-loading"}" type="button" data-attachment-open="${escapeAttr(attachment.id)}" ${deleting ? "disabled" : ""} aria-label="Открыть ${escapeAttr(attachment.fileName)}">${
+        preview ? `<img src="${escapeAttr(preview.url)}" alt="" loading="lazy" decoding="async" />` : ""
+      }</button>`
+      : "";
     return `
-      <article class="item-attachment-row">
+      <article class="item-attachment-row${previewable ? " has-thumb" : ""}">
+        ${thumb}
         <div class="item-attachment-copy">
-          <span class="item-attachment-name" title="${escapeAttr(attachment.fileName)}">📎 ${escapeHtml(attachment.fileName)}</span>
+          <span class="item-attachment-name" title="${escapeAttr(attachment.fileName)}">${previewable ? "🖼" : "📎"} ${escapeHtml(attachment.fileName)}</span>
           <span class="item-attachment-meta">${escapeHtml([type, size].filter(Boolean).join(" · "))}</span>
         </div>
         <div class="item-attachment-actions">
@@ -4681,6 +4736,7 @@ function renderTripItemAttachments() {
     ? `<button class="ghost-button compact item-attachment-retry" type="button" data-attachment-retry>Повторить</button>`
     : "";
   list.innerHTML = `${rows}${pendingRows}${empty}${retry}`;
+  ensureTripItemAttachmentPreviews();
 }
 
 async function loadTripItemAttachments() {

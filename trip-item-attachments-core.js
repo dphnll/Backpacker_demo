@@ -110,6 +110,11 @@
     return MIME_TYPES[String(mimeType || "").toLowerCase()]?.label || "Файл";
   }
 
+  // Only the supported image types can be shown as a preview; a PDF keeps its file row.
+  function isPreviewableAttachment(mimeType) {
+    return String(mimeType || "").toLowerCase().startsWith("image/");
+  }
+
   function formatAttachmentSize(value) {
     const bytes = Number(value) || 0;
     if (bytes < 1024) return `${bytes} Б`;
@@ -125,6 +130,7 @@
     buildAttachmentStoragePath,
     formatAttachmentSize,
     getAttachmentTypeLabel,
+    isPreviewableAttachment,
     normalizeAttachmentRow,
     normalizeAttachmentScope,
     validateAttachmentFile,
