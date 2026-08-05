@@ -800,6 +800,11 @@ a {
   opacity: 0.7;
 }
 
+.trip-draft-resume {
+  display: grid;
+  gap: 10px;
+}
+
 /* An unpriced card must not read as a free one, and an estimate must not read as a fact. */
 .trip-draft-price-note,
 .trip-draft-budget-note {

@@ -2,6 +2,7 @@ const STORAGE_KEY = "backpacker.mvp.v1";
 const TRIPS_STORAGE_KEY = "backpacker.trips.v1";
 const PRIVATE_TRIP_SYNC_METADATA_KEY = "backpacker.privateTripSync.v1";
 const PRIVATE_TRIP_SYNC_CONFLICT_KEY = "backpacker.privateTripSync.conflicts.v1";
+const TRIP_DRAFT_PENDING_KEY_PREFIX = "backpacker.tripDraftAi.pending.v1";
 const TRIP_ITEM_PREVIEW_TTL_SECONDS = 600;
 const TRIP_ITEM_PREVIEW_RENEW_MS = 60 * 1000;
 // Icon actions instead of labels: with a thumbnail in the row, two text buttons left the
@@ -23,8 +24,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.54";
-const APP_RELEASE_SUMMARY = "AI-черновик больше не выдаёт догадки за факты: цены и ссылки только ваши.";
+const APP_VERSION = "1.1.2.55";
+const APP_RELEASE_SUMMARY = "Незавершённый AI-черновик больше не теряется при закрытии приложения.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -307,6 +308,7 @@ let tripShareSyncTimer = null;
 let tripShareSyncInFlight = false;
 let tripItemAttachmentsRequestVersion = 0;
 let tripItemAttachmentsPreviewsInFlight = false;
+let tripDraftPendingSaveTimer = null;
 let tripItemAttachmentsState = {
   attachments: [],
   deletingId: "",
@@ -804,6 +806,9 @@ function subscribeRecoverableAuthChanges() {
     renderHomeProfile();
     if (["SIGNED_IN", "USER_UPDATED"].includes(event)) {
       privateTripSyncState.ready = true;
+      // Storage is keyed by uid, so anything typed before identity resolved was not written
+      // yet. Persist it the moment the key becomes available.
+      saveTripDraftPending();
       window.setTimeout(() => {
         loadMyProfile({ createSession: false }).catch(() => null);
         syncPrivateTripsWithCloud({ silent: true }).catch(() => null);
@@ -7787,7 +7792,8 @@ function setTripDraftAiStatus(message = "", isError = false) {
 }
 
 function renderTripDraftAiSheet() {
-  const choice = $(".trip-draft-choice-grid");
+  // Addressed by id, not by class: the resume step reuses the same grid class for its buttons.
+  const choice = $("#tripDraftChoiceStep");
   const inputStep = $("#tripDraftInputStep");
   const previewStep = $("#tripDraftPreviewStep");
   const voiceControls = $("#tripDraftVoiceControls");
@@ -7801,13 +7807,14 @@ function renderTripDraftAiSheet() {
   if (!choice || !inputStep || !previewStep) return;
 
   choice.classList.toggle("hidden", tripDraftAiState.mode !== "choice");
+  $("#tripDraftResumeStep")?.classList.toggle("hidden", tripDraftAiState.mode !== "resume");
   inputStep.classList.toggle("hidden", tripDraftAiState.mode !== "input");
   previewStep.classList.toggle("hidden", tripDraftAiState.mode !== "preview");
   voiceControls?.classList.toggle("hidden", tripDraftAiState.mode !== "input");
   recordingIndicator?.classList.toggle("hidden", !tripDraftAiState.isRecording);
   if (textModeButton) textModeButton.disabled = !TRIP_DRAFT_AI_ENABLED;
   if (voiceModeButton) voiceModeButton.disabled = !TRIP_DRAFT_AI_ENABLED;
-  if (title) title.textContent = tripDraftAiState.mode === "choice" ? "Создать поездку" : "AI-черновик поездки";
+  if (title) title.textContent = ["choice", "resume"].includes(tripDraftAiState.mode) ? "Создать поездку" : "AI-черновик поездки";
   if (recordButton) recordButton.textContent = tripDraftAiState.isRecording ? "Остановить запись" : "🎙 Надиктовать";
   if (parseButton) {
     parseButton.disabled = tripDraftAiState.isBusy || !TRIP_DRAFT_AI_ENABLED;
@@ -7819,12 +7826,151 @@ function renderTripDraftAiSheet() {
   }
 }
 
-function openTripDraftAiSheet() {
-  tripDraftAiState = { mode: "choice", inputMode: "text", isBusy: false, isCreating: false, isRecording: false, draft: null, sourceText: "", mediaRecorder: null, chunks: [] };
+function createEmptyTripDraftAiState() {
+  return {
+    mode: "choice", inputMode: "text", isBusy: false, isCreating: false, isRecording: false,
+    draft: null, sourceText: "", mediaRecorder: null, chunks: [], resumeMode: "",
+  };
+}
+
+// Drafts are per identity so one browser never shows another account's unfinished trip.
+// Without a uid nothing is written or read: there is deliberately no anonymous bucket.
+function getTripDraftPendingKey() {
+  const userId = String(getCurrentRecoverableAuthUser()?.id || "");
+  return userId ? `${TRIP_DRAFT_PENDING_KEY_PREFIX}:${userId}` : "";
+}
+
+function getTripDraftPendingSourceText() {
+  if (tripDraftAiState.mode === "input") {
+    return String($("#tripDraftTextInput")?.value || tripDraftAiState.sourceText || "");
+  }
+  return String(tripDraftAiState.sourceText || "");
+}
+
+// An explicit whitelist, never a copy of the state: a future transient field cannot leak
+// into storage by accident, and raw audio has no path here at all.
+function saveTripDraftPending() {
+  const key = getTripDraftPendingKey();
+  if (!key) return;
+  const { mode, inputMode, draft, isBusy, isCreating, isRecording } = tripDraftAiState;
+  if (isBusy || isCreating || isRecording) return;
+  if (mode !== "input" && mode !== "preview") return;
+  const sourceText = getTripDraftPendingSourceText();
+  if (!sourceText.trim()) return;
+  try {
+    localStorage.setItem(key, JSON.stringify({
+      schemaVersion: TRIP_DRAFT_AI_SCHEMA_VERSION,
+      updatedAt: new Date().toISOString(),
+      mode,
+      inputMode: inputMode === "voice" ? "voice" : "text",
+      sourceText,
+      draft: mode === "preview" ? draft : null,
+    }));
+  } catch {
+    // Persistence is best-effort; the draft still lives in memory for this session.
+  }
+}
+
+function scheduleTripDraftPendingSave(delay = 600) {
+  window.clearTimeout(tripDraftPendingSaveTimer);
+  tripDraftPendingSaveTimer = window.setTimeout(() => {
+    tripDraftPendingSaveTimer = null;
+    saveTripDraftPending();
+  }, delay);
+}
+
+// A pending debounce must never swallow the last edit before an async call takes the state over.
+function flushTripDraftPendingSave() {
+  window.clearTimeout(tripDraftPendingSaveTimer);
+  tripDraftPendingSaveTimer = null;
+  saveTripDraftPending();
+}
+
+function clearTripDraftPending() {
+  window.clearTimeout(tripDraftPendingSaveTimer);
+  tripDraftPendingSaveTimer = null;
+  const key = getTripDraftPendingKey();
+  if (!key) return;
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Nothing to recover from: the draft is already gone from memory.
+  }
+}
+
+function readTripDraftPending() {
+  const key = getTripDraftPendingKey();
+  if (!key) return null;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || "null");
+    if (!parsed || typeof parsed !== "object") return null;
+    const sourceText = String(parsed.sourceText || "");
+    if (!sourceText.trim()) return null;
+    return {
+      schemaVersion: String(parsed.schemaVersion || ""),
+      updatedAt: String(parsed.updatedAt || ""),
+      mode: parsed.mode === "preview" ? "preview" : "input",
+      inputMode: parsed.inputMode === "voice" ? "voice" : "text",
+      sourceText,
+      draft: parsed.draft && typeof parsed.draft === "object" ? parsed.draft : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function restoreTripDraftPending(pending) {
+  const input = $("#tripDraftTextInput");
+  if (pending.schemaVersion !== TRIP_DRAFT_AI_SCHEMA_VERSION) {
+    // The traveller's own words outlive a contract change; a parsed draft does not.
+    tripDraftAiState = { ...tripDraftAiState, mode: "input", inputMode: pending.inputMode, sourceText: pending.sourceText, draft: null };
+    if (input) input.value = pending.sourceText;
+    setTripDraftAiStatus("Исходный текст восстановлен. Черновик нужно пересобрать.");
+    return;
+  }
+  // Re-normalize rather than trust storage, but without guardrails: hand-typed prices are
+  // the traveller's own and are not present in the original description.
+  const draft = pending.draft
+    ? normalizeTripDraftResponse({ draft: pending.draft }, pending.sourceText, { applyGuardrails: false })
+    : null;
+  tripDraftAiState = {
+    ...tripDraftAiState,
+    mode: "resume",
+    inputMode: pending.inputMode,
+    sourceText: pending.sourceText,
+    draft,
+    resumeMode: draft && pending.mode === "preview" ? "preview" : "input",
+  };
+}
+
+function continueTripDraftPending() {
+  const target = tripDraftAiState.resumeMode === "preview" && tripDraftAiState.draft ? "preview" : "input";
+  const input = $("#tripDraftTextInput");
+  if (input) input.value = tripDraftAiState.sourceText;
+  tripDraftAiState = { ...tripDraftAiState, mode: target };
+  if (target === "preview") renderTripDraftPreview(tripDraftAiState.draft);
+  renderTripDraftAiSheet();
+}
+
+function restartTripDraftPending() {
+  if (!window.confirm("Начать заново? Сохранённый черновик будет удалён.")) return;
+  clearTripDraftPending();
+  tripDraftAiState = createEmptyTripDraftAiState();
   const input = $("#tripDraftTextInput");
   if (input) input.value = "";
   setTripDraftAiStatus("");
   renderTripDraftPreview(null);
+  renderTripDraftAiSheet();
+}
+
+function openTripDraftAiSheet() {
+  const pending = readTripDraftPending();
+  tripDraftAiState = createEmptyTripDraftAiState();
+  const input = $("#tripDraftTextInput");
+  if (input) input.value = "";
+  setTripDraftAiStatus("");
+  renderTripDraftPreview(null);
+  if (pending) restoreTripDraftPending(pending);
   renderTripDraftAiSheet();
   openSheet("tripDraftAiSheet");
   trackEvent("trip_create_sheet_opened", { creation_source: "home" });
@@ -7897,6 +8043,8 @@ async function toggleTripDraftRecording() {
         if (input) input.value = [input.value.trim(), payload.text || ""].filter(Boolean).join(input.value.trim() ? "\n\n" : "");
         tripDraftAiState = { ...tripDraftAiState, inputMode: "voice" };
         setTripDraftAiStatus("Текст готов. Проверьте его перед разбором.");
+        // A dictated minute is the most expensive thing to lose, so it is persisted at once.
+        saveTripDraftPending();
         trackEvent("trip_draft_voice_transcribed", { ok: true });
       } catch (error) {
         const message = error.message === "invalid_audio"
@@ -8285,6 +8433,7 @@ function syncTripDraftPreviewStateFromForm() {
   const nextDraft = collectTripDraftPreviewForm();
   if (!nextDraft) return null;
   tripDraftAiState = { ...tripDraftAiState, draft: nextDraft };
+  saveTripDraftPending();
   return nextDraft;
 }
 
@@ -8333,6 +8482,10 @@ async function parseTripDraftText() {
     input?.focus();
     return;
   }
+  // Flush before the async call: isBusy blocks saving, so a debounce still in flight
+  // would otherwise drop the traveller's last edit.
+  tripDraftAiState = { ...tripDraftAiState, sourceText: text };
+  flushTripDraftPendingSave();
   tripDraftAiState = { ...tripDraftAiState, isBusy: true, sourceText: text };
   setTripDraftAiStatus("Разбираю текст в черновик...");
   renderTripDraftAiSheet();
@@ -8348,6 +8501,7 @@ async function parseTripDraftText() {
     });
     const draft = normalizeTripDraftResponse(payload, text);
     tripDraftAiState = { ...tripDraftAiState, isBusy: false, mode: "preview", draft, sourceText: text };
+    saveTripDraftPending();
     renderTripDraftPreview(draft);
     setTripDraftAiStatus("");
     renderTripDraftAiSheet();
@@ -8430,6 +8584,8 @@ function createTripFromAiDraft() {
     const entry = createTripEntryFromDraft(draft);
     tripStore.trips.push(entry);
     persistTripStore(tripStore);
+    // The draft became a real trip, so the protected copy has nothing left to protect.
+    clearTripDraftPending();
     closeSheet("tripDraftAiSheet");
     openTrip(entry.id);
     showToast("Поездка создана");
@@ -8916,6 +9072,15 @@ function bindEvents() {
       return;
     }
 
+    const tripDraftResumeButton = event.target.closest("[data-trip-draft-resume]");
+    if (tripDraftResumeButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (tripDraftResumeButton.dataset.tripDraftResume === "continue") continueTripDraftPending();
+      else restartTripDraftPending();
+      return;
+    }
+
     const tripDraftModeButton = event.target.closest("[data-trip-draft-mode]");
     if (tripDraftModeButton) {
       event.preventDefault();
@@ -9198,7 +9363,12 @@ function bindEvents() {
     setTripDraftAiStatus("");
     renderTripDraftAiSheet();
   });
-  $("#tripDraftRecordButton")?.addEventListener("click", toggleTripDraftRecording);
+  $("#tripDraftTextInput")?.addEventListener("input", () => scheduleTripDraftPendingSave());
+  $("#tripDraftRecordButton")?.addEventListener("click", () => {
+    // Recording blocks saving, so anything already typed is written before it starts.
+    if (!tripDraftAiState.isRecording) flushTripDraftPendingSave();
+    toggleTripDraftRecording();
+  });
   $("#tripDraftParseButton")?.addEventListener("click", parseTripDraftText);
   $("#tripDraftEditTextButton")?.addEventListener("click", () => {
     tripDraftAiState = { ...tripDraftAiState, mode: "input" };

@@ -13,7 +13,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icons/backpacker-192.png" type="image/png" />
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
-    <link rel="stylesheet" href="./styles.css?v=ai-draft-guardrails-20260805" />
+    <link rel="stylesheet" href="./styles.css?v=ai-draft-persistence-20260805" />
     <script src="./analytics-config.js?v=1"></script>
   </head>
   <body>
@@ -196,10 +196,18 @@
               <button class="icon-button" data-close="tripDraftAi" type="button" aria-label="Закрыть">×</button>
             </header>
             <div class="trip-draft-ai-body">
-              <section class="trip-draft-choice-grid" aria-label="Способ создания поездки">
+              <section class="trip-draft-choice-grid" id="tripDraftChoiceStep" aria-label="Способ создания поездки">
                 <button class="trip-draft-choice primary-button" id="tripDraftManualButton" type="button" data-trip-draft-mode="manual">Собрать вручную</button>
                 <button class="trip-draft-choice primary-button" id="tripDraftTextModeButton" type="button" data-trip-draft-mode="text">Собрать с помощью AI</button>
                 <button class="trip-draft-choice primary-button hidden" id="tripDraftVoiceModeButton" type="button" data-trip-draft-mode="voice" hidden>Надиктовать голосом для AI</button>
+              </section>
+
+              <section class="trip-draft-resume hidden" id="tripDraftResumeStep" aria-label="Незавершённый черновик">
+                <p class="trip-draft-copy" id="tripDraftResumeCopy">У вас остался незавершённый черновик поездки.</p>
+                <div class="trip-draft-choice-grid">
+                  <button class="trip-draft-choice primary-button" type="button" data-trip-draft-resume="continue">Продолжить</button>
+                  <button class="trip-draft-choice primary-button" type="button" data-trip-draft-resume="restart">Начать заново</button>
+                </div>
               </section>
 
               <section class="trip-draft-input hidden" id="tripDraftInputStep">
