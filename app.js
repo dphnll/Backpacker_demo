@@ -24,8 +24,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.55";
-const APP_RELEASE_SUMMARY = "Незавершённый AI-черновик больше не теряется при закрытии приложения.";
+const APP_VERSION = "1.1.2.56";
+const APP_RELEASE_SUMMARY = "AI-черновик точнее раскладывает карточки по дням и спрашивает, если день неясен.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -8179,7 +8179,7 @@ function getTripDraftAiCore() {
 // applyGuardrails must stay off when re-normalizing the preview form: those values are the
 // traveller's own edits, and grounding them against the original description would erase
 // every price and budget they typed by hand.
-function normalizeTripDraftResponse(payload = {}, sourceText = "", { applyGuardrails = true } = {}) {
+function normalizeTripDraftResponse(payload = {}, sourceText = "", { applyGuardrails = true, applyChronology = applyGuardrails } = {}) {
   const core = getTripDraftAiCore();
   const rawDraft = payload.draft || payload;
   // Re-run the guardrails on the client: the server already applied them, but the draft
@@ -8200,18 +8200,20 @@ function normalizeTripDraftResponse(payload = {}, sourceText = "", { applyGuardr
     ? "approximate"
     : normalizeTripDraftDatePrecision(trip.datePrecision, startDate, endDate);
   const dateSourceText = datePrecision === "approximate" ? String(trip.dateSourceText || approximateDateSourceText || "").trim().slice(0, 160) : "";
-  const questions = Array.isArray(draft.questions) ? draft.questions.filter(Boolean).slice(0, 5) : [];
-  const normalizedItems = items.slice(0, 80).map((item, index) => {
-    const explicitDate = normalizeTripDraftDate(item.date);
-    const dayIndex = normalizeTripDayCount(item.dayIndex, 0);
-    const virtualDate = !startDate && !endDate && dayIndex > 0 && dayIndex <= dayCount ? createVirtualDayDate(dayIndex) : "";
-    const indexedDate = startDate && dayIndex > 0 && dayIndex <= dayCount ? getTripDraftDateFromDayIndex(startDate, dayIndex) : "";
+  // Chronology settles every card's day from the traveller's own signals before the mapping
+  // below consumes dayIndex. Skipped for preview edits, where the day is the user's choice.
+  const chronology = applyChronology && core?.applyTripChronology
+    ? core.applyTripChronology({ items, questions: draft.questions, trip: { startDate, endDate, dayCount } })
+    : { items, questions: draft.questions };
+  const scheduledItems = Array.isArray(chronology.items) ? chronology.items : items;
+  const questions = Array.isArray(chronology.questions) ? chronology.questions.filter(Boolean).slice(0, 5) : [];
+  const normalizedItems = scheduledItems.slice(0, 80).map((item, index) => {
     return {
       title: String(item.title || `Идея ${index + 1}`).trim().slice(0, 120) || `Идея ${index + 1}`,
       type: normalizeTripDraftItemTypeForItem(item),
       status: statuses.some(([key]) => key === item.status) ? item.status : DEFAULT_ITEM_STATUS,
       priority: priorities.some(([key]) => key === item.priority) ? item.priority : DEFAULT_ITEM_PRIORITY,
-      date: explicitDate || indexedDate || virtualDate,
+      date: normalizeTripDraftItemDate(item.date, { startDate, endDate, dayCount }),
       startTime: normalizeTripDraftTime(item.startTime),
       durationMinutes: Math.max(0, Math.min(1440, parseMoney(item.durationMinutes))),
       price: Math.max(0, parseMoney(item.price)),

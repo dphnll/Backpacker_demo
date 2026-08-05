@@ -230,6 +230,117 @@
     return { ...input, trip, items: guardedItems, questions: Array.isArray(input.questions) ? input.questions : [] };
   }
 
+  const VIRTUAL_DAY_PREFIX = "day-";
+
+  function isValidIsoDate(value) {
+    const raw = String(value ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+    const [year, month, day] = raw.split("-").map(Number);
+    const date = new Date(`${raw}T12:00:00`);
+    return !Number.isNaN(date.getTime())
+      && date.getFullYear() === year
+      && date.getMonth() + 1 === month
+      && date.getDate() === day;
+  }
+
+  function addTripDays(startDate, offset) {
+    const date = new Date(`${startDate}T12:00:00`);
+    date.setDate(date.getDate() + offset);
+    return date.toISOString().slice(0, 10);
+  }
+
+  function countTripDaysBetween(startDate, targetDate) {
+    const start = new Date(`${startDate}T12:00:00`);
+    const target = new Date(`${targetDate}T12:00:00`);
+    return Math.round((target.getTime() - start.getTime()) / 86400000);
+  }
+
+  function normalizeDayIndex(value, dayCount) {
+    const index = Math.trunc(Number(value));
+    if (!Number.isFinite(index) || index <= 0) return 0;
+    return index;
+  }
+
+  function getChronologyTitle(item) {
+    return String(item?.title || "").trim() || "Карточка";
+  }
+
+  // Resolves one card's day from the traveller's own signals only. Array position is never
+  // consulted, so shuffling the model's output cannot change where a card lands.
+  function resolveTripItemDay(item = {}, trip = {}) {
+    const startDate = isValidIsoDate(trip.startDate) ? String(trip.startDate).trim() : "";
+    const endDate = isValidIsoDate(trip.endDate) ? String(trip.endDate).trim() : "";
+    const hasCalendar = Boolean(startDate && endDate && endDate >= startDate);
+    const dayCount = Math.max(1, Math.trunc(Number(trip.dayCount)) || 1);
+    const title = getChronologyTitle(item);
+    const rawDate = isValidIsoDate(item.date) ? String(item.date).trim() : "";
+    const dayIndex = normalizeDayIndex(item.dayIndex, dayCount);
+
+    if (rawDate) {
+      if (!hasCalendar) {
+        // A calendar date cannot be placed on a numbered day, and keeping it would hide the
+        // card from the plan entirely.
+        return { date: "", question: `Для «${title}» указана дата, но у поездки не заданы даты. Задайте даты поездки или выберите день.` };
+      }
+      if (rawDate < startDate || rawDate > endDate) {
+        // Never clamped to the first or last day: that would invent a decision.
+        return { date: "", question: `Для «${title}» указана дата вне дат поездки. На какой день её поставить?` };
+      }
+      const derivedIndex = countTripDaysBetween(startDate, rawDate) + 1;
+      if (dayIndex > 0 && dayIndex !== derivedIndex) {
+        return { date: rawDate, question: `Для «${title}» дата и день не совпали. Оставили дату — проверьте, верно ли.` };
+      }
+      return { date: rawDate };
+    }
+
+    if (dayIndex > 0) {
+      if (dayIndex > dayCount) {
+        return { date: "", question: `Для «${title}» назван день, которого нет в поездке. На какой день её поставить?` };
+      }
+      return { date: hasCalendar ? addTripDays(startDate, dayIndex - 1) : `${VIRTUAL_DAY_PREFIX}${dayIndex}` };
+    }
+
+    // No signal at all is an ordinary outcome: the card waits in the unscheduled list and
+    // does not deserve a question of its own.
+    return { date: "" };
+  }
+
+  function mergeTripChronologyQuestions(generated = [], existing = [], max = MAX_QUESTIONS) {
+    const seen = new Set();
+    const merged = [];
+    // Generated questions name a concrete card and a fixable problem, so they come first.
+    [...generated, ...existing].forEach((entry) => {
+      const text = String(entry ?? "").trim();
+      if (!text) return;
+      const key = text.toLowerCase().replace(/\s+/g, " ");
+      if (seen.has(key)) return;
+      seen.add(key);
+      merged.push(text);
+    });
+    return merged.slice(0, max);
+  }
+
+  function applyTripChronology(draft = {}) {
+    const input = draft && typeof draft === "object" ? draft : {};
+    const trip = input.trip && typeof input.trip === "object" ? input.trip : {};
+    const items = Array.isArray(input.items) ? input.items : [];
+    const generated = [];
+    const nextItems = items.map((rawItem) => {
+      const item = rawItem && typeof rawItem === "object" ? { ...rawItem } : {};
+      const resolved = resolveTripItemDay(item, trip);
+      if (resolved.question) generated.push(resolved.question);
+      item.date = resolved.date;
+      // The day is settled here, so a contradicting index must not survive downstream.
+      delete item.dayIndex;
+      return item;
+    });
+    return {
+      ...input,
+      items: nextItems,
+      questions: mergeTripChronologyQuestions(generated, input.questions, MAX_QUESTIONS),
+    };
+  }
+
   const api = {
     BUDGET_LEVEL_VALUES,
     CURRENCY_VALUES,
@@ -243,8 +354,11 @@
     TRIP_DRAFT_AI_SCHEMA_VERSION,
     TRIP_DRAFT_RULES,
     applyDraftGuardrails,
+    applyTripChronology,
     assertSupportedSchemaVersion,
     buildTripDraftPrompt,
+    mergeTripChronologyQuestions,
+    resolveTripItemDay,
     isGroundedAmount,
     isGroundedText,
     normalizeBudgetLevel,
