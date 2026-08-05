@@ -800,6 +800,20 @@ a {
   opacity: 0.7;
 }
 
+/* An unpriced card must not read as a free one, and an estimate must not read as a fact. */
+.trip-draft-price-note,
+.trip-draft-budget-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.trip-draft-price-note.is-estimate {
+  color: #8a5a12;
+}
+
 .sync-conflict-card {
   position: relative;
   display: grid;

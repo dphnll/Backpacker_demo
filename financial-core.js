@@ -5,7 +5,19 @@
 }(typeof globalThis !== "undefined" ? globalThis : this, function createBackpackerFinancial() {
   const CONFIRMED_STATUSES = new Set(["paid", "fixed"]);
   const ADDITIONAL_STATUSES = new Set(["want", "maybe"]);
-  const FINANCIAL_FIELDS = new Set(["price", "paidAmount", "budgetLimit", "allocations"]);
+  // budgetLevel, budgetSourceText, priceConfidence and priceSourceText describe money too:
+  // a qualitative budget or the traveller's own price wording must not survive a share
+  // published with the estimate hidden.
+  const FINANCIAL_FIELDS = new Set([
+    "price",
+    "paidAmount",
+    "budgetLimit",
+    "allocations",
+    "budgetLevel",
+    "budgetSourceText",
+    "priceConfidence",
+    "priceSourceText",
+  ]);
 
   function roundMoney(value) {
     const amount = Number(value);

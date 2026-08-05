@@ -23,8 +23,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.53";
-const APP_RELEASE_SUMMARY = "Имена файлов во вложениях видны целиком: действия стали иконками.";
+const APP_VERSION = "1.1.2.54";
+const APP_RELEASE_SUMMARY = "AI-черновик больше не выдаёт догадки за факты: цены и ссылки только ваши.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -8015,8 +8015,28 @@ function getTripDraftDateFromDayIndex(startDate = "", dayIndex = 0) {
   return date.toISOString().slice(0, 10);
 }
 
-function normalizeTripDraftResponse(payload = {}, sourceText = "") {
-  const draft = payload.draft || payload;
+// The traveller's own calendar day, not UTC: near midnight those differ, and this value
+// is what the model uses to resolve "в октябре" to a year.
+function getClientTodayIsoDate(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getTripDraftAiCore() {
+  return window.BackpackerTripDraftAiCore;
+}
+
+// applyGuardrails must stay off when re-normalizing the preview form: those values are the
+// traveller's own edits, and grounding them against the original description would erase
+// every price and budget they typed by hand.
+function normalizeTripDraftResponse(payload = {}, sourceText = "", { applyGuardrails = true } = {}) {
+  const core = getTripDraftAiCore();
+  const rawDraft = payload.draft || payload;
+  // Re-run the guardrails on the client: the server already applied them, but the draft
+  // must not depend on trusting the response over the wire.
+  const draft = applyGuardrails ? (core?.applyDraftGuardrails?.(rawDraft, sourceText) || rawDraft) : rawDraft;
   const trip = draft.trip || {};
   const startDate = normalizeTripDraftDate(trip.startDate);
   const endDate = normalizeTripDraftDate(trip.endDate);
@@ -8047,6 +8067,8 @@ function normalizeTripDraftResponse(payload = {}, sourceText = "") {
       startTime: normalizeTripDraftTime(item.startTime),
       durationMinutes: Math.max(0, Math.min(1440, parseMoney(item.durationMinutes))),
       price: Math.max(0, parseMoney(item.price)),
+      priceConfidence: core?.normalizePriceConfidence?.(item.priceConfidence) || "unknown",
+      priceSourceText: String(item.priceSourceText || "").trim().slice(0, 160),
       paidAmount: 0,
       link: String(item.link || "").trim().slice(0, 500),
       locationText: String(item.locationText || "").trim().slice(0, 160),
@@ -8069,6 +8091,10 @@ function normalizeTripDraftResponse(payload = {}, sourceText = "") {
       dateSourceText,
       currency: getSupportedCurrencies().includes(trip.currency) ? trip.currency : "RUB",
       budgetLimit: parseMoney(trip.budgetLimit),
+      // A level is never derived from the sum and a sum is never derived from the level:
+      // whichever the traveller did not say stays empty.
+      budgetLevel: core?.normalizeBudgetLevel?.(trip.budgetLevel) || "unknown",
+      budgetSourceText: String(trip.budgetSourceText || "").trim().slice(0, 160),
       preferencesText: String(trip.preferencesText || "").trim().slice(0, 4000),
     },
     items: quantityAdjustedItems,
@@ -8078,6 +8104,40 @@ function normalizeTripDraftResponse(payload = {}, sourceText = "") {
 
 function renderTripDraftOptionList(options, selectedValue) {
   return options.map(([value, label]) => `<option value="${escapeAttr(value)}"${value === selectedValue ? " selected" : ""}>${escapeHtml(label)}</option>`).join("");
+}
+
+const TRIP_DRAFT_BUDGET_LEVEL_LABELS = Object.freeze({
+  unknown: "Не указан",
+  low: "Бюджетно",
+  medium: "Средний",
+  high: "Высокий",
+});
+
+function renderTripDraftBudgetLevelOptions(selectedValue) {
+  return Object.entries(TRIP_DRAFT_BUDGET_LEVEL_LABELS)
+    .map(([value, label]) => `<option value="${escapeAttr(value)}"${value === selectedValue ? " selected" : ""}>${escapeHtml(label)}</option>`)
+    .join("");
+}
+
+// The level and the sum are independent claims. Neither is inferred from the other, so the
+// note only reports what the traveller actually said.
+function renderTripDraftBudgetNote(trip = {}) {
+  if (trip.budgetLevel === "unknown" && !trip.budgetLimit) return "";
+  const parts = [];
+  if (trip.budgetLevel && trip.budgetLevel !== "unknown") parts.push(`уровень «${TRIP_DRAFT_BUDGET_LEVEL_LABELS[trip.budgetLevel]}»`);
+  if (trip.budgetLimit) parts.push("сумма");
+  const source = trip.budgetSourceText ? ` По формулировке: ${escapeHtml(trip.budgetSourceText)}.` : "";
+  return `<p class="trip-draft-budget-note">Из вашего описания: ${escapeHtml(parts.join(" и "))}.${source}</p>`;
+}
+
+function renderTripDraftPriceNote(item = {}) {
+  if (item.priceConfidence === "estimate" && item.priceSourceText) {
+    return `<p class="trip-draft-price-note is-estimate">Примерно: ${escapeHtml(item.priceSourceText)}. Это ваша формулировка, а не подтверждённая цена.</p>`;
+  }
+  if (item.priceConfidence === "unknown") {
+    return `<p class="trip-draft-price-note">Цена не указана. Пустое поле — не бесплатное событие, а неизвестная стоимость.</p>`;
+  }
+  return "";
 }
 
 function renderTripDraftCurrencyOptions(selectedValue) {
@@ -8129,7 +8189,9 @@ function renderTripDraftPreview(draft) {
         <label class="field">Дата до<input type="date" data-draft-trip-field="endDate" value="${escapeAttr(draft.trip.endDate)}" /></label>
         <label class="field">Валюта<select data-draft-trip-field="currency">${renderTripDraftCurrencyOptions(draft.trip.currency)}</select></label>
         <label class="field">Бюджет<input inputmode="numeric" data-draft-trip-field="budgetLimit" value="${escapeAttr(draft.trip.budgetLimit ? draft.trip.budgetLimit : "")}" /></label>
+        <label class="field">Уровень бюджета<select data-draft-trip-field="budgetLevel">${renderTripDraftBudgetLevelOptions(draft.trip.budgetLevel)}</select></label>
       </div>
+      ${renderTripDraftBudgetNote(draft.trip)}
       ${approximateDateNote}
       <label class="field wide trip-draft-preferences-field">Пожелания к поездке<textarea rows="4" data-draft-trip-field="preferencesText">${escapeHtml(draft.trip.preferencesText || "")}</textarea></label>
     </article>
@@ -8155,8 +8217,9 @@ function renderTripDraftPreview(draft) {
               <label class="field">Тип<select data-draft-item-field="type">${renderTripDraftOptionList(itemTypes, item.type)}</select></label>
               ${renderTripDraftDayField(draft, item)}
               <label class="field">Время<input type="time" data-draft-item-field="startTime" value="${escapeAttr(item.startTime)}" /></label>
-              <label class="field">Цена<input inputmode="numeric" data-draft-item-field="price" value="${escapeAttr(item.price ? item.price : "")}" /></label>
+              <label class="field">Цена<input inputmode="numeric" data-draft-item-field="price" value="${escapeAttr(item.price ? item.price : "")}" placeholder="${escapeAttr(item.priceConfidence === "unknown" ? "Цена не указана" : "")}" /></label>
             </div>
+            ${renderTripDraftPriceNote(item)}
             <label class="field wide">Заметка<textarea rows="3" data-draft-item-field="notes">${escapeHtml(item.notes || "")}</textarea></label>
           </section>
         `).join("") : `<p>AI не нашёл событий. Можно вернуться к описанию и пересобрать черновик.</p>`}
@@ -8170,6 +8233,7 @@ function collectTripDraftPreviewForm() {
   const box = $("#tripDraftPreviewBox");
   const current = tripDraftAiState.draft;
   if (!box || !current) return null;
+  const sourceTextForPreview = tripDraftAiState.sourceText || "";
   const readTripField = (field) => box.querySelector(`[data-draft-trip-field="${field}"]`)?.value || "";
   const nextStartDate = readTripField("startDate");
   const nextEndDate = readTripField("endDate");
@@ -8177,13 +8241,20 @@ function collectTripDraftPreviewForm() {
   const items = Array.from(box.querySelectorAll(".trip-draft-item-editor[data-draft-item-index]")).map((container, index) => {
     const original = current.items[index] || {};
     const readItemField = (field) => container.querySelector(`[data-draft-item-field="${field}"]`)?.value || "";
+    const nextPrice = Math.max(0, parseMoney(readItemField("price")));
+    // A price the traveller typed is theirs, so it becomes confirmed. Clearing the field
+    // returns the card to "unknown" rather than asserting the event is free.
+    const priceChanged = nextPrice !== Math.max(0, parseMoney(original.price));
+    const priceConfidence = !nextPrice ? "unknown" : priceChanged ? "confirmed" : (original.priceConfidence || "confirmed");
     return {
       ...original,
       title: readItemField("title").trim() || original.title || `Идея ${index + 1}`,
       type: normalizeTripDraftItemType(readItemField("type") || original.type),
       date: normalizeTripDraftItemDate(readItemField("date"), current.trip),
       startTime: normalizeTripDraftTime(readItemField("startTime")),
-      price: Math.max(0, parseMoney(readItemField("price"))),
+      price: nextPrice,
+      priceConfidence,
+      priceSourceText: priceConfidence === "estimate" ? original.priceSourceText || "" : "",
       notes: readItemField("notes").trim().slice(0, 1000),
       paidAmount: 0,
     };
@@ -8200,12 +8271,14 @@ function collectTripDraftPreviewForm() {
         dateSourceText: dateRangeChanged ? "" : current.trip.dateSourceText,
         currency: readTripField("currency") || "RUB",
         budgetLimit: readTripField("budgetLimit"),
+        budgetLevel: readTripField("budgetLevel") || "unknown",
+        budgetSourceText: current.trip.budgetSourceText || "",
         preferencesText: readTripField("preferencesText").trim(),
       },
       items,
       questions: current.questions || [],
     },
-  });
+  }, sourceTextForPreview, { applyGuardrails: false });
 }
 
 function syncTripDraftPreviewStateFromForm() {
@@ -8269,6 +8342,8 @@ async function parseTripDraftText() {
       text,
       schemaVersion: TRIP_DRAFT_AI_SCHEMA_VERSION,
       locale: "ru-RU",
+      // The model has no reliable notion of today, so the client states it.
+      today: getClientTodayIsoDate(),
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
     });
     const draft = normalizeTripDraftResponse(payload, text);
@@ -8301,6 +8376,8 @@ function createTripEntryFromDraft(draft) {
       dateSourceText: draft.trip.dateSourceText,
       currency: draft.trip.currency,
       budgetLimit: draft.trip.budgetLimit,
+      budgetLevel: draft.trip.budgetLevel,
+      budgetSourceText: draft.trip.budgetSourceText,
       preferencesText: draft.trip.preferencesText,
       aiSourceText: String(tripDraftAiState.sourceText || "").trim(),
       participants: [selfParticipant],
@@ -8318,9 +8395,15 @@ function createTripEntryFromDraft(draft) {
         startTime: item.startTime,
         durationMinutes: item.durationMinutes,
         price: item.price,
+        // An unknown price is not a free event: it carries no allocation, so it never
+        // enters the budget as a confirmed zero.
+        priceConfidence: item.priceConfidence,
+        priceSourceText: item.priceSourceText,
         paidAmount: item.paidAmount,
         participantId: selfParticipant.id,
-        allocations: item.price > 0 ? [{ participantId: selfParticipant.id, amount: item.price }] : [],
+        allocations: item.priceConfidence !== "unknown" && item.price > 0
+          ? [{ participantId: selfParticipant.id, amount: item.price }]
+          : [],
         link: item.link,
         locationText: item.locationText,
         notes: item.notes,
