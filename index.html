@@ -13,7 +13,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icons/backpacker-192.png" type="image/png" />
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
-    <link rel="stylesheet" href="./styles.css?v=ai-draft-persistence-20260805" />
+    <link rel="stylesheet" href="./styles.css?v=booking-pack-20260805" />
     <script src="./analytics-config.js?v=1"></script>
   </head>
   <body>
@@ -200,6 +200,7 @@
                 <button class="trip-draft-choice primary-button" id="tripDraftManualButton" type="button" data-trip-draft-mode="manual">Собрать вручную</button>
                 <button class="trip-draft-choice primary-button" id="tripDraftTextModeButton" type="button" data-trip-draft-mode="text">Собрать с помощью AI</button>
                 <button class="trip-draft-choice primary-button hidden" id="tripDraftVoiceModeButton" type="button" data-trip-draft-mode="voice" hidden>Надиктовать голосом для AI</button>
+                <button class="trip-draft-choice primary-button" id="tripDraftDocumentsModeButton" type="button" data-trip-draft-mode="documents">Собрать из документов</button>
               </section>
 
               <section class="trip-draft-resume hidden" id="tripDraftResumeStep" aria-label="Незавершённый черновик">
@@ -227,6 +228,33 @@
                 <div class="trip-draft-actions">
                   <button class="ghost-button" id="tripDraftBackButton" type="button">Назад</button>
                   <button class="primary-button" id="tripDraftParseButton" type="button">Собрать черновик</button>
+                </div>
+              </section>
+
+              <section class="trip-draft-documents hidden" id="tripDraftDocumentsStep" aria-label="Документы поездки">
+                <p class="trip-draft-copy">
+                  <strong>Загрузите билеты, брони и ваучеры — Backpacker соберёт из них черновик поездки.</strong>
+                  Данные берутся только из ваших документов. Коды броней, номера билетов и паспортные данные не извлекаются: они остаются внутри самого файла.
+                </p>
+                <input
+                  id="tripDraftDocumentsInput"
+                  type="file"
+                  multiple
+                  accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp"
+                  hidden
+                />
+                <button class="ghost-button" id="tripDraftDocumentsAddButton" type="button">+ Выбрать документы</button>
+                <div class="trip-draft-documents-list" id="tripDraftDocumentsList"></div>
+                <p class="trip-draft-documents-missing hidden" id="tripDraftDocumentsMissing" aria-live="polite"></p>
+                <label class="field wide">
+                  Комментарий, необязательно
+                  <textarea id="tripDraftDocumentsComment" rows="3" placeholder="Например: это поездка на свадьбу, отель уже оплачен"></textarea>
+                </label>
+                <p class="field-hint wide">До 8 файлов, до 10 МБ каждый и до 30 МБ на пакет. PDF, JPEG, PNG и WebP.</p>
+                <p class="trip-draft-status" id="tripDraftDocumentsStatus" aria-live="polite"></p>
+                <div class="trip-draft-actions">
+                  <button class="ghost-button" id="tripDraftDocumentsBackButton" type="button">Назад</button>
+                  <button class="primary-button" id="tripDraftDocumentsParseButton" type="button">Собрать поездку</button>
                 </div>
               </section>
 
@@ -359,6 +387,14 @@
       </header>
 
       <main class="main-content">
+        <section class="card booking-pack-upload-notice hidden" id="bookingPackUploadNotice" aria-live="polite">
+          <p id="bookingPackUploadSummary"></p>
+          <div class="booking-pack-upload-actions">
+            <button class="ghost-button compact" id="bookingPackUploadRetryButton" type="button">Повторить загрузку</button>
+            <button class="ghost-button compact" id="bookingPackUploadDismissButton" type="button">Скрыть</button>
+          </div>
+        </section>
+
         <section class="card proposal-inbox-card hidden" id="myItemProposalsSection" aria-label="Мои предложения">
           <div class="card-title-row">
             <h3>Мои предложения</h3>

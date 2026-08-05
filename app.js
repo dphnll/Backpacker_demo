@@ -24,8 +24,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.56";
-const APP_RELEASE_SUMMARY = "AI-черновик точнее раскладывает карточки по дням и спрашивает, если день неясен.";
+const APP_VERSION = "1.1.2.57";
+const APP_RELEASE_SUMMARY = "Загрузите билеты и брони — Backpacker соберёт из них черновик поездки.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -309,6 +309,7 @@ let tripShareSyncInFlight = false;
 let tripItemAttachmentsRequestVersion = 0;
 let tripItemAttachmentsPreviewsInFlight = false;
 let tripDraftPendingSaveTimer = null;
+let bookingPackFailedUploads = [];
 let tripItemAttachmentsState = {
   attachments: [],
   deletingId: "",
@@ -7785,10 +7786,12 @@ function openTrip(tripId, options = {}) {
 }
 
 function setTripDraftAiStatus(message = "", isError = false) {
-  const status = $("#tripDraftStatus");
-  if (!status) return;
-  status.textContent = message;
-  status.classList.toggle("is-error", Boolean(isError));
+  // Each step owns its own status node, and only the visible one is on screen.
+  [$("#tripDraftStatus"), $("#tripDraftDocumentsStatus")].forEach((status) => {
+    if (!status) return;
+    status.textContent = message;
+    status.classList.toggle("is-error", Boolean(isError));
+  });
 }
 
 function renderTripDraftAiSheet() {
@@ -7808,6 +7811,8 @@ function renderTripDraftAiSheet() {
 
   choice.classList.toggle("hidden", tripDraftAiState.mode !== "choice");
   $("#tripDraftResumeStep")?.classList.toggle("hidden", tripDraftAiState.mode !== "resume");
+  $("#tripDraftDocumentsStep")?.classList.toggle("hidden", tripDraftAiState.mode !== "documents");
+  if (tripDraftAiState.mode === "documents") renderTripDraftDocumentsStep();
   inputStep.classList.toggle("hidden", tripDraftAiState.mode !== "input");
   previewStep.classList.toggle("hidden", tripDraftAiState.mode !== "preview");
   voiceControls?.classList.toggle("hidden", tripDraftAiState.mode !== "input");
@@ -7830,11 +7835,196 @@ function createEmptyTripDraftAiState() {
   return {
     mode: "choice", inputMode: "text", isBusy: false, isCreating: false, isRecording: false,
     draft: null, sourceText: "", mediaRecorder: null, chunks: [], resumeMode: "",
+    // Booking Pack keeps real File objects in memory and only descriptors on disk.
+    bookingPackFiles: [], bookingPackMissing: [], isBookingPack: false,
   };
+}
+
+function getBookingPackCore() {
+  return window.BackpackerTripDraftAiCore;
+}
+
+function describeBookingPackFile(entry) {
+  return {
+    sourceFileId: entry.sourceFileId,
+    fileName: entry.fileName,
+    fileSize: entry.fileSize,
+    mimeType: entry.mimeType,
+  };
+}
+
+function addBookingPackFiles(fileList) {
+  const core = getBookingPackCore();
+  const existing = [...tripDraftAiState.bookingPackFiles];
+  const seen = new Set(existing.map((entry) => core.getBookingPackFileKey(entry)));
+  const rejected = [];
+  let totalBytes = existing.reduce((sum, entry) => sum + entry.fileSize, 0);
+
+  Array.from(fileList || []).forEach((file) => {
+    const mimeType = String(file.type || "").toLowerCase();
+    const descriptor = { fileName: file.name, fileSize: file.size, mimeType };
+    if (!["application/pdf", "image/jpeg", "image/png", "image/webp"].includes(mimeType)) {
+      rejected.push(`${file.name}: неподдерживаемый формат`);
+      return;
+    }
+    if (file.size > core.BOOKING_PACK_MAX_FILE_BYTES) {
+      rejected.push(`${file.name}: больше 10 МБ`);
+      return;
+    }
+    // Deduplicating on the same triple used to match files back after a reload keeps that
+    // key unique inside a pack.
+    if (seen.has(core.getBookingPackFileKey(descriptor))) return;
+    if (existing.length >= core.BOOKING_PACK_MAX_FILES) {
+      rejected.push(`${file.name}: больше ${core.BOOKING_PACK_MAX_FILES} файлов`);
+      return;
+    }
+    if (totalBytes + file.size > core.BOOKING_PACK_MAX_TOTAL_BYTES) {
+      rejected.push(`${file.name}: пакет больше 30 МБ`);
+      return;
+    }
+    seen.add(core.getBookingPackFileKey(descriptor));
+    totalBytes += file.size;
+    existing.push({
+      ...descriptor,
+      sourceFileId: globalThis.crypto?.randomUUID?.() || `file-${Date.now()}-${existing.length}`,
+      file,
+    });
+  });
+
+  tripDraftAiState = { ...tripDraftAiState, bookingPackFiles: existing };
+  return rejected;
+}
+
+// After a reload the descriptors survive but the File objects do not. Matching them back is
+// what makes the pack usable again; anything unmatched is reported, never guessed.
+function reconcileBookingPackFiles(fileList) {
+  const core = getBookingPackCore();
+  const picked = Array.from(fileList || []);
+  const { matched, missing } = core.matchBookingPackFiles(tripDraftAiState.bookingPackFiles, picked);
+  const files = tripDraftAiState.bookingPackFiles.map((entry) => (
+    entry.file ? entry : { ...entry, file: matched[entry.sourceFileId] || null }
+  ));
+  tripDraftAiState = {
+    ...tripDraftAiState,
+    bookingPackFiles: files,
+    bookingPackMissing: files.filter((entry) => !entry.file).map(describeBookingPackFile),
+  };
+  return missing;
+}
+
+function getBookingPackMissingFiles() {
+  return tripDraftAiState.bookingPackFiles.filter((entry) => !entry.file);
 }
 
 // Drafts are per identity so one browser never shows another account's unfinished trip.
 // Without a uid nothing is written or read: there is deliberately no anonymous bucket.
+function renderTripDraftDocumentsStep() {
+  const list = $("#tripDraftDocumentsList");
+  const missingNote = $("#tripDraftDocumentsMissing");
+  const parseButton = $("#tripDraftDocumentsParseButton");
+  if (!list) return;
+  const files = tripDraftAiState.bookingPackFiles;
+  const missing = getBookingPackMissingFiles();
+  const core = getBookingPackCore();
+
+  list.innerHTML = files.length
+    ? files.map((entry, index) => `
+      <article class="trip-draft-document-row${entry.file ? "" : " is-missing"}">
+        <div class="trip-draft-document-copy">
+          <span class="trip-draft-document-name" title="${escapeAttr(entry.fileName)}">${escapeHtml(entry.fileName)}</span>
+          <span class="trip-draft-document-meta">${escapeHtml(getTripItemAttachmentsCore()?.formatAttachmentSize?.(entry.fileSize) || "")}${entry.file ? "" : " · файл не найден"}</span>
+        </div>
+        <button class="ghost-button compact" type="button" data-booking-pack-remove="${index}">Убрать</button>
+      </article>
+    `).join("")
+    : `<p class="trip-draft-document-empty">Документы не выбраны.</p>`;
+
+  if (missingNote) {
+    missingNote.classList.toggle("hidden", missing.length === 0);
+    // After a reload the descriptors are there but the files are not; say so plainly.
+    if (missing.length) {
+      missingNote.textContent = `Не найдены исходные файлы: ${missing.length}. Выберите их снова, чтобы прикрепить к карточкам. Поездку можно создать и без них.`;
+    }
+  }
+  if (parseButton) {
+    const ready = files.some((entry) => entry.file);
+    parseButton.disabled = tripDraftAiState.isBusy || !ready;
+    parseButton.textContent = tripDraftAiState.isBusy ? "Читаю документы..." : "Собрать поездку";
+  }
+}
+
+function handleTripDraftDocumentsSelection(fileList) {
+  // A restored pack is being completed, not extended: match the picked files back first.
+  if (getBookingPackMissingFiles().length) {
+    reconcileBookingPackFiles(fileList);
+  } else {
+    const rejected = addBookingPackFiles(fileList);
+    if (rejected.length) setTripDraftAiStatus(rejected.join("; "), true);
+    else setTripDraftAiStatus("");
+  }
+  saveTripDraftPending();
+  renderTripDraftDocumentsStep();
+}
+
+function startTripDraftDocumentsMode() {
+  if (!TRIP_DRAFT_AI_ENABLED) return;
+  tripDraftAiState = { ...tripDraftAiState, mode: "documents", isBookingPack: true, isCreating: false };
+  setTripDraftAiStatus("");
+  renderTripDraftAiSheet();
+}
+
+async function parseBookingPackDocuments() {
+  if (tripDraftAiState.isBusy) return;
+  const entries = tripDraftAiState.bookingPackFiles.filter((entry) => entry.file);
+  if (!entries.length) {
+    setTripDraftAiStatus("Выберите документы поездки.", true);
+    return;
+  }
+  const comment = $("#tripDraftDocumentsComment")?.value.trim() || "";
+  tripDraftAiState = { ...tripDraftAiState, isBusy: true, sourceText: comment, isBookingPack: true };
+  setTripDraftAiStatus("Читаю документы...");
+  renderTripDraftAiSheet();
+  trackEvent("trip_draft_ai_generation_started", { mode: "documents" });
+  try {
+    const files = [];
+    for (const entry of entries) {
+      files.push({
+        sourceFileId: entry.sourceFileId,
+        fileName: entry.fileName,
+        mimeType: entry.mimeType,
+        dataUrl: await blobToDataUrl(entry.file),
+      });
+    }
+    const payload = await callTripDraftAiFunction("parse_documents", {
+      files,
+      comment,
+      schemaVersion: getBookingPackCore().BOOKING_PACK_SCHEMA_VERSION,
+      today: getClientTodayIsoDate(),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+    });
+    // Slice 1 guardrails do not apply: there is no typed text to ground against. Evidence
+    // rules already ran on the server. Chronology still applies to the extracted dates.
+    const draft = normalizeTripDraftResponse(payload, comment, { applyGuardrails: false, applyChronology: true });
+    tripDraftAiState = { ...tripDraftAiState, isBusy: false, mode: "preview", draft };
+    saveTripDraftPending();
+    renderTripDraftPreview(draft);
+    setTripDraftAiStatus("");
+    renderTripDraftAiSheet();
+    trackEvent("trip_draft_ai_generation_completed", { mode: "documents", result: "success" });
+  } catch (error) {
+    tripDraftAiState = { ...tripDraftAiState, isBusy: false };
+    const message = {
+      documents_too_large: "Пакет документов больше 30 МБ. Уберите часть файлов.",
+      too_many_documents: "Слишком много файлов. Оставьте не больше восьми.",
+      unsupported_document_type: "Один из файлов неподдерживаемого формата.",
+      supabase_not_configured: "Supabase не настроен: разбор документов пока недоступен.",
+    }[error.message] || "Не удалось разобрать документы. Файлы остались выбранными, попробуйте ещё раз.";
+    setTripDraftAiStatus(message, true);
+    renderTripDraftAiSheet();
+    trackEvent("trip_draft_ai_generation_failed", { mode: "documents", result: "failed", error_reason_bucket: "unknown" });
+  }
+}
+
 function getTripDraftPendingKey() {
   const userId = String(getCurrentRecoverableAuthUser()?.id || "");
   return userId ? `${TRIP_DRAFT_PENDING_KEY_PREFIX}:${userId}` : "";
@@ -7854,9 +8044,12 @@ function saveTripDraftPending() {
   if (!key) return;
   const { mode, inputMode, draft, isBusy, isCreating, isRecording } = tripDraftAiState;
   if (isBusy || isCreating || isRecording) return;
-  if (mode !== "input" && mode !== "preview") return;
+  if (mode !== "input" && mode !== "preview" && mode !== "documents") return;
   const sourceText = getTripDraftPendingSourceText();
-  if (!sourceText.trim()) return;
+  // A Booking Pack has files and a draft to protect even when the comment is empty.
+  const hasBookingPackWork = Boolean(tripDraftAiState.isBookingPack)
+    && (tripDraftAiState.bookingPackFiles.length > 0 || Boolean(draft));
+  if (!sourceText.trim() && !hasBookingPackWork) return;
   try {
     localStorage.setItem(key, JSON.stringify({
       schemaVersion: TRIP_DRAFT_AI_SCHEMA_VERSION,
@@ -7865,6 +8058,9 @@ function saveTripDraftPending() {
       inputMode: inputMode === "voice" ? "voice" : "text",
       sourceText,
       draft: mode === "preview" ? draft : null,
+      isBookingPack: Boolean(tripDraftAiState.isBookingPack),
+      // Descriptors only. File contents and base64 are never written to storage.
+      bookingPackFiles: tripDraftAiState.bookingPackFiles.map(describeBookingPackFile),
     }));
   } catch {
     // Persistence is best-effort; the draft still lives in memory for this session.
@@ -7905,14 +8101,20 @@ function readTripDraftPending() {
     const parsed = JSON.parse(localStorage.getItem(key) || "null");
     if (!parsed || typeof parsed !== "object") return null;
     const sourceText = String(parsed.sourceText || "");
-    if (!sourceText.trim()) return null;
+    const bookingPackFiles = Array.isArray(parsed.bookingPackFiles)
+      ? parsed.bookingPackFiles.filter((entry) => entry && entry.sourceFileId)
+      : [];
+    const draft = parsed.draft && typeof parsed.draft === "object" ? parsed.draft : null;
+    if (!sourceText.trim() && !bookingPackFiles.length && !draft) return null;
     return {
       schemaVersion: String(parsed.schemaVersion || ""),
       updatedAt: String(parsed.updatedAt || ""),
-      mode: parsed.mode === "preview" ? "preview" : "input",
+      mode: parsed.mode === "preview" ? "preview" : parsed.mode === "documents" ? "documents" : "input",
       inputMode: parsed.inputMode === "voice" ? "voice" : "text",
       sourceText,
-      draft: parsed.draft && typeof parsed.draft === "object" ? parsed.draft : null,
+      draft,
+      isBookingPack: Boolean(parsed.isBookingPack),
+      bookingPackFiles,
     };
   } catch {
     return null;
@@ -7939,7 +8141,11 @@ function restoreTripDraftPending(pending) {
     inputMode: pending.inputMode,
     sourceText: pending.sourceText,
     draft,
-    resumeMode: draft && pending.mode === "preview" ? "preview" : "input",
+    isBookingPack: Boolean(pending.isBookingPack),
+    // The File objects did not survive the reload; only the descriptors did.
+    bookingPackFiles: (pending.bookingPackFiles || []).map((entry) => ({ ...entry, file: null })),
+    bookingPackMissing: pending.bookingPackFiles || [],
+    resumeMode: draft && pending.mode === "preview" ? "preview" : pending.isBookingPack ? "documents" : "input",
   };
 }
 
@@ -8219,6 +8425,12 @@ function normalizeTripDraftResponse(payload = {}, sourceText = "", { applyGuardr
       price: Math.max(0, parseMoney(item.price)),
       priceConfidence: core?.normalizePriceConfidence?.(item.priceConfidence) || "unknown",
       priceSourceText: String(item.priceSourceText || "").trim().slice(0, 160),
+      // Booking Pack fields travel with the draft so the preview can show the quote and the
+      // confirmation step can bind files. They are dropped when a TripItem is created.
+      evidenceText: String(item.evidenceText || "").trim().slice(0, core?.BOOKING_PACK_MAX_EVIDENCE_CHARS || 160),
+      priceKind: core?.PRICE_KIND_VALUES?.includes(item.priceKind) ? item.priceKind : "",
+      sourceFileIds: Array.isArray(item.sourceFileIds) ? item.sourceFileIds.filter(Boolean) : [],
+      sourcePage: Number.isFinite(Number(item.sourcePage)) ? Math.trunc(Number(item.sourcePage)) : null,
       paidAmount: 0,
       link: String(item.link || "").trim().slice(0, 500),
       locationText: String(item.locationText || "").trim().slice(0, 160),
@@ -8281,6 +8493,11 @@ function renderTripDraftBudgetNote(trip = {}) {
 }
 
 function renderTripDraftPriceNote(item = {}) {
+  // A value read out of the traveller's own document: shown with its quote so they can
+  // check it against the file. Until they press create it is extracted, not confirmed.
+  if (item.evidenceText) {
+    return `<p class="trip-draft-price-note is-extracted"><strong>Из документа — проверьте.</strong> В документе: «${escapeHtml(item.evidenceText)}»</p>`;
+  }
   if (item.priceConfidence === "estimate" && item.priceSourceText) {
     return `<p class="trip-draft-price-note is-estimate">Примерно: ${escapeHtml(item.priceSourceText)}. Это ваша формулировка, а не подтверждённая цена.</p>`;
   }
@@ -8552,9 +8769,10 @@ function createTripEntryFromDraft(draft) {
         durationMinutes: item.durationMinutes,
         price: item.price,
         // An unknown price is not a free event: it carries no allocation, so it never
-        // enters the budget as a confirmed zero.
-        priceConfidence: item.priceConfidence,
-        priceSourceText: item.priceSourceText,
+        // enters the budget as a confirmed zero. Pressing create is also what turns a value
+        // extracted from a document into a confirmed one; the quote behind it is dropped.
+        priceConfidence: getBookingPackCore()?.resolveConfirmedPriceConfidence?.(item) || item.priceConfidence,
+        priceSourceText: item.priceKind ? "" : item.priceSourceText,
         paidAmount: item.paidAmount,
         participantId: selfParticipant.id,
         allocations: item.priceConfidence !== "unknown" && item.price > 0
@@ -8571,7 +8789,87 @@ function createTripEntryFromDraft(draft) {
   return createTripEntry(nextState, { id });
 }
 
-function createTripFromAiDraft() {
+// Uploads never abort the batch: one bad file must not silently swallow the rest, and the
+// trip already exists by this point. Failures are reported and retryable in place.
+async function attachBookingPackDocuments(entry, draft, skippedCount = 0) {
+  const byId = new Map(tripDraftAiState.bookingPackFiles.filter((file) => file.file).map((file) => [file.sourceFileId, file]));
+  const jobs = [];
+  draft.items.forEach((item, index) => {
+    const tripItem = entry.state.items[index];
+    if (!tripItem) return;
+    (item.sourceFileIds || []).forEach((sourceFileId) => {
+      const pack = byId.get(sourceFileId);
+      // One document can back several cards, so it is attached to each of them.
+      if (pack) jobs.push({ tripItemId: tripItem.id, file: pack.file, fileName: pack.fileName });
+    });
+  });
+  if (!jobs.length) {
+    showToast(skippedCount ? `Поездка создана. Вложений не добавлено: ${skippedCount}` : "Поездка создана");
+    return;
+  }
+
+  showToast("Поездка создана. Прикрепляю документы...");
+  const failed = [];
+  try {
+    await ensureSupabaseOwnerSession();
+    for (const job of jobs) {
+      try {
+        await getTripItemAttachmentsClientApi().uploadTripItemAttachment(
+          getSupabaseClient(),
+          { tripId: entry.id, tripItemId: job.tripItemId },
+          job.file,
+        );
+      } catch {
+        failed.push(job);
+      }
+    }
+  } catch {
+    jobs.forEach((job) => failed.push(job));
+  }
+
+  bookingPackFailedUploads = failed.map((job) => ({ ...job, tripId: entry.id }));
+  renderBookingPackUploadNotice();
+  const total = failed.length + skippedCount;
+  if (!total) showToast("Поездка создана, документы прикреплены");
+  else showToast(`Поездка создана. Не добавлено вложений: ${total}`);
+}
+
+async function retryBookingPackUploads() {
+  if (!bookingPackFailedUploads.length) return;
+  const pending = [...bookingPackFailedUploads];
+  const failed = [];
+  try {
+    await ensureSupabaseOwnerSession();
+    for (const job of pending) {
+      try {
+        await getTripItemAttachmentsClientApi().uploadTripItemAttachment(
+          getSupabaseClient(),
+          { tripId: job.tripId, tripItemId: job.tripItemId },
+          job.file,
+        );
+      } catch {
+        failed.push(job);
+      }
+    }
+  } catch {
+    pending.forEach((job) => failed.push(job));
+  }
+  bookingPackFailedUploads = failed;
+  renderBookingPackUploadNotice();
+  showToast(failed.length ? `Осталось не загружено: ${failed.length}` : "Документы прикреплены");
+}
+
+function renderBookingPackUploadNotice() {
+  const notice = $("#bookingPackUploadNotice");
+  if (!notice) return;
+  const count = bookingPackFailedUploads.length;
+  notice.classList.toggle("hidden", count === 0);
+  if (!count) return;
+  const names = bookingPackFailedUploads.map((job) => job.fileName).join(", ");
+  $("#bookingPackUploadSummary").textContent = `Не загрузились вложения: ${count}. ${names}`;
+}
+
+async function createTripFromAiDraft() {
   if (!tripDraftAiState.draft || tripDraftAiState.isCreating) return;
   const previewSourceText = $("#tripDraftPreviewSourceText")?.value.trim();
   if (typeof previewSourceText === "string" && previewSourceText !== String(tripDraftAiState.sourceText || "").trim()) {
@@ -8580,6 +8878,23 @@ function createTripFromAiDraft() {
   }
   const draft = syncTripDraftPreviewStateFromForm();
   if (!draft) return;
+  // A restored Booking Pack may have lost its files. The trip is never blocked forever:
+  // the traveller either goes back for the files or creates the trip without them.
+  const missingFiles = tripDraftAiState.isBookingPack ? getBookingPackMissingFiles() : [];
+  if (missingFiles.length) {
+    const names = missingFiles.map((entry) => entry.fileName).join(", ");
+    const proceed = window.confirm(
+      `Не найдены исходные файлы: ${missingFiles.length}. Поездка будет создана без этих вложений. `
+      + `Извлечённые данные останутся в карточках — проверьте их.\n\n${names}\n\n`
+      + `ОК — создать без вложений. Отмена — вернуться и выбрать файлы.`,
+    );
+    if (!proceed) {
+      tripDraftAiState = { ...tripDraftAiState, mode: "documents" };
+      setTripDraftAiStatus("Выберите недостающие файлы и вернитесь к созданию поездки.");
+      renderTripDraftAiSheet();
+      return;
+    }
+  }
   tripDraftAiState = { ...tripDraftAiState, isCreating: true, draft };
   renderTripDraftAiSheet();
   try {
@@ -8590,7 +8905,8 @@ function createTripFromAiDraft() {
     clearTripDraftPending();
     closeSheet("tripDraftAiSheet");
     openTrip(entry.id);
-    showToast("Поездка создана");
+    if (tripDraftAiState.isBookingPack) await attachBookingPackDocuments(entry, draft, missingFiles.length);
+    else showToast("Поездка создана");
     trackEvent("trip_draft_ai_confirmed", { mode: tripDraftAiState.inputMode === "voice" ? "voice" : "text", result: "success" });
     trackEvent("trip_created", {
       ...getTripAnalyticsContext(entry.state.trip),
@@ -9091,6 +9407,8 @@ function bindEvents() {
       if (mode === "manual") {
         closeSheet("tripDraftAiSheet");
         createNewTrip("home_manual");
+      } else if (mode === "documents") {
+        startTripDraftDocumentsMode();
       } else if (mode === "text" || mode === "voice") {
         startTripDraftTextMode(mode);
       }
@@ -9372,6 +9690,41 @@ function bindEvents() {
     toggleTripDraftRecording();
   });
   $("#tripDraftParseButton")?.addEventListener("click", parseTripDraftText);
+  $("#tripDraftDocumentsAddButton")?.addEventListener("click", () => {
+    const input = $("#tripDraftDocumentsInput");
+    if (!input) return;
+    input.value = "";
+    input.click();
+  });
+  $("#tripDraftDocumentsInput")?.addEventListener("change", (event) => {
+    const input = event.currentTarget;
+    const files = input.files;
+    if (files?.length) handleTripDraftDocumentsSelection(files);
+    input.value = "";
+  });
+  $("#tripDraftDocumentsParseButton")?.addEventListener("click", parseBookingPackDocuments);
+  $("#tripDraftDocumentsBackButton")?.addEventListener("click", () => {
+    if (tripDraftAiState.isBusy) return;
+    tripDraftAiState = { ...tripDraftAiState, mode: "choice" };
+    setTripDraftAiStatus("");
+    renderTripDraftAiSheet();
+  });
+  $("#tripDraftDocumentsList")?.addEventListener("click", (event) => {
+    const removeButton = event.target.closest("[data-booking-pack-remove]");
+    if (!removeButton) return;
+    const index = Number(removeButton.dataset.bookingPackRemove);
+    tripDraftAiState = {
+      ...tripDraftAiState,
+      bookingPackFiles: tripDraftAiState.bookingPackFiles.filter((entry, entryIndex) => entryIndex !== index),
+    };
+    saveTripDraftPending();
+    renderTripDraftDocumentsStep();
+  });
+  $("#bookingPackUploadRetryButton")?.addEventListener("click", retryBookingPackUploads);
+  $("#bookingPackUploadDismissButton")?.addEventListener("click", () => {
+    bookingPackFailedUploads = [];
+    renderBookingPackUploadNotice();
+  });
   $("#tripDraftEditTextButton")?.addEventListener("click", () => {
     tripDraftAiState = { ...tripDraftAiState, mode: "input" };
     renderTripDraftAiSheet();

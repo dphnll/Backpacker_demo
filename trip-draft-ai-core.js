@@ -174,10 +174,12 @@
     return [...groundingLines, ...TRIP_DRAFT_RULES].join("\n");
   }
 
-  function assertSupportedSchemaVersion(value) {
+  // The expected contract is a parameter so the document path can validate its own version
+  // without weakening the text path, which keeps its default.
+  function assertSupportedSchemaVersion(value, expected = TRIP_DRAFT_AI_SCHEMA_VERSION) {
     const version = String(value ?? "").trim();
     if (!version) throw draftError("trip_draft_schema_version_missing");
-    if (version !== TRIP_DRAFT_AI_SCHEMA_VERSION) throw draftError("trip_draft_schema_version_unsupported");
+    if (version !== expected) throw draftError("trip_draft_schema_version_unsupported");
     return version;
   }
 
@@ -228,6 +230,143 @@
     });
 
     return { ...input, trip, items: guardedItems, questions: Array.isArray(input.questions) ? input.questions : [] };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Booking Pack: the traveller's own documents are the source of facts.
+  // Slice 1 guardrails ground values in the traveller's typed text and therefore do not
+  // apply here at all — there is no typed text. Evidence rules below take their place.
+  // ---------------------------------------------------------------------------
+
+  const BOOKING_PACK_SCHEMA_VERSION = "booking_pack.v1";
+  const BOOKING_PACK_MAX_FILES = 8;
+  const BOOKING_PACK_MAX_FILE_BYTES = 10 * 1024 * 1024;
+  const BOOKING_PACK_MAX_TOTAL_BYTES = 30 * 1024 * 1024;
+  const BOOKING_PACK_MAX_EVIDENCE_CHARS = 160;
+  const PRICE_KIND_VALUES = Object.freeze(["exact", "approximate"]);
+
+  // Label-driven redaction. Blocking by shape alone would also destroy a flight number,
+  // so a value is removed because of the word standing next to it, not because of its form.
+  // \w does not cover Cyrillic in JavaScript, so Russian labels use an explicit letter class.
+  // Using \w here silently disabled every Russian rule.
+  const SENSITIVE_LABELLED_PATTERNS = [
+    /(?:pnr|код[\s№#:]*брон[а-яё]*|номер[\s№#:]*брон[а-яё]*|booking[\s]*(?:reference|ref|code|number)|reservation[\s]*code)[\s№#:.-]*[A-ZА-ЯЁ0-9][A-ZА-ЯЁ0-9-]{3,}/gi,
+    /(?:номер[\s№#:]*билета|ticket[\s]*(?:no|number|#)|e-?ticket)[\s№#:.-]*[A-ZА-ЯЁ0-9][A-ZА-ЯЁ0-9-]{5,}/gi,
+    /(?:паспорт[а-яё]*|passport|документ[\s№#:]*удостовер[а-яё]*)[\s№#:.-]*[A-ZА-ЯЁ0-9][A-ZА-ЯЁ0-9\s-]{4,}/gi,
+    /(?:карт[а-яё]*|card|visa|mastercard|мир)[\s№#:.-]*(?:\d[\s-]?){12,19}/gi,
+  ];
+
+  // Second net: shapes that are sensitive whatever stands next to them.
+  const SENSITIVE_SHAPE_PATTERNS = [
+    /\b(?:\d[\s-]?){13,19}\b/g,
+    /\b\d{13}\b/g,
+  ];
+
+  function sanitizeExtractedText(value, limit = 1000) {
+    let text = String(value ?? "");
+    SENSITIVE_LABELLED_PATTERNS.forEach((pattern) => {
+      text = text.replace(pattern, " ");
+    });
+    SENSITIVE_SHAPE_PATTERNS.forEach((pattern) => {
+      text = text.replace(pattern, " ");
+    });
+    return text.replace(/\s{2,}/g, " ").trim().slice(0, limit);
+  }
+
+  const bookingPackSchema = {
+    type: "object",
+    additionalProperties: false,
+    required: ["trip", "items", "questions"],
+    properties: {
+      trip: {
+        type: "object",
+        additionalProperties: false,
+        required: ["title", "destination", "currency", "preferencesText"],
+        properties: {
+          title: { type: "string" },
+          destination: { type: "string" },
+          currency: { type: "string", enum: CURRENCY_VALUES.slice() },
+          preferencesText: { type: "string" },
+        },
+      },
+      items: {
+        type: "array",
+        maxItems: MAX_ITEMS,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "title", "type", "status", "priority", "date", "startTime", "durationMinutes",
+            "price", "currency", "priceKind", "evidenceText", "sourceFileIndex", "sourcePage",
+            "locationText", "notes",
+          ],
+          properties: {
+            title: { type: "string" },
+            type: { type: "string", enum: ITEM_TYPE_VALUES.slice() },
+            status: { type: "string", enum: ITEM_STATUS_VALUES.slice() },
+            priority: { type: "string", enum: ITEM_PRIORITY_VALUES.slice() },
+            date: { type: "string", description: "YYYY-MM-DD from the document, otherwise empty string" },
+            startTime: { type: "string", description: "HH:MM from the document, otherwise empty string" },
+            durationMinutes: { type: "number" },
+            price: { type: "number", description: "Only a number printed in the document. Use 0 when absent." },
+            currency: { type: ["string", "null"], description: "Currency printed next to the price, otherwise null." },
+            priceKind: { type: ["string", "null"], enum: ["exact", "approximate", null] },
+            evidenceText: { type: ["string", "null"], description: "Short verbatim quote proving the price, under 160 characters, otherwise null." },
+            sourceFileIndex: { type: "array", maxItems: BOOKING_PACK_MAX_FILES, items: { type: "number" } },
+            sourcePage: { type: ["number", "null"] },
+            locationText: { type: "string" },
+            notes: { type: "string" },
+          },
+        },
+      },
+      questions: { type: "array", maxItems: MAX_QUESTIONS, items: { type: "string" } },
+    },
+  };
+
+  const BOOKING_PACK_RULES = [
+    "Ты извлекаешь факты из документов поездки: билетов, броней, ваучеров и подтверждений.",
+    "Верни только структурированный JSON по схеме. Источник фактов — исключительно приложенные документы.",
+    "Ничего не выдумывай. Если факта в документах нет — оставь поле пустым и при необходимости задай вопрос.",
+    "Не пользуйся своими знаниями о ценах, расписаниях, отелях и достопримечательностях.",
+    "",
+    "ДАТЫ И ВРЕМЯ",
+    "Сегодняшняя дата передана явно. Используй её только чтобы понять год, если в документе он не напечатан.",
+    "date и startTime бери из документа. Если время не напечатано — startTime пустой.",
+    "Даты поездки не придумывай: приложение выведет их из найденных карточек.",
+    "",
+    "КАРТОЧКИ",
+    "Транспорт: одна карточка на один сегмент перемещения. Билет туда и обратно — две отдельные карточки.",
+    "В названии транспортной карточки оставляй вид и маршрут, например 'Перелёт Москва — Тбилиси'.",
+    "Номер рейса, поезда или автобусного маршрута можно оставить в названии или заметке: это полезные сведения о маршруте.",
+    "Проживание: одна карточка на всё бронирование, с датой заезда. Не создавай отдельную карточку на каждую ночь.",
+    "Экскурсии, рестораны и мероприятия: одна карточка на одну бронь.",
+    "Если один документ описывает несколько событий — создай несколько карточек и укажи у всех один и тот же sourceFileIndex.",
+    "Если одно событие подтверждено несколькими документами — перечисли все их индексы в sourceFileIndex.",
+    "",
+    "ЦЕНА",
+    "price — только число, напечатанное в документе. currency — валюта рядом с этим числом.",
+    "evidenceText — короткая дословная цитата из документа, подтверждающая цену, не длиннее 160 символов. Не абзац и не вся строка.",
+    "priceKind='exact' для точной итоговой суммы, 'approximate' для приблизительной или диапазона.",
+    "Если цены в документе нет — price=0, currency=null, priceKind=null, evidenceText=null. Это нормальный результат.",
+    "Никогда не оценивай стоимость сам.",
+    "",
+    "ЧЕГО НЕ ИЗВЛЕКАТЬ",
+    "Не переноси в поля карточки: коды бронирования и PNR, номера билетов, номера и изображения QR и штрихкодов, имена и фамилии пассажиров, паспортные данные, номера карт и любые платёжные реквизиты.",
+    "Эти данные остаются в самом документе, который будет приложен к карточке. Приложению они не нужны.",
+    "Номер рейса, поезда и автобусного маршрута к запрещённым не относятся: это описание маршрута, а не удостоверяющий реквизит.",
+    "",
+    "ВОПРОСЫ",
+    "Задай не больше пяти коротких вопросов, если документ нечитаем, данные противоречат друг другу или важного факта не хватает.",
+  ];
+
+  function buildBookingPackPrompt({ today = "", timezone = "" } = {}) {
+    const grounding = [
+      "КОНТЕКСТ ВРЕМЕНИ",
+      today ? `Сегодняшняя дата: ${today}.` : "Сегодняшняя дата не передана: год из документа не достраивай.",
+      timezone ? `Часовой пояс пользователя: ${timezone}.` : "",
+      "",
+    ].filter((line) => line !== "");
+    return [...grounding, ...BOOKING_PACK_RULES].join("\n");
   }
 
   const VIRTUAL_DAY_PREFIX = "day-";
@@ -341,7 +480,135 @@
     };
   }
 
+  // A file is matched back after a reload by name, size and type. The pack is deduplicated
+  // on exactly that triple, so within one pack the key is unique by construction.
+  function getBookingPackFileKey(descriptor = {}) {
+    return [
+      String(descriptor.fileName ?? descriptor.name ?? "").trim().toLowerCase(),
+      String(descriptor.fileSize ?? descriptor.size ?? ""),
+      String(descriptor.mimeType ?? descriptor.type ?? "").trim().toLowerCase(),
+    ].join("|");
+  }
+
+  function matchBookingPackFiles(descriptors = [], files = []) {
+    const pool = new Map();
+    files.forEach((file) => {
+      const key = getBookingPackFileKey(file);
+      if (!pool.has(key)) pool.set(key, []);
+      pool.get(key).push(file);
+    });
+    const matched = {};
+    const missing = [];
+    descriptors.forEach((descriptor) => {
+      const bucket = pool.get(getBookingPackFileKey(descriptor));
+      const file = bucket && bucket.length ? bucket.shift() : null;
+      if (file) matched[descriptor.sourceFileId] = file;
+      else missing.push(descriptor);
+    });
+    return { matched, missing };
+  }
+
+  function normalizePriceKind(value) {
+    const kind = String(value ?? "").trim().toLowerCase();
+    return PRICE_KIND_VALUES.includes(kind) ? kind : "";
+  }
+
+  // Trip dates are derived, never asked of the model: the earliest and latest day found.
+  function deriveBookingPackTripDates(items = []) {
+    const dates = items
+      .map((item) => String(item?.date || "").trim())
+      .filter((date) => isValidIsoDate(date))
+      .sort();
+    if (!dates.length) return { startDate: "", endDate: "" };
+    return { startDate: dates[0], endDate: dates[dates.length - 1] };
+  }
+
+  // Evidence rules replace the Slice 1 guardrails on this path. A price is admitted only
+  // when the document actually shows it: amount, currency, a quote and a real file behind it.
+  function applyBookingPackEvidenceRules(draft = {}, { fileIds = [] } = {}) {
+    const input = draft && typeof draft === "object" ? draft : {};
+    const rawTrip = input.trip && typeof input.trip === "object" ? input.trip : {};
+    const rawItems = Array.isArray(input.items) ? input.items : [];
+    const generated = [];
+
+    const items = rawItems.slice(0, MAX_ITEMS).map((rawItem) => {
+      const item = rawItem && typeof rawItem === "object" ? { ...rawItem } : {};
+      const sourceFileIds = (Array.isArray(item.sourceFileIndex) ? item.sourceFileIndex : [])
+        .map((index) => fileIds[Math.trunc(Number(index))])
+        .filter(Boolean);
+      const title = sanitizeExtractedText(item.title, 120);
+      const evidenceText = sanitizeExtractedText(item.evidenceText, BOOKING_PACK_MAX_EVIDENCE_CHARS);
+      const amount = Number(item.price);
+      const currency = CURRENCY_VALUES.includes(String(item.currency || "").toUpperCase())
+        ? String(item.currency).toUpperCase()
+        : "";
+      const priceKind = normalizePriceKind(item.priceKind);
+      const priceAdmitted = Number.isFinite(amount) && amount > 0 && Boolean(currency)
+        && Boolean(evidenceText) && sourceFileIds.length > 0;
+      if (!priceAdmitted && Number.isFinite(amount) && amount > 0) {
+        generated.push(`Для «${title || "карточки"}» цена в документе не подтверждена. Проверьте и впишите её вручную.`);
+      }
+      return {
+        ...item,
+        title,
+        locationText: sanitizeExtractedText(item.locationText, 160),
+        notes: sanitizeExtractedText(item.notes, 1000),
+        // Until the traveller presses create this is an extracted value, never a confirmed fact.
+        price: priceAdmitted ? amount : 0,
+        priceConfidence: priceAdmitted ? "estimate" : "unknown",
+        priceSourceText: "",
+        priceKind: priceAdmitted ? (priceKind || "approximate") : "",
+        evidenceText: priceAdmitted ? evidenceText : "",
+        currency: priceAdmitted ? currency : "",
+        sourceFileIds,
+        sourcePage: Number.isFinite(Number(item.sourcePage)) ? Math.trunc(Number(item.sourcePage)) : null,
+        dayIndex: 0,
+        sourceFileIndex: undefined,
+      };
+    });
+
+    const { startDate, endDate } = deriveBookingPackTripDates(items);
+    return {
+      trip: {
+        ...rawTrip,
+        title: sanitizeExtractedText(rawTrip.title, 80) || "Поездка по документам",
+        destination: sanitizeExtractedText(rawTrip.destination, 120),
+        preferencesText: sanitizeExtractedText(rawTrip.preferencesText, 4000),
+        startDate,
+        endDate,
+        datePrecision: startDate ? "exact" : "none",
+        dateSourceText: "",
+        budgetLimit: 0,
+        budgetLevel: "unknown",
+        budgetSourceText: "",
+      },
+      items,
+      questions: mergeTripChronologyQuestions(generated, input.questions, MAX_QUESTIONS),
+    };
+  }
+
+  // Pressing create is what turns an extracted number into a confirmed one.
+  function resolveConfirmedPriceConfidence(item = {}) {
+    if (!item || !item.priceKind) return item?.priceConfidence || "unknown";
+    return item.priceKind === "exact" ? "confirmed" : "estimate";
+  }
+
   const api = {
+    BOOKING_PACK_MAX_EVIDENCE_CHARS,
+    BOOKING_PACK_MAX_FILES,
+    BOOKING_PACK_MAX_FILE_BYTES,
+    BOOKING_PACK_MAX_TOTAL_BYTES,
+    BOOKING_PACK_SCHEMA_VERSION,
+    BOOKING_PACK_RULES,
+    PRICE_KIND_VALUES,
+    applyBookingPackEvidenceRules,
+    bookingPackSchema,
+    buildBookingPackPrompt,
+    deriveBookingPackTripDates,
+    getBookingPackFileKey,
+    matchBookingPackFiles,
+    resolveConfirmedPriceConfidence,
+    sanitizeExtractedText,
     BUDGET_LEVEL_VALUES,
     CURRENCY_VALUES,
     DATE_PRECISION_VALUES,

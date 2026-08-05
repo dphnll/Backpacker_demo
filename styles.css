@@ -815,8 +815,70 @@ a {
   line-height: 1.35;
 }
 
-.trip-draft-price-note.is-estimate {
+.trip-draft-price-note.is-estimate,
+.trip-draft-price-note.is-extracted {
   color: #8a5a12;
+}
+
+.trip-draft-documents {
+  display: grid;
+  gap: 10px;
+}
+
+.trip-draft-documents-list {
+  display: grid;
+  gap: 6px;
+}
+
+.trip-draft-document-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(18, 54, 61, 0.12);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.trip-draft-document-row.is-missing {
+  border-color: rgba(139, 47, 40, 0.35);
+}
+
+.trip-draft-document-name {
+  display: block;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trip-draft-document-meta,
+.trip-draft-document-empty,
+.trip-draft-documents-missing {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.trip-draft-documents-missing {
+  color: #8b2f28;
+}
+
+.booking-pack-upload-notice {
+  display: grid;
+  gap: 8px;
+  border-color: rgba(139, 47, 40, 0.35);
+}
+
+.booking-pack-upload-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .sync-conflict-card {
