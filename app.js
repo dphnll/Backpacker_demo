@@ -24,7 +24,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.59";
+const APP_VERSION = "1.1.2.60";
 const APP_RELEASE_SUMMARY = "Кнопки черновика читаются целиком, а цена в чужой валюте не попадёт в бюджет.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -4121,7 +4121,7 @@ function renderHeader() {
   $("#tripMeta").textContent = `${state.trip.destination || "Направление"} · ${formatTripCardDateRange(state.trip.startDate, state.trip.endDate)} · ${formatDayCountText(dates.length || 1)}`;
   $("#tripBudgetMeta").textContent = canShowBudget() ? `Бюджет ${formatMoney(totals.budgetLimit)}` : "Смета скрыта";
   $("#paidTotal").textContent = formatBudgetMoney(totals.paidTotal);
-  $("#plannedTotal").textContent = formatBudgetMoney(totals.confirmedTotal);
+  $("#plannedTotal").textContent = formatBudgetMoney(totals.confirmedOutstanding);
   $("#remainingTotal").textContent = formatBudgetMoney(totals.remainingConfirmed);
   $("#remainingTotal").style.color = totals.remainingConfirmed < 0 ? "var(--danger)" : "";
 }
@@ -4236,7 +4236,7 @@ function renderBudget() {
       <div class="budget-grid">
         <div class="metric-card service-total budget-limit-total"><span>Бюджет поездки</span><strong>${formatBudgetMoney(totals.budgetLimit)}</strong></div>
         <div class="metric-card"><span>Оплачено</span><strong>${formatBudgetMoney(totals.paidTotal)}</strong></div>
-        <div class="metric-card"><span>Бронь</span><strong>${formatBudgetMoney(totals.confirmedTotal)}</strong></div>
+        <div class="metric-card"><span>Бронь</span><strong>${formatBudgetMoney(totals.confirmedOutstanding)}</strong></div>
         <div class="metric-card"><span>Осталось оплатить</span><strong>${formatBudgetMoney(totals.confirmedOutstanding)}</strong></div>
         <div class="metric-card"><span>Свободно</span><strong style="color:${canShowBudget() && totals.remainingConfirmed < 0 ? "var(--danger)" : "var(--green)"}">${formatBudgetMoney(totals.remainingConfirmed)}</strong></div>
       </div>
@@ -6349,7 +6349,7 @@ function buildShareText(compact = false) {
       "Бюджет:",
       `Бюджет поездки: ${formatMoney(totals.budgetLimit)}`,
       `Оплачено: ${formatMoney(totals.paidTotal)}`,
-      `Бронь: ${formatMoney(totals.confirmedTotal)}`,
+      `Бронь: ${formatMoney(totals.confirmedOutstanding)}`,
       `Осталось оплатить: ${formatMoney(totals.confirmedOutstanding)}`,
       `Свободно: ${formatMoney(totals.remainingConfirmed)}`,
       `Идеи, хотелки, запас: ${formatMoney(totals.additionalTotal)}`,
@@ -7013,7 +7013,7 @@ async function buildTripPdfBlob(options) {
       const cardWidth = (contentWidth - cardGap * 2) / 3;
       const cardY = y + 114;
       drawPdfMetricCard(margin, cardY, cardWidth, 42, "Оплачено", formatMoney(totals.paidTotal), "paid");
-      drawPdfMetricCard(margin + cardWidth + cardGap, cardY, cardWidth, 42, "Бронь", formatMoney(totals.confirmedTotal));
+      drawPdfMetricCard(margin + cardWidth + cardGap, cardY, cardWidth, 42, "Бронь", formatMoney(totals.confirmedOutstanding));
       drawPdfMetricCard(margin + (cardWidth + cardGap) * 2, cardY, cardWidth, 42, "Свободно", formatMoney(totals.remainingConfirmed));
     }
     if (hasGroupParticipants) {
@@ -7053,7 +7053,7 @@ async function buildTripPdfBlob(options) {
     const budgetRows = [
       ["Бюджет поездки", formatMoney(totals.budgetLimit)],
       ["Оплачено", formatMoney(totals.paidTotal)],
-      ["Бронь", formatMoney(totals.confirmedTotal)],
+      ["Бронь", formatMoney(totals.confirmedOutstanding)],
       ["Осталось оплатить", formatMoney(totals.confirmedOutstanding)],
       ["Свободно", formatMoney(totals.remainingConfirmed)],
       ["Идеи, хотелки, запас", formatMoney(totals.additionalTotal)],
