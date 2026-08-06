@@ -24,8 +24,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.57";
-const APP_RELEASE_SUMMARY = "Загрузите билеты и брони — Backpacker соберёт из них черновик поездки.";
+const APP_VERSION = "1.1.2.58";
+const APP_RELEASE_SUMMARY = "Кнопки черновика читаются целиком, а цена в чужой валюте не попадёт в бюджет.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -8428,6 +8428,7 @@ function normalizeTripDraftResponse(payload = {}, sourceText = "", { applyGuardr
       // Booking Pack fields travel with the draft so the preview can show the quote and the
       // confirmation step can bind files. They are dropped when a TripItem is created.
       evidenceText: String(item.evidenceText || "").trim().slice(0, core?.BOOKING_PACK_MAX_EVIDENCE_CHARS || 160),
+      documentCurrency: core?.normalizeDocumentCurrency?.(item.documentCurrency) || "",
       priceKind: core?.PRICE_KIND_VALUES?.includes(item.priceKind) ? item.priceKind : "",
       sourceFileIds: Array.isArray(item.sourceFileIds) ? item.sourceFileIds.filter(Boolean) : [],
       sourcePage: Number.isFinite(Number(item.sourcePage)) ? Math.trunc(Number(item.sourcePage)) : null,
@@ -8492,7 +8493,13 @@ function renderTripDraftBudgetNote(trip = {}) {
   return `<p class="trip-draft-budget-note">Из вашего описания: ${escapeHtml(parts.join(" и "))}.${source}</p>`;
 }
 
-function renderTripDraftPriceNote(item = {}) {
+function renderTripDraftPriceNote(item = {}, tripCurrency = "") {
+  const core = getBookingPackCore();
+  // A number is only meaningful in its own currency. Converting it would invent a fact, so
+  // the amount stays visible and explicitly out of the budget.
+  if (item.documentCurrency && !core?.isBookingPackPriceBudgetEligible?.(item, tripCurrency)) {
+    return `<p class="trip-draft-price-note is-mismatch"><strong>Цена указана в ${escapeHtml(item.documentCurrency)}, а валюта поездки — ${escapeHtml(tripCurrency)}.</strong> В бюджет она не будет добавлена. Укажите сумму в валюте поездки вручную.${item.evidenceText ? ` В документе: «${escapeHtml(item.evidenceText)}»` : ""}</p>`;
+  }
   // A value read out of the traveller's own document: shown with its quote so they can
   // check it against the file. Until they press create it is extracted, not confirmed.
   if (item.evidenceText) {
@@ -8586,7 +8593,7 @@ function renderTripDraftPreview(draft) {
               <label class="field">Время<input type="time" data-draft-item-field="startTime" value="${escapeAttr(item.startTime)}" /></label>
               <label class="field">Цена<input inputmode="numeric" data-draft-item-field="price" value="${escapeAttr(item.price ? item.price : "")}" placeholder="${escapeAttr(item.priceConfidence === "unknown" ? "Цена не указана" : "")}" /></label>
             </div>
-            ${renderTripDraftPriceNote(item)}
+            ${renderTripDraftPriceNote(item, draft.trip.currency)}
             <label class="field wide">Заметка<textarea rows="3" data-draft-item-field="notes">${escapeHtml(item.notes || "")}</textarea></label>
           </section>
         `).join("") : `<p>AI не нашёл событий. Можно вернуться к описанию и пересобрать черновик.</p>`}
@@ -8758,6 +8765,11 @@ function createTripEntryFromDraft(draft) {
     items: draft.items.map((item, index) => {
       const order = orderByDate.get(item.date || "") || 0;
       orderByDate.set(item.date || "", order + 1);
+      // A document priced in another currency never contributes a number: converting would
+      // invent a fact, and writing it as-is would state the wrong one.
+      const priceConfidence = getBookingPackCore()?.resolveConfirmedPriceConfidence?.(item, draft.trip.currency)
+        || item.priceConfidence;
+      const price = priceConfidence === "unknown" ? 0 : item.price;
       return {
         id: `item-${Date.now()}-${index}`,
         title: item.title,
@@ -8767,16 +8779,16 @@ function createTripEntryFromDraft(draft) {
         date: item.date,
         startTime: item.startTime,
         durationMinutes: item.durationMinutes,
-        price: item.price,
+        price,
         // An unknown price is not a free event: it carries no allocation, so it never
         // enters the budget as a confirmed zero. Pressing create is also what turns a value
         // extracted from a document into a confirmed one; the quote behind it is dropped.
-        priceConfidence: getBookingPackCore()?.resolveConfirmedPriceConfidence?.(item) || item.priceConfidence,
+        priceConfidence,
         priceSourceText: item.priceKind ? "" : item.priceSourceText,
         paidAmount: item.paidAmount,
         participantId: selfParticipant.id,
-        allocations: item.priceConfidence !== "unknown" && item.price > 0
-          ? [{ participantId: selfParticipant.id, amount: item.price }]
+        allocations: priceConfidence !== "unknown" && price > 0
+          ? [{ participantId: selfParticipant.id, amount: price }]
           : [],
         link: item.link,
         locationText: item.locationText,

@@ -820,6 +820,10 @@ a {
   color: #8a5a12;
 }
 
+.trip-draft-price-note.is-mismatch {
+  color: #8b2f28;
+}
+
 .trip-draft-documents {
   display: grid;
   gap: 10px;
@@ -3620,11 +3624,18 @@ h3 {
 }
 
 .trip-draft-voice-controls,
+/* Mobile-first: one column. Two columns left «Создать поездку» four pixels of slack at
+   375px, so any enlarged system font pushed it onto two or three lines. */
 .trip-draft-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 10px;
   align-items: center;
+}
+
+/* The main action leads and spans the full width; secondary actions sit under it. */
+.trip-draft-actions .primary-button {
+  order: -1;
 }
 
 .trip-draft-actions {
@@ -3725,9 +3736,22 @@ h3 {
 
 .trip-draft-source-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 10px;
   margin-top: 10px;
+}
+
+/* «Пересобрать черновик» needs about 217px with its padding, so two columns are only safe
+   from roughly 470px onward. Below that the labels are the constraint, not the screen. */
+@media (min-width: 480px) {
+  .trip-draft-actions,
+  .trip-draft-source-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .trip-draft-actions .primary-button {
+    order: 0;
+  }
 }
 
 .trip-draft-items-editor {
@@ -3763,14 +3787,12 @@ h3 {
 }
 
 @media (max-width: 430px) {
-  .trip-draft-field-grid,
-  .trip-draft-source-actions {
+  .trip-draft-field-grid {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 360px) {
-  .trip-draft-actions,
   .trip-draft-voice-controls {
     grid-template-columns: 1fr;
   }

@@ -344,7 +344,9 @@
     "Если одно событие подтверждено несколькими документами — перечисли все их индексы в sourceFileIndex.",
     "",
     "ЦЕНА",
-    "price — только число, напечатанное в документе. currency — валюта рядом с этим числом.",
+    "price — только число, напечатанное в документе.",
+    "currency — валюта, напечатанная рядом с этим числом, всегда трёхбуквенным кодом ISO 4217: RUB, EUR, USD, GEL, GBP, PLN, AED и любым другим. Символ ₽ — это RUB, € — EUR, $ — USD, ₾ — GEL, £ — GBP. Если валюта в документе не напечатана и не следует из символа — currency=null.",
+    "Не подставляй валюту по стране вылета, языку документа или своим предположениям.",
     "evidenceText — короткая дословная цитата из документа, подтверждающая цену, не длиннее 160 символов. Не абзац и не вся строка.",
     "priceKind='exact' для точной итоговой суммы, 'approximate' для приблизительной или диапазона.",
     "Если цены в документе нет — price=0, currency=null, priceKind=null, evidenceText=null. Это нормальный результат.",
@@ -513,6 +515,22 @@
     return PRICE_KIND_VALUES.includes(kind) ? kind : "";
   }
 
+  // Any ISO-shaped code is kept, not just the eight the trip can be denominated in: a ticket
+  // priced in GBP must still be readable in the preview. It stays draft-only and, unless it
+  // matches the trip currency, its number never reaches the card or the budget.
+  function normalizeDocumentCurrency(value) {
+    const code = String(value ?? "").trim().toUpperCase();
+    return /^[A-Z]{3}$/.test(code) ? code : "";
+  }
+
+  // A number is only meaningful in its own currency, so converting it silently would invent
+  // a fact. Mismatched currencies keep the number visible and out of the budget.
+  function isBookingPackPriceBudgetEligible(item = {}, tripCurrency = "") {
+    const documentCurrency = normalizeDocumentCurrency(item.documentCurrency);
+    if (!documentCurrency) return false;
+    return documentCurrency === normalizeDocumentCurrency(tripCurrency);
+  }
+
   // Trip dates are derived, never asked of the model: the earliest and latest day found.
   function deriveBookingPackTripDates(items = []) {
     const dates = items
@@ -539,11 +557,9 @@
       const title = sanitizeExtractedText(item.title, 120);
       const evidenceText = sanitizeExtractedText(item.evidenceText, BOOKING_PACK_MAX_EVIDENCE_CHARS);
       const amount = Number(item.price);
-      const currency = CURRENCY_VALUES.includes(String(item.currency || "").toUpperCase())
-        ? String(item.currency).toUpperCase()
-        : "";
+      const documentCurrency = normalizeDocumentCurrency(item.currency);
       const priceKind = normalizePriceKind(item.priceKind);
-      const priceAdmitted = Number.isFinite(amount) && amount > 0 && Boolean(currency)
+      const priceAdmitted = Number.isFinite(amount) && amount > 0 && Boolean(documentCurrency)
         && Boolean(evidenceText) && sourceFileIds.length > 0;
       if (!priceAdmitted && Number.isFinite(amount) && amount > 0) {
         generated.push(`Для «${title || "карточки"}» цена в документе не подтверждена. Проверьте и впишите её вручную.`);
@@ -559,7 +575,8 @@
         priceSourceText: "",
         priceKind: priceAdmitted ? (priceKind || "approximate") : "",
         evidenceText: priceAdmitted ? evidenceText : "",
-        currency: priceAdmitted ? currency : "",
+        // Draft-only: the card model has no per-item currency and does not gain one here.
+        documentCurrency: priceAdmitted ? documentCurrency : "",
         sourceFileIds,
         sourcePage: Number.isFinite(Number(item.sourcePage)) ? Math.trunc(Number(item.sourcePage)) : null,
         dayIndex: 0,
@@ -587,9 +604,11 @@
     };
   }
 
-  // Pressing create is what turns an extracted number into a confirmed one.
-  function resolveConfirmedPriceConfidence(item = {}) {
+  // Pressing create is what turns an extracted number into a confirmed one — but only when
+  // the document speaks the same currency as the trip. Otherwise the card gets no number.
+  function resolveConfirmedPriceConfidence(item = {}, tripCurrency = "") {
     if (!item || !item.priceKind) return item?.priceConfidence || "unknown";
+    if (item.documentCurrency && !isBookingPackPriceBudgetEligible(item, tripCurrency)) return "unknown";
     return item.priceKind === "exact" ? "confirmed" : "estimate";
   }
 
@@ -606,7 +625,9 @@
     buildBookingPackPrompt,
     deriveBookingPackTripDates,
     getBookingPackFileKey,
+    isBookingPackPriceBudgetEligible,
     matchBookingPackFiles,
+    normalizeDocumentCurrency,
     resolveConfirmedPriceConfidence,
     sanitizeExtractedText,
     BUDGET_LEVEL_VALUES,
