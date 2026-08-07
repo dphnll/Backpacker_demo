@@ -421,10 +421,12 @@ a {
   flex: 0 0 40px;
 }
 
+/* По центру, а не по верхнему краю: у логотипа margin -5px, и при
+   выравнивании по верху он вставал на те же 5px выше кнопки «Поделиться». */
 .home-brand {
   display: flex;
   min-width: 0;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
 }
 
@@ -1988,10 +1990,12 @@ button[aria-disabled="true"] .home-support-icon {
   gap: 10px;
 }
 
+/* Первая колонка держит место под абсолютную кнопку возврата: 46px самой
+   кнопки плюс воздух до заголовка. Раньше здесь стояло лого шириной 62px. */
 .brand-row {
   display: grid;
   position: relative;
-  grid-template-columns: 72px minmax(0, 1fr) auto;
+  grid-template-columns: 50px minmax(0, 1fr) auto;
   min-height: 46px;
   gap: 10px;
 }
@@ -2000,51 +2004,47 @@ button[aria-disabled="true"] .home-support-icon {
   display: contents;
 }
 
+/* Возврат на главную выглядит как остальные кнопки шапки: тот же размер,
+   заливка и тень, что у «Настройки» и «Поделиться». Раньше здесь стояло
+   лого, и кнопка не читалась как кнопка. */
 .brand-home-button {
   display: grid;
   position: absolute;
-  top: -10px;
-  left: -5px;
-  width: 62px;
-  height: 62px;
-  margin: 0;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40px;
+  height: 40px;
+  /* Центрируется полями, а не transform: transform занят состоянием :active. */
+  margin: auto 0;
   place-items: center;
   padding: 0;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(18, 54, 61, 0.34);
   border-radius: 8px;
-  background:
-    radial-gradient(circle at 28% 20%, rgba(255, 255, 255, 0.96) 0 8%, rgba(255, 255, 255, 0.38) 27%, transparent 52%),
-    linear-gradient(145deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.14) 46%, rgba(18, 54, 61, 0.16)),
-    rgba(255, 255, 255, 0.3);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.82),
-    inset 0 -10px 16px rgba(18, 54, 61, 0.12),
-    5px 5px 0 rgba(18, 54, 61, 0.1),
-    0 12px 22px rgba(18, 54, 61, 0.16);
+  background: var(--active-button-gradient);
+  color: #fff;
+  box-shadow: var(--active-button-shadow);
   cursor: pointer;
 }
 
-.brand-home-button::after {
-  position: absolute;
-  top: -20%;
-  left: 13%;
-  width: 76%;
-  height: 42%;
-  border-radius: 50%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0));
-  content: "";
-  pointer-events: none;
+/* Обе кнопки возврата — в шапке поездки и в «Идеях» — рисуют одну стрелку
+   одной толщиной, иначе экраны расходятся между собой. */
+.brand-home-button svg,
+.ideas-back-button svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .brand-home-button:hover {
-  border-color: rgba(255, 255, 255, 1);
+  border-color: rgba(18, 54, 61, 0.5);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
-    inset 0 -10px 16px rgba(18, 54, 61, 0.12),
-    5px 5px 0 rgba(18, 54, 61, 0.1),
-    0 0 0 3px rgba(130, 207, 191, 0.28),
-    0 12px 22px rgba(18, 54, 61, 0.2);
+    var(--active-button-shadow),
+    0 0 0 3px rgba(130, 207, 191, 0.28);
 }
 
 .brand-home-button:active {
@@ -3119,11 +3119,11 @@ h3 {
 }
 
 .ideas-back-button {
-  width: 46px;
-  min-width: 46px;
-  height: 46px;
-  min-height: 46px;
-  font-size: 22px;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
 }
 
 .item-copy-button {
@@ -3409,7 +3409,9 @@ h3 {
     inset 0 -10px 18px rgba(18, 54, 61, 0.05),
     6px 6px 0 rgba(18, 54, 61, 0.09);
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* Средняя колонка отдана кнопке смены направления. Крайние ужимаются
+     наравне, поэтому подписи валют не переносятся даже на 360px. */
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -3426,10 +3428,12 @@ h3 {
     inset -4px -4px 8px rgba(18, 54, 61, 0.035);
 }
 
+/* Высота как у слотов и кнопки «Обновить»: восемьдесят четыре пикселя
+   отводились под одну строку и разрывали ритм экрана. */
 .currency-result {
   grid-column: 1 / -1;
-  min-height: 84px;
-  padding: 14px;
+  min-height: 42px;
+  padding: 6px 14px;
   border: 1px solid rgba(18, 54, 61, 0.34);
   border-radius: 6px;
   background: var(--active-button-gradient);
@@ -3439,7 +3443,7 @@ h3 {
     inset -10px -10px 18px rgba(0, 0, 0, 0.18);
   display: grid;
   place-items: center;
-  font-size: 30px;
+  font-size: 22px;
   font-weight: 700;
   line-height: 1.1;
   text-align: center;
@@ -4931,3 +4935,362 @@ textarea:focus {
     border-radius: 18px;
   }
 }
+
+/* Переключатель направления в калькуляторе валют: своя строка во всю
+   ширину, чтобы не спорить с двумя селектами и не зависеть от длины
+   подписи при переводе. */
+/* Кнопка стоит между двумя селектами и выровнена по их нижнему краю, а не
+   отдельной строкой под ними: направление меняют, глядя на обе валюты.
+   Имя кнопки живёт в aria-label и title — стрелки его не заменяют. */
+/* Высота повторяет слоты валюты, чтобы кнопка встала с ними в один ряд,
+   а заливка — как у остальных действий: плашки результата, плюса и кнопок
+   шапки. Это действие, а не ещё одно поле ввода. */
+.currency-swap-button {
+  align-self: end;
+  justify-self: center;
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  min-height: 42px;
+  padding: 0;
+  border-color: rgba(18, 54, 61, 0.34);
+  background: var(--active-button-gradient);
+  color: #fff;
+  box-shadow: var(--active-button-shadow);
+  justify-content: center;
+  font-size: 20px;
+  line-height: 1;
+}
+
+/* Подписи «Из» и «В» центрируются над своими селектами. */
+.currency-card .field {
+  text-align: center;
+}
+
+.currency-card .field.wide {
+  text-align: left;
+}
+
+/* Справка и «О продукте» — единый ритм текста.
+   Списки набирались приглушённым коричневым и на два пункта крупнее
+   абзацев, из-за чего часть разделов выпадала из общего текста,
+   а абзацы шли впритык друг к другу. */
+#howToSheet details p,
+#productInfoSheet details p,
+#howToSheet .sheet-panel > p,
+#productInfoSheet .sheet-panel > p {
+  margin: 0 0 14px;
+  line-height: 1.5;
+}
+
+#howToSheet details ul,
+#howToSheet details ol,
+#productInfoSheet details ul,
+#productInfoSheet details ol {
+  margin: 0 0 14px;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+#howToSheet details li,
+#productInfoSheet details li {
+  margin-bottom: 8px;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+#howToSheet details li:last-child,
+#productInfoSheet details li:last-child {
+  margin-bottom: 0;
+}
+/* «Картон, бумага, билеты» — палитра, шрифты, плотность теней и фактура.
+   Разметка, геометрия карточек, горизонтальная лента дня и состав строк
+   не менялись: правил про размер, отступ и порядок здесь нет. */
+
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("./fonts/inter-cyrillic.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("./fonts/inter-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+2000-206F, U+2122, U+2191, U+2193, U+2212, U+2215;
+}
+
+:root {
+  /* Бумага и чернила */
+  --bg: #f4eee2;
+  --panel: #fdfbf6;
+  --panel-strong: #ffffff;
+  --ink: #22201c;
+  --muted: #7a7164; /* светлее нельзя: контраст на тёплом фоне */
+  --line: #cdbb9b;
+  --kraft: #ede0c6;
+
+  /* Бренд приглушён: прежний #1f4c43 бил слишком ярко на кнопках и заголовках.
+     Проверено на контраст в обе стороны — белым по нему и им по бежевому. */
+  --brand: #4f7370;
+  --brand-2: #5a8380;
+  --brand-soft: #dfeae4;
+
+  /* Статус */
+  --green: #2e6b5e;
+  --green-soft: #cfe0d9;
+  --amber: #b0842f;
+  --amber-soft: #f0e2c2;
+  --danger: #b23a2e;
+  --danger-soft: #f2ddd9;
+  --coral: #a2503a;
+  --coral-soft: #e8d3cb;
+  --blue: #44637e;
+  --blue-soft: #d5dee6;
+  --violet: #7a5568;
+  --sand: #edc98f;
+  --gray-soft: #e7ded0;
+
+  /* Тени мятного тона и плотнее прежних. */
+  --shadow: 0 10px 22px rgba(58, 92, 84, 0.26);
+
+  /* Хром и металл: плоская краска вместо серого градиента */
+  --active-button-gradient: #4f7370;
+  --active-button-shadow: 0 4px 12px rgba(58, 92, 84, 0.28);
+
+  /* Контуры иконок у неактивных кнопок — мятные. */
+  --nav-icon: #5f9d8a;
+
+  --app-gradient: linear-gradient(180deg, #f7f2e8 0%, #f4eee2 100%);
+}
+
+/* Фон приложения был зашит белым в обход палитры — отсюда и белизна.
+   Белый стоял в трёх местах: body, оболочка поездки и экран главной. */
+body,
+.app-shell,
+.home-screen,
+.ideas-screen {
+  background: var(--bg);
+}
+
+/* Inter во всех текстах. */
+body,
+button,
+input,
+select,
+textarea,
+.item-card,
+.trip-list-card {
+  font-family: Inter, "Segoe UI", Roboto, system-ui, sans-serif;
+}
+
+/* Заголовки — Inter полужирный. */
+h1,
+h2,
+h3,
+h4,
+.section-heading,
+#tripTitle,
+.trip-list-card strong,
+.day-card > h3,
+.home-brand h1 {
+  font-family: Inter, "Segoe UI", Roboto, system-ui, sans-serif;
+  font-weight: 600;
+}
+
+/* Толщина картона, а уже под ней тень: торец светлее лицевой стороны,
+   поэтому это две сплошные линии, а не размытие. Тень мятная — тем же
+   тоном, каким её отбрасывает вверх блок кнопок внизу. */
+.home-card,
+.trip-list-card,
+.day-card,
+.item-card,
+.stat-card,
+.metric-card,
+.trainer-card {
+  box-shadow:
+    0 2px 0 #e7dcc7,
+    0 3px 2px rgba(58, 92, 84, 0.16),
+    0 10px 22px rgba(58, 92, 84, 0.26);
+}
+
+/* Тренажёр — обычная карточка: своя рамка, градиент, внутренняя подсветка
+   и жёсткая тень со смещением делали из него коробку внутри коробки.
+   Тень остаётся, но общая, а не собственная. */
+.home-trainer-shell {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* Кнопка «Скрыть тренажер» позиционируется от оболочки, а её внутренний
+   отступ снят — без пересчёта смещений кнопка уезжала за край карточки.
+   Значения повторяют собственный отступ карточки, поэтому кнопка встаёт
+   в один ряд с «4 дня» и «45 000 ₽». */
+.home-trainer-hide {
+  right: 12px;
+  bottom: 12px;
+}
+
+/* Старая карта на фоне главной: фрагмент со Средиземноморьем, приглушён
+   до шёпота, чтобы не спорить с текстом. Лежит ниже содержимого и не ловит
+   касания. Только на главной — остальные экраны остаются чистыми. */
+.home-screen {
+  position: relative;
+}
+
+/* position: fixed, а не background-attachment: fixed — второй игнорируется
+   на iOS, и карта поехала бы вместе с содержимым. */
+.home-screen::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.6;
+  background-image: url("./assets/map-home.jpg");
+  background-size: cover;
+  background-position: center;
+}
+
+.home-screen > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Неактивные кнопки: контур иконки мятный. У свечных SVG это уже даёт
+   --nav-icon, а «свинка» — растровая картинка с фильтром invert, из-за
+   которого она выходила белой. Красим её маской: цвет получается точный,
+   а не подобранной цепочкой фильтров. */
+/* Только копилка: класс .home-support-button носят все четыре кнопки ряда,
+   и по классу маска ложилась поверх «i», «?» и самолётика. */
+#donationPigButton {
+  position: relative;
+}
+
+#donationPigButton img {
+  visibility: hidden;
+}
+
+#donationPigButton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 30px;
+  height: 30px;
+  margin: auto;
+  pointer-events: none;
+  background-color: #5f9d8a;
+  -webkit-mask: url("./icons/piggy-bank.png") center / contain no-repeat;
+  mask: url("./icons/piggy-bank.png") center / contain no-repeat;
+}
+
+/* --- Цвета типов события: приглушённые тона вместо семи насыщенных --- */
+.item-card {
+  --item-card-bg: #fdfbf6;
+  --item-card-accent: #6e675c;
+  --item-slot-bg: rgba(205, 187, 155, 0.24);
+  position: relative;
+}
+
+/* Перфорация по стыку шапки и тела карточки: отверстия пробиты цветом
+   тела, поэтому читаются как высечка, а не как накладная полоска.
+   44px — высота шапки из сетки самой карточки. */
+.item-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 44px;
+  height: 14px;
+  z-index: 2;
+  transform: translateY(-50%);
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle 5.1px at 50% 50%, var(--item-card-bg) 0 5.1px, transparent 5.5px);
+  background-size: 16px 14px;
+  background-repeat: repeat-x;
+}
+
+/* Подпись типа выровнена вправо и обрезается слева, а Inter шире прежнего
+   Roboto — «ТРАНСПОРТ» вылезал на 4,5 px и терял левую перекладину «Т».
+   Разрядка снята, кегль на пункт меньше: запас на длинные подписи. */
+.item-card .tile-icon small {
+  font-size: 21px;
+  letter-spacing: 0;
+}
+
+/* Лёгкая фактура картона на шапке: продольное волокно и поперечный
+   оттиск. Цвет остаётся акцентом типа, меняется только поверхность.
+   Селектор с двумя классами — правила `.type-* .tile-icon` специфичнее
+   одиночного и сбрасывают картинку шорткатом `background`. */
+.item-card .tile-icon {
+  background-color: var(--item-card-accent);
+  background-image:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.05) 0 1px, transparent 1px 4px);
+}
+
+.type-transport {
+  --item-card-accent: #44637e;
+  --item-card-bg: #f6f5f2;
+  --item-slot-bg: rgba(68, 99, 126, 0.12);
+}
+
+.type-stay {
+  --item-card-accent: #8a6d2e;
+  --item-card-bg: #f9f6ee;
+  --item-slot-bg: rgba(138, 109, 46, 0.13);
+}
+
+.type-food {
+  --item-card-accent: #a2503a;
+  --item-card-bg: #f9f4f1;
+  --item-slot-bg: rgba(162, 80, 58, 0.12);
+}
+
+.type-excursion {
+  --item-card-accent: #2e6b5e;
+  --item-card-bg: #f3f7f4;
+  --item-slot-bg: rgba(46, 107, 94, 0.12);
+}
+
+.type-place {
+  --item-card-accent: #6e675c;
+  --item-card-bg: #f7f6f2;
+  --item-slot-bg: rgba(110, 103, 92, 0.13);
+}
+
+.type-ticket {
+  --item-card-accent: #44637e;
+  --item-card-bg: #f5f7f8;
+  --item-slot-bg: rgba(68, 99, 126, 0.12);
+}
+
+.type-spa {
+  --item-card-accent: #7a5568;
+  --item-card-bg: #f8f4f6;
+  --item-slot-bg: rgba(122, 85, 104, 0.12);
+}
+
+.type-shopping {
+  --item-card-accent: #2e6b5e;
+  --item-card-bg: #f4f7f5;
+  --item-slot-bg: rgba(46, 107, 94, 0.12);
+}
+
+.type-idea,
+.type-other {
+  --item-card-accent: #6e675c;
+  --item-card-bg: #f7f6f2;
+  --item-slot-bg: rgba(110, 103, 92, 0.13);
+}
+
+/* Чип статуса остаётся в цвете шапки своей карточки. */

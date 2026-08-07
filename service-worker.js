@@ -1,8 +1,8 @@
-const CACHE_NAME = "backpacker-pwa-v97";
+const CACHE_NAME = "backpacker-pwa-v99";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=booking-pack-stabilization-20260806",
+  "./styles.css?v=cardboard-tokens-20260806",
   "./financial-core.js",
   "./trip-date-core.js",
   "./trip-draft-quantity-core.js",
@@ -30,6 +30,10 @@ const APP_SHELL = [
   "./icons/backpacker-512.png",
   "./icons/apple-touch-icon.png",
   "./icons/card-copy.png",
+  "./icons/piggy-bank.png",
+  "./fonts/inter-cyrillic.woff2",
+  "./fonts/inter-latin.woff2",
+  "./assets/map-home.jpg",
   "./icons/backpacker-logo-transparent.png",
   "./icons/backpacker-logo.svg"
 ];

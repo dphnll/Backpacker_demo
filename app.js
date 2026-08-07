@@ -24,7 +24,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.60";
+const APP_VERSION = "1.1.2.62";
 const APP_RELEASE_SUMMARY = "Кнопки черновика читаются целиком, а цена в чужой валюте не попадёт в бюджет.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -2537,6 +2537,18 @@ function convertCurrencyAmount(value, fromCurrency, toCurrency) {
   return (amount * fromRate) / toRate;
 }
 
+// Обратный курс смотрят так же часто, как прямой, а перевыбирать обе валюты
+// вручную долго. Меняем направление одним нажатием.
+function swapCurrencyDirection() {
+  const fromSelect = $("#currencyFrom");
+  const toSelect = $("#currencyTo");
+  if (!fromSelect || !toSelect) return;
+  const previousFrom = fromSelect.value;
+  fromSelect.value = toSelect.value;
+  toSelect.value = previousFrom;
+  renderCurrencyCalculator();
+}
+
 function renderCurrencyCalculator() {
   const amountInput = $("#currencyAmount");
   const fromSelect = $("#currencyFrom");
@@ -4237,7 +4249,6 @@ function renderBudget() {
         <div class="metric-card service-total budget-limit-total"><span>Бюджет поездки</span><strong>${formatBudgetMoney(totals.budgetLimit)}</strong></div>
         <div class="metric-card"><span>Оплачено</span><strong>${formatBudgetMoney(totals.paidTotal)}</strong></div>
         <div class="metric-card"><span>Бронь</span><strong>${formatBudgetMoney(totals.confirmedOutstanding)}</strong></div>
-        <div class="metric-card"><span>Осталось оплатить</span><strong>${formatBudgetMoney(totals.confirmedOutstanding)}</strong></div>
         <div class="metric-card"><span>Свободно</span><strong style="color:${canShowBudget() && totals.remainingConfirmed < 0 ? "var(--danger)" : "var(--green)"}">${formatBudgetMoney(totals.remainingConfirmed)}</strong></div>
       </div>
     </section>
@@ -6350,7 +6361,6 @@ function buildShareText(compact = false) {
       `Бюджет поездки: ${formatMoney(totals.budgetLimit)}`,
       `Оплачено: ${formatMoney(totals.paidTotal)}`,
       `Бронь: ${formatMoney(totals.confirmedOutstanding)}`,
-      `Осталось оплатить: ${formatMoney(totals.confirmedOutstanding)}`,
       `Свободно: ${formatMoney(totals.remainingConfirmed)}`,
       `Идеи, хотелки, запас: ${formatMoney(totals.additionalTotal)}`,
       `С учётом идей, хотелок, запаса: ${formatMoney(totals.possibleTotal)}`,
@@ -7054,7 +7064,6 @@ async function buildTripPdfBlob(options) {
       ["Бюджет поездки", formatMoney(totals.budgetLimit)],
       ["Оплачено", formatMoney(totals.paidTotal)],
       ["Бронь", formatMoney(totals.confirmedOutstanding)],
-      ["Осталось оплатить", formatMoney(totals.confirmedOutstanding)],
       ["Свободно", formatMoney(totals.remainingConfirmed)],
       ["Идеи, хотелки, запас", formatMoney(totals.additionalTotal)],
       ["С учётом идей, хотелок, запаса", formatMoney(totals.possibleTotal)],
@@ -9860,6 +9869,7 @@ function bindEvents() {
     $(`#${id}`).addEventListener("input", renderCurrencyCalculator);
     $(`#${id}`).addEventListener("change", renderCurrencyCalculator);
   });
+  $("#currencySwapButton").addEventListener("click", swapCurrencyDirection);
   bindDesktopDrag();
   bindPointerDrag();
   bindDonationSheetGestures();

@@ -13,7 +13,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icons/backpacker-192.png" type="image/png" />
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
-    <link rel="stylesheet" href="./styles.css?v=draft-item-header-wrap-20260806" />
+    <link rel="stylesheet" href="./styles.css?v=cardboard-tokens-20260806" />
     <script src="./analytics-config.js?v=1"></script>
   </head>
   <body>
@@ -321,7 +321,11 @@
 
     <section class="ideas-screen hidden" id="ideasScreen" aria-label="Идеи">
       <header class="ideas-header">
-        <button class="icon-button ideas-back-button" id="ideasBackButton" type="button" aria-label="Вернуться на главную">←</button>
+        <button class="icon-button ideas-back-button" id="ideasBackButton" type="button" aria-label="Вернуться на главную">
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M15 4.5 7.5 12l7.5 7.5" />
+          </svg>
+        </button>
         <div>
           <h1>Идеи</h1>
           <p>Места, ссылки и хотелки до поездки</p>
@@ -339,7 +343,9 @@
         <div class="brand-row">
           <div class="brand-lockup">
             <button class="brand-home-button" id="homeButton" type="button" aria-label="На главную" title="На главную">
-              <img class="brand-logo" src="./icons/backpacker-logo-transparent.png" alt="" aria-hidden="true" />
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M15 4.5 7.5 12l7.5 7.5" />
+              </svg>
             </button>
             <div>
               <h1 id="tripTitle">Казань соло</h1>
@@ -486,6 +492,7 @@
                 <option value="BAM">BAM / KM</option>
               </select>
             </label>
+            <button class="ghost-button currency-swap-button" id="currencySwapButton" type="button" title="Поменять валюты местами" aria-label="Поменять валюты местами">⇄</button>
             <label class="field">
               В
               <select id="currencyTo">
