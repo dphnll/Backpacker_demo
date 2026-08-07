@@ -5294,3 +5294,1073 @@ h4,
 }
 
 /* Чип статуса остаётся в цвете шапки своей карточки. */
+
+/* ============================================================
+   ГЛАВНАЯ И ОСТАЛЬНЫЕ ЭКРАНЫ · композиция
+   Вычитание вместо украшения: содержимое человека идёт первым,
+   одно первичное действие на экран, утилиты тише контента, шкала
+   кеглей вместо одного размера. Карта — среда, а не текстура.
+
+   ГРАНИЦА БЕЗОПАСНОСТИ. Перетаскивание карточек держится на zoom,
+   display, position, cursor, touch-action и user-select у .item-card,
+   а лента дня — на display: flex, overflow-x и touch-action у
+   .day-items. Ни одно из этих свойств здесь не переопределяется.
+   ============================================================ */
+
+.home-screen {
+  --a-ink: #1c1a17;
+  --a-ink-soft: #6f675c;
+  --a-line: rgba(28, 26, 23, 0.1);
+  --a-paper: #f6f1e7;
+  --a-card: #fffdf9;
+  --a-brand: #2f5d55;
+  --a-gap: 14px;
+  /* Обработка любой фотографии на экране — одно место на весь макет.
+     Тренажёр собирает её слоями фона, обложки поездок — фильтром;
+     значения подобраны так, чтобы результат совпадал. */
+  --a-photo-tone: #82653a;
+  --a-photo-veil-top: rgba(246, 241, 231, 0.72);
+  --a-photo-veil-bottom: rgba(246, 241, 231, 0.8);
+  --a-photo-filter: sepia(0.45) saturate(0.78) contrast(1.04) brightness(1.06);
+  background: var(--a-paper);
+}
+
+/* Карта остаётся средой, но гаснет там, где идёт текст: маска держит её
+   плотной сверху за шапкой и снизу вокруг утилит и растворяет в полосе
+   контента. Так «Идеи» и подпись ленты перестают лежать на изображении,
+   и при этом не понадобилось ни одного нового контейнера. */
+.home-screen::before {
+  opacity: 0.4;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.18) 26%, rgba(0, 0, 0, 0.18) 74%, #000 100%);
+  mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.18) 26%, rgba(0, 0, 0, 0.18) 74%, #000 100%);
+}
+
+/* ---------- Шапка: одна строка вместо блока в 97px ----------
+   Плашку внизу рисует не контейнер, а .home-support-menu внутри него:
+   градиент, рамка, радиус и тройная тень. Здесь повторены те же
+   значения, только тень направлена вниз — обе постоянные полосы экрана
+   должны быть одной вещью, а не двумя похожими. */
+.home-screen .home-header {
+  position: relative;
+  z-index: 2;
+  align-items: center;
+  margin: 6px 16px 4px;
+  padding: 8px 10px;
+  border: 1px solid rgba(18, 54, 61, 0.12);
+  border-radius: 8px;
+  background:
+    linear-gradient(#f7f2e8 0%, #f4eee2 100%),
+    #fdfbf6;
+  box-shadow:
+    0 10px 24px rgba(18, 54, 61, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    inset 0 10px 18px rgba(18, 54, 61, 0.05);
+}
+
+/* Логотип отбивается от названия на собственную ширину: знак и текст —
+   две разные сущности, а не одна слипшаяся строка. */
+.home-screen .home-brand {
+  gap: 42px;
+}
+
+.home-screen .home-brand img {
+  width: 42px;
+  height: 42px;
+  margin: 0;
+  filter: none;
+}
+
+/* Слово BACKPACKER перестаёт быть заголовком экрана: заголовок здесь —
+   поездка. Марка остаётся, но размером с подпись. */
+.home-screen .home-brand h1 {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  color: var(--a-ink-soft);
+  margin: 0;
+}
+
+.home-screen .home-profile-card {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.home-screen .home-profile-card strong {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--a-ink);
+}
+
+/* Утилита в шапке — тихая иконка, а не залитая кнопка. */
+.home-screen .home-share-button {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--a-ink-soft);
+  box-shadow: none;
+}
+
+/* ---------- Композиция: содержимое человека идёт первым ---------- */
+.home-screen .home-content {
+  display: grid;
+  gap: var(--a-gap);
+  padding: 4px 16px 24px;
+}
+
+.home-screen .trip-list-section { order: 1; }
+.home-screen .received-trips-section { order: 2; }
+.home-screen #openIdeasButton { order: 3; }
+.home-screen .home-trainer-shell,
+.home-screen #showTrainerButton { order: 4; }
+.home-screen .ios-install-card { order: 5; }
+.home-screen .sync-conflict-card { order: -1; }
+/* Ряд утилит лежит внутри той же сетки: без явного порядка он вставал
+   первым и оставлял пустую полосу под шапкой. */
+.home-screen .home-support { order: 7; }
+/* Первичное действие липкое — всегда под рукой, не листается. */
+.home-screen #createTripButton { order: 6; }
+
+/* ---------- Лента: заголовок снят, контент говорит сам ---------- */
+.home-screen .home-list-heading {
+  margin: 0 0 2px;
+}
+
+.home-screen .home-list-heading h2 {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--a-ink-soft);
+}
+
+.home-screen .trip-list {
+  display: grid;
+  gap: 10px;
+}
+
+/* ---------- Герой: первая поездка крупно ---------- */
+.home-screen .trip-list-card {
+  position: relative;
+  border: 1px solid var(--a-line);
+  border-radius: 18px;
+  background: var(--a-card);
+  box-shadow: 0 1px 2px rgba(28, 26, 23, 0.04);
+  overflow: hidden;
+}
+
+/* Карта живёт на фоне экрана, на карточке её нет: карта поверх карты
+   съедала бы и то и другое. Карточка — чистый лист поверх среды. */
+
+.home-screen .trip-card-open {
+  display: grid;
+  gap: 8px;
+  padding: 18px 16px 16px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  text-align: left;
+}
+
+.home-screen .trip-card-status-row {
+  margin: 0;
+}
+
+.home-screen .home-card-kicker {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--a-ink-soft);
+}
+
+/* Название поездки — главный объект экрана. Плашку снимаем, но перенос
+   запрещаем: вторая строка раздувает карточку, а высота карточки здесь
+   важнее полноты редкого длинного названия. Длинное режется многоточием.
+   У тренажёра заголовок — h2, у настоящей карточки — strong: нужны оба. */
+.home-screen .trip-card-title-block h2,
+.home-screen .trip-card-title-block strong {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  /* Зелёный бренда повторяется здесь, чтобы цвет главной кнопки перестал
+     выглядеть случайным: он держит и заголовок, и первичное действие. */
+  color: var(--a-brand);
+}
+
+/* Направление и даты — сведения, а не ярлыки: снимаем плашки. */
+.home-screen .trip-card-submeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 2px;
+}
+
+.home-screen .trip-card-submeta > * {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--a-ink-soft);
+}
+
+.home-screen .home-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--a-line);
+}
+
+.home-screen .home-card-meta > * {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--a-ink-soft);
+}
+
+/* ---------- Обложки поездок: один фильтр на любое фото ----------
+   Человек загружает что угодно — снимок с телефона, скриншот, картинку
+   из сети. Общий фильтр приводит их к одной палитре, и лента перестаёт
+   быть пёстрой. Тот же приём, что на тренажёре: снимок теряет цвет и
+   получает тёплый тон, поверх идёт бумажная вуаль для читаемости.
+   Фильтр живёт только на карточке: открытая обложка остаётся честной. */
+.home-screen .trip-list-card[style*="url"],
+.home-screen .trip-list-card [style*="url"],
+.home-screen .trip-list-card img:not([aria-hidden="true"]) {
+  filter: var(--a-photo-filter);
+}
+
+/* ---------- Иконки: один цвет и одна оболочка ----------
+   У всех svg в разметке зашит белый stroke, поэтому цвет кнопки на них
+   не действовал — на светлой бумаге иконки просто исчезали. Переводим
+   на currentColor и красим тем же коричневым, что и текст. */
+.home-screen .home-support-button svg,
+.home-screen .home-share-button svg,
+.home-screen .cover-trip-button svg,
+.home-screen .ideas-entry-icon svg {
+  stroke: currentColor;
+}
+
+/* Знак «поделиться» собран из линий и кружков: линии рисуются обводкой,
+   кружки — заливкой. Красим оба свойства, иначе половина знака пропадает
+   на светлой бумаге. Обводка вдвое тоньше исходной: при заливке кружков
+   прежняя толщина утолщала знак и он выбивался из ряда. */
+.home-screen .home-share-button svg,
+.home-screen .home-share-button svg * {
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 0.9;
+}
+
+/* Копилка — единственная неактивная кнопка в ряду, и по цвету она должна
+   это показывать: контур светлее остальных иконок, но темнее бумаги. */
+.home-screen #donationPigButton::after {
+  background-color: #c2b6a0;
+}
+
+/* Единая оболочка вспомогательных иконок: круг без тени. */
+.home-screen .cover-trip-button,
+.home-screen .ideas-entry-icon {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(28, 26, 23, 0.06);
+  color: var(--a-ink-soft);
+  box-shadow: none;
+}
+
+.home-screen .cover-trip-button {
+  top: 14px;
+  right: 14px;
+}
+
+/* Удаление не должно быть самым громким элементом карточки. */
+.home-screen .delete-trip-button {
+  min-height: 0;
+  padding: 4px 2px;
+  border: 0;
+  background: none;
+  color: var(--a-ink-soft);
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ---------- «Идеи» перестаёт быть карточкой ---------- */
+.home-screen #openIdeasButton {
+  min-height: 0;
+  padding: 12px 2px;
+  border: 0;
+  border-top: 1px solid var(--a-line);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  gap: 12px;
+}
+
+.home-screen #openIdeasButton::before {
+  content: none;
+}
+
+
+.home-screen #openIdeasButton strong {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--a-ink);
+}
+
+.home-screen #openIdeasButton span span,
+.home-screen #openIdeasButton small {
+  font-size: 13px;
+  color: var(--a-ink-soft);
+}
+
+/* ---------- Тренажёр: полоса, а не вторая поездка ---------- */
+.home-screen .home-trainer-shell {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* Тренажёр повторяет настоящую карточку один в один — иначе он учит не
+   тому, что человек потом увидит. Отличие только в цвете: тише тон и
+   надпись «Тренажер». Геометрия, кегли и отступы не трогаются. */
+/* Те же радиус, отступы и кегли, что у настоящей карточки. Отличие одно:
+   карточка не белая, а под цвет страницы, поэтому не спорит с реальными
+   поездками. Казань лежит под ней монохромной сепией — фотография даёт
+   узнаваемость, но не тянет на себя внимание.
+   Сепия собрана слоями: сплошной тон смешивается со снимком в режиме
+   color (остаётся только светлота), сверху бумажная вуаль для текста. */
+/* У настоящей карточки содержимое лежит внутри button.trip-card-open с
+   отступом 18/16/16, у тренажёра такой обёртки нет — строки шли прямо в
+   карточке и прижимались к краю. Повторяем ту же внутреннюю сетку. */
+.home-screen .trainer-card {
+  min-height: 0;
+  display: grid;
+  gap: 8px;
+  padding: 18px 16px 16px;
+  border: 1px solid var(--a-line);
+  border-radius: 18px;
+  box-shadow: none;
+  background-color: var(--a-paper);
+  background-image:
+    linear-gradient(var(--a-photo-veil-top), var(--a-photo-veil-bottom)),
+    linear-gradient(var(--a-photo-tone), var(--a-photo-tone)),
+    url("./assets/kazan-cover.jpg");
+  background-blend-mode: normal, color, normal;
+  background-size: cover, cover, cover;
+  background-position: center, center, center;
+}
+
+/* Оболочка тренажёра несла отрицательные поля и делала карточку шире
+   остальных на 12px — отступы от краёв экрана должны совпадать. */
+.home-screen .home-trainer-shell {
+  margin: 0;
+  padding: 0;
+}
+
+.home-screen .trainer-card .trip-card-title-block h2,
+.home-screen .trainer-card .trip-card-title-block strong {
+  color: var(--a-ink-soft);
+}
+
+/* Ссылка возвращается на карточку, а не висит отдельной строкой над ней. */
+.home-screen .home-trainer-shell {
+  position: relative;
+}
+
+/* Ссылка встаёт туда же, где на настоящей карточке кнопка обложки. */
+.home-screen .home-trainer-hide {
+  position: absolute;
+  top: 20px;
+  right: 16px;
+  bottom: auto;
+  z-index: 3;
+  min-height: 0;
+  padding: 2px;
+  border: 0;
+  background: none;
+  color: var(--a-ink-soft);
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ---------- Первичное действие: липкое, одно на экран ---------- */
+.home-screen #createTripButton {
+  position: sticky;
+  bottom: 12px;
+  z-index: 4;
+  min-height: 54px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--a-brand);
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(28, 26, 23, 0.18);
+  gap: 12px;
+  align-items: center;
+}
+
+.home-screen #createTripButton::before {
+  content: none;
+}
+
+.home-screen .cover-icon {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  border: 0;
+  background: none;
+  color: #fff;
+}
+
+.home-screen #createTripButton strong {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+/* Подпись «Добавить обложку поездки» — служебная, на кнопке лишняя. */
+.home-screen #createTripButton span span,
+.home-screen #createTripButton small {
+  display: none;
+}
+
+/* ---------- Нижние утилиты: тихий ряд ---------- */
+.home-screen .home-support {
+  padding: 4px 16px calc(8px + env(safe-area-inset-bottom));
+  border: 0;
+  border-top: 1px solid var(--a-line);
+  background: none;
+}
+
+/* Иконки здесь — не svg, а текстовые знаки «i» и «?», картинка копилки и
+   обводка самолётика. Каждый красился белым своим правилом, поэтому на
+   светлой бумаге ряд просто исчезал. Сводим всё к одному коричневому. */
+.home-screen .home-support-button,
+.home-screen .home-support-button span,
+.home-screen .home-support-button svg {
+  color: var(--a-ink-soft);
+}
+
+.home-screen .home-support-button {
+  min-height: 40px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.home-screen .home-support-button svg {
+  stroke: currentColor;
+}
+
+.app-shell,
+.ideas-screen {
+  --a-ink: #1c1a17;
+  --a-ink-soft: #6f675c;
+  --a-line: rgba(28, 26, 23, 0.1);
+  --a-paper: #f6f1e7;
+  --a-card: #fffdf9;
+  --a-brand: #2f5d55;
+}
+
+/* ---------- Шапка поездки: 216px под то, что не меняется ---------- */
+.app-shell .trip-header {
+  padding: 8px 16px 12px;
+  background: none;
+  box-shadow: none;
+}
+
+.app-shell #tripTitle {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.16;
+  letter-spacing: -0.02em;
+  color: var(--a-brand);
+}
+
+.app-shell .trip-meta {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--a-ink-soft);
+}
+
+/* Бюджет — сведение, а не кнопка-таблетка. */
+.app-shell .trip-budget-meta {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--a-ink-soft);
+}
+
+.app-shell .trip-summary-row {
+  justify-content: flex-start;
+}
+
+/* ---------- Полоса бюджета: три числа, а не три коробки ----------
+   Оплачено / Бронь / Свободно — это одна мысль в трёх долях. Заливки,
+   рамки и тени превращали её в три равных объекта и забирали 70px. */
+.app-shell .budget-strip {
+  gap: 0;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--a-line);
+}
+
+.app-shell .budget-strip .paid-card,
+.app-shell .budget-strip .budget-allocation-card {
+  padding: 0 12px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.app-shell .budget-strip .budget-allocation-card + .budget-allocation-card,
+.app-shell .budget-strip .paid-card + .budget-allocation-card {
+  border-left: 1px solid var(--a-line);
+}
+
+.app-shell .budget-strip .paid-card {
+  padding-left: 0;
+}
+
+.app-shell .budget-strip span {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--a-ink-soft);
+}
+
+.app-shell .budget-strip strong {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--a-ink);
+}
+
+/* ---------- Подписи разделов ---------- */
+.app-shell .section-heading h2,
+.app-shell .section-heading h3 {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--a-ink-soft);
+}
+
+/* ---------- День: рамка вместо коробки ---------- */
+.app-shell .day-card {
+  border: 1px solid var(--a-line);
+  border-radius: 16px;
+  background: var(--a-card);
+  box-shadow: 0 1px 2px rgba(28, 26, 23, 0.04);
+}
+
+.app-shell .day-card > h3,
+.app-shell .day-title {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--a-ink);
+}
+
+.app-shell .day-total {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--a-brand);
+}
+
+/* ---------- Утилиты шапки: как на главной ---------- */
+.app-shell .header-actions .icon-button,
+.app-shell .header-actions .telegram-icon-button {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--a-ink-soft);
+  box-shadow: none;
+}
+
+.app-shell .header-actions .icon-button svg,
+.app-shell .header-actions .telegram-icon-button svg {
+  stroke: currentColor;
+}
+
+.app-shell .header-actions .share-icon-button svg,
+.app-shell .header-actions .share-icon-button svg * {
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 0.9;
+}
+
+/* Кнопка возврата остаётся залитой: это единственная навигация назад. */
+.app-shell .brand-home-button {
+  background: var(--a-brand);
+  border-color: rgba(28, 26, 23, 0.14);
+}
+
+/* ---------- Нижняя навигация ---------- */
+.app-shell .nav-button svg {
+  stroke: currentColor;
+}
+
+.app-shell .nav-button {
+  color: var(--a-ink-soft);
+}
+
+.app-shell .nav-button.active {
+  background: var(--a-brand);
+  border-color: rgba(28, 26, 23, 0.14);
+  color: #fff;
+}
+
+/* ---------- Экран идей: те же правила ---------- */
+.ideas-screen .ideas-back-button {
+  background: var(--a-brand);
+  border-color: rgba(28, 26, 23, 0.14);
+}
+
+.ideas-screen .section-heading h2,
+.ideas-screen .section-heading h3 {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--a-ink-soft);
+}
+
+.ideas-screen .idea-card {
+  border: 1px solid var(--a-line);
+  border-radius: 14px;
+  background: var(--a-card);
+  box-shadow: 0 1px 2px rgba(28, 26, 23, 0.04);
+}
+
+/* ============================================================
+   СПЛЭШ И ОНБОРДИНГ
+   Первое, что человек видит, жило по старым правилам: белый фон,
+   марка весом 900 в бирюзовом, стеклянная кнопка и восемь плиток в
+   насыщенных цветах. Плитки — это типы событий, поэтому они получают
+   ровно те же приглушённые тона, что и корешки карточек: онбординг
+   начинает обещать тот интерфейс, который человек потом увидит.
+   ============================================================ */
+
+.app-splash,
+.intro-screen {
+  background: #f6f1e7;
+}
+
+.app-splash-card h1,
+.intro-card .intro-title-brand {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #2f5d55;
+}
+
+.app-splash-card p {
+  font-weight: 400;
+  color: #6f675c;
+}
+
+.intro-card h1 {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #1c1a17;
+}
+
+.intro-card p {
+  font-weight: 400;
+  color: #6f675c;
+}
+
+/* Кнопка перестаёт быть стеклянной: плоская краска бренда. */
+.intro-button {
+  border: 0;
+  border-radius: 14px;
+  background: #2f5d55;
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(28, 26, 23, 0.18);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+/* Плитки типов — та же палитра, что у корешков карточек события. */
+.splash-ticket,
+.floater-ticket {
+  background: #44637e;
+}
+
+.splash-food,
+.floater-food {
+  background: #a2503a;
+}
+
+.splash-place,
+.floater-place {
+  background: #6e675c;
+}
+
+.splash-spa,
+.floater-spa {
+  background: #7a5568;
+}
+
+.splash-excursion,
+.floater-excursion {
+  background: #2e6b5e;
+}
+
+.floater-stay {
+  background: #8a6d2e;
+}
+
+.floater-idea {
+  background: #6e675c;
+}
+
+.floater-shopping {
+  background: #2e6b5e;
+}
+
+/* Плитки теряют тиснение: одна мягкая тень вместо жёсткого смещения. */
+.splash-tile,
+.intro-floater {
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(28, 26, 23, 0.1);
+}
+
+/* Логотип без жёсткой тени со смещением. */
+.app-splash-card img,
+.intro-logo {
+  filter: none;
+}
+
+/* Марка, логотип и текст стояли в верхней трети, а между абзацем и
+   кнопкой висел провал в 123px: третья строка сетки — 250px, абзац
+   занимал 141 и прижимался к её верху. Группа опускается, абзац
+   центрируется в своей строке — пустота распределяется поровну. */
+.intro-card {
+  align-content: start;
+  padding-top: 58px;
+}
+
+.intro-card p {
+  align-self: center;
+}
+
+/* ============================================================
+   ЭКРАН БЮДЖЕТА
+   Все плашки были залиты зелёным бренда — пять одинаково громких
+   блоков подряд, и глазу не за что зацепиться. Числа умеют говорить
+   сами: бумага, тихая подпись, крупная цифра. Зелёный остаётся один
+   на экран — на «Свободно», единственном числе, ради которого сюда
+   заходят.
+   ============================================================ */
+
+.app-shell .budget-metric-group h3 {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--a-ink-soft);
+}
+
+.app-shell .metric-card {
+  border: 1px solid var(--a-line);
+  border-radius: 14px;
+  background: var(--a-card);
+  color: var(--a-ink);
+  box-shadow: none;
+}
+
+.app-shell .metric-card span {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--a-ink-soft);
+}
+
+.app-shell .metric-card strong {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--a-ink);
+}
+
+/* Единственное число, ради которого открывают этот экран. */
+.app-shell .metric-card.budget-limit-total {
+  border-color: transparent;
+  background: var(--a-brand);
+}
+
+.app-shell .metric-card.budget-limit-total span {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.app-shell .metric-card.budget-limit-total strong {
+  color: #fff;
+}
+
+/* ============================================================
+   ЭКРАН ИДЕЙ
+   Чипы подборок были залиты все одинаково, поэтому выбранная не
+   отличалась от остальных. Активная остаётся краской, прочие —
+   тихой обводкой.
+   ============================================================ */
+
+.ideas-screen .idea-collection-chip {
+  border: 1px solid var(--a-line);
+  background: none;
+  color: var(--a-ink);
+  box-shadow: none;
+  font-weight: 500;
+}
+
+.ideas-screen .idea-collection-chip.active,
+.ideas-screen .idea-collection-chip[aria-pressed="true"],
+.ideas-screen .idea-collection-chip[aria-selected="true"] {
+  border-color: transparent;
+  background: var(--a-brand);
+  color: #fff;
+}
+
+/* ============================================================
+   ШТОРКИ
+   Тень была почти чёрной и с большим смещением — панель выглядела
+   тяжелее содержимого. Один мягкий слой того же мятного тона.
+   ============================================================ */
+
+.sheet-panel {
+  box-shadow: 0 -10px 30px rgba(58, 92, 84, 0.18);
+}
+
+.sheet-header h2,
+.sheet-header h3 {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--a-ink, #1c1a17);
+}
+
+/* ============================================================
+   ЕДИНЫЙ ЗЕЛЁНЫЙ
+   На экранах жили два: канонический #2f5d55 с главной и продакшновый
+   #4f7370. Второй остался на кнопке добавления, плашке результата и
+   двух кнопках калькулятора — цвет бренда не может быть «примерно
+   таким». Всё сводится к одному.
+   ============================================================ */
+
+.app-shell .fab,
+.app-shell [class*="fab"],
+.app-shell .currency-result,
+.app-shell #refreshRatesButton,
+.app-shell .currency-swap-button {
+  background: var(--a-brand);
+  border-color: rgba(28, 26, 23, 0.14);
+}
+
+/* ============================================================
+   ИКОНКИ ШАПКИ
+   Шестерёнка рисуется псевдоэлементом с белым цветом, у самолётика
+   заливка задана на самих путях — поэтому цвет с кнопки до них не
+   доходил и на светлой бумаге они пропадали.
+   ============================================================ */
+
+.app-shell .header-actions .icon-button::before,
+.app-shell .header-actions .icon-button::after {
+  color: var(--a-ink-soft);
+  -webkit-text-stroke-color: currentColor;
+}
+
+.app-shell .header-actions svg,
+.app-shell .header-actions svg * {
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 0.9;
+}
+
+/* ============================================================
+   КАРТА НА ОСТАЛЬНЫХ ЭКРАНАХ
+   Начинается от нижней границы шапки: маска прозрачна в её полосе,
+   поэтому заголовок и бюджет остаются на чистой бумаге, а карта
+   подхватывает содержимое ниже — как на главной.
+   ============================================================ */
+
+.app-shell,
+.ideas-screen {
+  position: relative;
+}
+
+.app-shell::before,
+.ideas-screen::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.4;
+  background-image: url("./assets/map-home.jpg");
+  background-size: cover;
+  background-position: center;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, transparent 22%, rgba(0, 0, 0, 0.2) 30%, rgba(0, 0, 0, 0.2) 76%, #000 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, transparent 22%, rgba(0, 0, 0, 0.2) 30%, rgba(0, 0, 0, 0.2) 76%, #000 100%);
+}
+
+/* Детей не трогаем: position: relative перебивал fixed у нижней панели
+   и кнопки добавления, и они выпадали в поток. */
+.app-shell,
+.ideas-screen {
+  background: none;
+}
+
+/* ============================================================
+   МАРКЕР УЧАСТНИКА
+   Ярко-рыжий кружок остался от первой версии и был самым громким
+   пятном на экране — громче статуса и цены. Приводим к плотности
+   чипов статуса: те же приглушённые тона, что у корешков.
+   ============================================================ */
+
+.participant-orange {
+  background: #a2503a;
+}
+
+.participant-blue {
+  background: #44637e;
+}
+
+.participant-teal {
+  background: #2e6b5e;
+}
+
+.participant-pink {
+  background: #7a5568;
+}
+
+/* ============================================================
+   КАРТОЧКА СОБЫТИЯ: торец убран
+   Толщина картона появилась в общем пасе по токенам, но на карточке
+   события спорит с корешком и перфорацией — двух приёмов на один
+   объект достаточно. Остаётся только тень.
+   ГЕОМЕТРИЯ И МЕХАНИКА ПЕРЕТАСКИВАНИЯ НЕ ЗАТРОНУТЫ.
+   ============================================================ */
+
+.app-shell .item-card {
+  box-shadow: 0 6px 16px rgba(58, 92, 84, 0.18);
+}
+
+/* Логотип онбординга опускается ещё ниже. */
+.intro-card {
+  padding-top: 96px;
+}
+
+/* Шестерёнка нарисована псевдоэлементом с жёстко заданным белым и
+   селектором по id — селектор по классам его не перебивал. */
+#editTripButton::before {
+  color: var(--a-ink-soft, #6f675c);
+  font-size: 24px;
+}
+
+/* Все кнопки приложения берут цвет из --active-button-gradient. Точечные
+   переопределения оставляли #4f7370 в шторках, смете и черновике —
+   поэтому меняется сам токен, один раз на весь эксперимент. */
+.app-shell,
+.ideas-screen,
+.sheet {
+  --active-button-gradient: #2f5d55;
+}
+
+/* Буква внутри чипа участника — белая: на приглушённой заливке тёмная
+   сливалась с фоном кружка. */
+.participant-avatar {
+  color: #fff;
+}
+
+/* ============================================================
+   НИЖНЯЯ НАВИГАЦИЯ — ОДНА ПЛАНКА
+   Внутри поездки это были четыре отдельные кнопки со своими рамками и
+   тенями, а на главной — единая планка. Одна и та же роль на экране не
+   может выглядеть двумя разными способами. Значения повторяют
+   .home-support-menu ровно.
+   ============================================================ */
+
+.app-shell .bottom-nav {
+  padding: 6px 8px;
+  border: 1px solid rgba(18, 54, 61, 0.12);
+  border-radius: 8px;
+  background:
+    linear-gradient(#f7f2e8 0%, #f4eee2 100%),
+    #fdfbf6;
+  box-shadow:
+    0 -10px 24px rgba(18, 54, 61, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    inset 0 -10px 18px rgba(18, 54, 61, 0.05);
+}
+
+/* Кнопки внутри планки — без собственных границ и теней. */
+.app-shell .bottom-nav .nav-button {
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.app-shell .bottom-nav .nav-button.active {
+  border: 0;
+  background: var(--a-brand);
+  box-shadow: none;
+}
+
+/* Логотип онбординга центрируется между маркой и текстом: строка сетки
+   равна его высоте, поэтому свободное место копилось только снизу —
+   22 сверху против 66 снизу. Сдвиг выравнивает оба зазора. */
+.intro-logo {
+  transform: translateY(32px);
+}

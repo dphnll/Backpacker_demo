@@ -24,7 +24,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.62";
+const APP_VERSION = "1.1.2.63";
 const APP_RELEASE_SUMMARY = "Кнопки черновика читаются целиком, а цена в чужой валюте не попадёт в бюджет.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -4255,9 +4255,9 @@ function renderBudget() {
     <section class="budget-metric-group">
       <h3>Идеи, хотелки, запас</h3>
       <div class="budget-grid additional-budget-grid">
-        <div class="metric-card"><span>Идеи, хотелки, запас</span><strong>${formatBudgetMoney(totals.additionalTotal)}</strong></div>
-        <div class="metric-card service-total"><span>С учётом идей, хотелок, запаса</span><strong>${formatBudgetMoney(totals.possibleTotal)}</strong></div>
-        <div class="metric-card"><span>Остаток с учётом идей, хотелок, запаса</span><strong style="color:${canShowBudget() && totals.remainingAll < 0 ? "var(--danger)" : "var(--green)"}">${formatBudgetMoney(totals.remainingAll)}</strong></div>
+        <div class="metric-card"><span>Запас</span><strong>${formatBudgetMoney(totals.additionalTotal)}</strong></div>
+        <div class="metric-card service-total"><span>Всего с запасом</span><strong>${formatBudgetMoney(totals.possibleTotal)}</strong></div>
+        <div class="metric-card"><span>Остаток с запасом</span><strong style="color:${canShowBudget() && totals.remainingAll < 0 ? "var(--danger)" : "var(--green)"}">${formatBudgetMoney(totals.remainingAll)}</strong></div>
       </div>
     </section>
     <section class="card budget-days-card">
@@ -6362,9 +6362,9 @@ function buildShareText(compact = false) {
       `Оплачено: ${formatMoney(totals.paidTotal)}`,
       `Бронь: ${formatMoney(totals.confirmedOutstanding)}`,
       `Свободно: ${formatMoney(totals.remainingConfirmed)}`,
-      `Идеи, хотелки, запас: ${formatMoney(totals.additionalTotal)}`,
-      `С учётом идей, хотелок, запаса: ${formatMoney(totals.possibleTotal)}`,
-      `Остаток с учётом идей, хотелок, запаса: ${formatMoney(totals.remainingAll)}`,
+      `Запас: ${formatMoney(totals.additionalTotal)}`,
+      `Всего с запасом: ${formatMoney(totals.possibleTotal)}`,
+      `Остаток с запасом: ${formatMoney(totals.remainingAll)}`,
       "",
     );
   }
@@ -7065,7 +7065,7 @@ async function buildTripPdfBlob(options) {
       ["Оплачено", formatMoney(totals.paidTotal)],
       ["Бронь", formatMoney(totals.confirmedOutstanding)],
       ["Свободно", formatMoney(totals.remainingConfirmed)],
-      ["Идеи, хотелки, запас", formatMoney(totals.additionalTotal)],
+      ["Запас", formatMoney(totals.additionalTotal)],
       ["С учётом идей, хотелок, запаса", formatMoney(totals.possibleTotal)],
       ["Остаток с учётом идей, хотелок, запаса", formatMoney(totals.remainingAll)],
     ];
