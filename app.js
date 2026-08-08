@@ -24,11 +24,15 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.67";
+const APP_VERSION = "1.1.2.68";
 const APP_RELEASE_SUMMARY = "Кнопки черновика читаются целиком, а цена в чужой валюте не попадёт в бюджет.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
+// Фоновая синхронизация переживает временную осечку молча: сообщать о сети,
+// которая через две секунды поднимется, значит приучать не читать чипы.
+const TRIP_SHARE_SYNC_RETRIES = 2;
+const TRIP_SHARE_SYNC_RETRY_MS = 2500;
 const TRIP_DRAFT_AI_SCHEMA_VERSION = "trip_draft_ai.v1";
 const TRIP_DRAFT_AI_ENABLED = true;
 const VIRTUAL_DAY_PREFIX = "day-";
@@ -306,6 +310,8 @@ let onboardingExitTracked = false;
 let supabaseClient = null;
 let tripShareSyncTimer = null;
 let tripShareSyncInFlight = false;
+// Повод последнего сообщения об осечке: один и тот же не повторяем.
+let tripShareSyncReported = "";
 let tripItemAttachmentsRequestVersion = 0;
 let tripItemAttachmentsPreviewsInFlight = false;
 let tripDraftPendingSaveTimer = null;
@@ -6222,26 +6228,77 @@ async function updatePublishedTripShare(options = {}) {
 
 async function ensureTripSharePublished(options = {}) {
   const existing = getTripShareRecord();
-  if (existing?.shareId && existing.token && !existing.revoked) {
+  // Осиротевшую запись обновлять некуда: строки этого владельца в базе нет.
+  // Публикуем заново — адрес ссылки при этом меняется, поэтому происходит
+  // это только по действию человека, а не в фоне.
+  if (existing?.shareId && existing.token && !existing.revoked && !existing.orphaned) {
     return updatePublishedTripShare({ includeBudget: options.includeBudget ?? existing.includeBudget });
   }
   return publishTripShare(options);
 }
 
-function schedulePublishedTripSync() {
+// Осечки фоновой синхронизации бывают разные и лечатся по-разному, а прежде
+// любая из них показывала один и тот же чип — и показывала его на каждое
+// сохранение, пока причина оставалась. Причину при этом гасил пустой catch,
+// поэтому разобрать её было нечем.
+function classifyTripShareSyncError(error) {
+  const code = String(error?.message || "");
+  const status = Number(error?.status) || 0;
+  // Supabase не настроен — сообщать не о чем: ссылки в такой сборке нет.
+  if (code === "supabase_not_configured") return "silent";
+  // Строку опубликованной поездки ищут по владельцу, а владелец здесь —
+  // анонимная личность браузера. Стоит ей смениться, и строка не находится:
+  // локально всё цело, а опубликованная копия молча перестаёт обновляться.
+  // Само это не пройдёт, поэтому синхронизацию дальше не гоняем.
+  if (status === 404 || code === "share_not_found") return "orphaned";
+  // Сеть, перегрузка, пятисотка — попробуем ещё раз, молча.
+  if (!status || status === 408 || status === 429 || status >= 500) return "retry";
+  return "final";
+}
+
+function reportTripShareSyncFailure(kind, error) {
   const record = getTripShareRecord();
-  if (!record?.shareId || record.revoked || isReadOnlyMode()) return;
+  if (record) {
+    // Причина ложится в запись: на телефоне консоли нет, а строка состояния
+    // в шторке ссылки есть.
+    saveTripShareRecord({ ...record, orphaned: kind === "orphaned", lastSyncError: String(error?.message || kind) });
+    renderTripLinkOptions();
+  }
+  // Один и тот же повод не повторяем: чип на каждое сохранение — это шум,
+  // из-за которого перестают читать и настоящие сообщения.
+  if (tripShareSyncReported === kind) return;
+  tripShareSyncReported = kind;
+  showToast(
+    kind === "orphaned"
+      ? "Ссылку на поездку нужно создать заново"
+      : "Не удалось обновить опубликованную поездку",
+  );
+}
+
+function schedulePublishedTripSync({ attempt = 0 } = {}) {
+  const record = getTripShareRecord();
+  if (!record?.shareId || record.revoked || record.orphaned || isReadOnlyMode()) return;
   window.clearTimeout(tripShareSyncTimer);
   tripShareSyncTimer = window.setTimeout(async () => {
     if (tripShareSyncInFlight) {
-      schedulePublishedTripSync();
+      schedulePublishedTripSync({ attempt });
       return;
     }
     tripShareSyncInFlight = true;
     try {
       await updatePublishedTripShare();
-    } catch {
-      showToast("Не удалось обновить опубликованную поездку");
+      tripShareSyncReported = "";
+      const synced = getTripShareRecord();
+      if (synced?.lastSyncError) saveTripShareRecord({ ...synced, lastSyncError: "", orphaned: false });
+    } catch (error) {
+      const kind = classifyTripShareSyncError(error);
+      console.warn("Опубликованная поездка не обновилась:", error);
+      if (kind === "silent") return;
+      if (kind === "retry" && attempt < TRIP_SHARE_SYNC_RETRIES) {
+        window.setTimeout(() => schedulePublishedTripSync({ attempt: attempt + 1 }), TRIP_SHARE_SYNC_RETRY_MS * (attempt + 1));
+        return;
+      }
+      reportTripShareSyncFailure(kind, error);
     } finally {
       tripShareSyncInFlight = false;
     }
@@ -6262,10 +6319,18 @@ function renderTripLinkOptions(record = getTripShareRecord()) {
   if (copyButton) copyButton.disabled = !hasActiveLink && !isSupabaseConfigured();
   if (revokeButton) revokeButton.disabled = !hasActiveLink;
   if (status) {
-    status.classList.toggle("error", !isSupabaseConfigured());
-    status.textContent = isSupabaseConfigured()
-      ? (hasActiveLink ? "Изменения поездки будут обновляться автоматически." : "Ссылка ещё не создана.")
-      : "Supabase не настроен: ссылка не создана.";
+    // Осечка синхронизации живёт здесь, а не только в чипе: чип исчезает, а
+    // вопрос «почему не обновляется» остаётся, и на телефоне ответить на
+    // него больше негде.
+    const orphaned = Boolean(record?.orphaned);
+    status.classList.toggle("error", !isSupabaseConfigured() || orphaned);
+    status.textContent = !isSupabaseConfigured()
+      ? "Supabase не настроен: ссылка не создана."
+      : orphaned
+        ? "Прежняя ссылка создана в другой сессии браузера и больше не обновляется. Создайте ссылку заново — адрес изменится."
+        : hasActiveLink
+          ? "Изменения поездки будут обновляться автоматически."
+          : "Ссылка ещё не создана.";
   }
 }
 
