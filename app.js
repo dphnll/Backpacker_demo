@@ -24,7 +24,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.68";
+const APP_VERSION = "1.1.2.69";
 const APP_RELEASE_SUMMARY = "Кнопки черновика читаются целиком, а цена в чужой валюте не попадёт в бюджет.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -6250,9 +6250,17 @@ function classifyTripShareSyncError(error) {
   // анонимная личность браузера. Стоит ей смениться, и строка не находится:
   // локально всё цело, а опубликованная копия молча перестаёт обновляться.
   // Само это не пройдёт, поэтому синхронизацию дальше не гоняем.
-  if (status === 404 || code === "share_not_found") return "orphaned";
-  // Сеть, перегрузка, пятисотка — попробуем ещё раз, молча.
-  if (!status || status === 408 || status === 429 || status >= 500) return "retry";
+  //
+  // Опознаём строго по коду в ответе, а не по одному лишь 404. Голая
+  // четырёхсотка приходит и когда функции нет по адресу — не выложили,
+  // переименовали, маршрут увело. Считать это потерянной ссылкой значит
+  // у всех разом остановить синхронизацию здоровых ссылок и попросить
+  // создать их заново; такую осечку надо переживать как временную.
+  if (code === "share_not_found") return "orphaned";
+  // Сеть, перегрузка, пятисотка — попробуем ещё раз, молча. Сюда же голая
+  // четырёхсотка без кода: код потерянной ссылки разобран выше, а значит
+  // здесь адрес функции, а не ссылка, и переживать это надо как временное.
+  if (!status || status === 404 || status === 408 || status === 429 || status >= 500) return "retry";
   return "final";
 }
 

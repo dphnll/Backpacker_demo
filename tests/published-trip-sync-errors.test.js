@@ -30,7 +30,13 @@ test("a lost browser identity is told apart from a lost network", () => {
   // the same way as a network blip.
   const notFound = Object.assign(new Error("share_not_found"), { status: 404 });
   assert.equal(classify(notFound), "orphaned");
-  assert.equal(classify(Object.assign(new Error("whatever"), { status: 404 })), "orphaned");
+
+  // A bare 404 is NOT a lost link. The endpoint answers 404 just as readily
+  // when it is not deployed, renamed, or routed away — and treating that as a
+  // lost link would stop the sync of every healthy link at once and tell
+  // everyone to recreate one. Only the code in the body identifies the case.
+  assert.equal(classify(Object.assign(new Error("whatever"), { status: 404 })), "retry");
+  assert.equal(classify(Object.assign(new Error(""), { status: 404 })), "retry");
 
   // No status at all is a failed fetch — offline, lost signal, DNS.
   assert.equal(classify(new Error("Failed to fetch")), "retry");
