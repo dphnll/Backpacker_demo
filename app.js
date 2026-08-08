@@ -24,7 +24,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.63";
+const APP_VERSION = "1.1.2.64";
 const APP_RELEASE_SUMMARY = "Кнопки черновика читаются целиком, а цена в чужой валюте не попадёт в бюджет.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -2489,7 +2489,10 @@ function saveDonationState() {
 
 function formatMoney(value = 0) {
   const amount = Number(value) || 0;
-  return `${amount.toLocaleString("ru-RU")} ${currencySymbol(state.trip.currency)}`;
+  // Копейки и центы не показываем: в плашки они не помещаются, а решения
+  // по ним никто не принимает. Округление только на выводе — в расчётах
+  // и в хранении сумма остаётся точной.
+  return `${Math.round(amount).toLocaleString("ru-RU")} ${currencySymbol(state.trip.currency)}`;
 }
 
 function formatBudgetMoney(value = 0) {
@@ -3307,7 +3310,7 @@ function renderHome() {
 
   list.innerHTML = trips.map((entry) => {
     const trip = entry.state.trip;
-    const style = entry.coverDataUrl ? ` style="background-image: linear-gradient(145deg, rgba(18,54,61,.66), rgba(18,54,61,.12)), url('${escapeAttr(entry.coverDataUrl)}')"` : "";
+    const style = entry.coverDataUrl ? ` style="--trip-cover: url('${escapeAttr(entry.coverDataUrl)}')"` : "";
     const statusLabel = getHomeTripStatusLabel(entry.id);
     const cardDateRange = formatTripCardDateRange(trip.startDate, trip.endDate);
     return `
@@ -3357,7 +3360,7 @@ function renderReceivedTrips() {
     const dayCountText = entry.startDate || entry.endDate
       ? formatTripDayCount({ startDate: entry.startDate, endDate: entry.endDate })
       : entry.dayCount || "Дни не заданы";
-    const coverStyle = entry.coverDataUrl ? ` style="background-image: linear-gradient(145deg, rgba(18,54,61,.66), rgba(18,54,61,.12)), url('${escapeAttr(entry.coverDataUrl)}')"` : "";
+    const coverStyle = entry.coverDataUrl ? ` style="--trip-cover: url('${escapeAttr(entry.coverDataUrl)}')"` : "";
     const statusBadge = entry.revoked ? "Доступ закрыт" : "Групповая (гость) · Read-only";
     const authorBadge = entry.authorDisplayName ? `Автор: ${entry.authorDisplayName}` : "Автор поездки";
     return `

@@ -5508,15 +5508,24 @@ h4,
   color: var(--a-brand);
 }
 
-/* Направление и даты — сведения, а не ярлыки: снимаем плашки. */
+/* Направление и даты — сведения, а не ярлыки: снимаем плашки.
+   Строка держится в одну: список городов вроде «Санкт-Петербург, Нижний
+   Новгород, Москва» переносился и раздувал карточку, а высота карточки
+   в ленте меняться не должна. Направление ужимается многоточием, даты
+   остаются целыми — они короткие и по ним ищут глазами. */
 .home-screen .trip-card-submeta {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: baseline;
   gap: 4px 10px;
   margin-top: 2px;
 }
 
 .home-screen .trip-card-submeta > * {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   padding: 0;
   border: 0;
   background: none;
@@ -5524,6 +5533,11 @@ h4,
   font-size: 14px;
   font-weight: 400;
   color: var(--a-ink-soft);
+}
+
+/* Даты не ужимаются: место уступает направление. */
+.home-screen .trip-card-submeta > *:last-child {
+  flex: 0 0 auto;
 }
 
 .home-screen .home-card-meta {
@@ -5545,16 +5559,21 @@ h4,
   color: var(--a-ink-soft);
 }
 
-/* ---------- Обложки поездок: один фильтр на любое фото ----------
-   Человек загружает что угодно — снимок с телефона, скриншот, картинку
-   из сети. Общий фильтр приводит их к одной палитре, и лента перестаёт
-   быть пёстрой. Тот же приём, что на тренажёре: снимок теряет цвет и
-   получает тёплый тон, поверх идёт бумажная вуаль для читаемости.
-   Фильтр живёт только на карточке: открытая обложка остаётся честной. */
-.home-screen .trip-list-card[style*="url"],
-.home-screen .trip-list-card [style*="url"],
-.home-screen .trip-list-card img:not([aria-hidden="true"]) {
-  filter: var(--a-photo-filter);
+/* ---------- Обложки поездок: та же обработка, что у тренажёра ----------
+   Фильтр на карточке красил и текст: filter действует на всё содержимое
+   элемента, поэтому надписи выцветали вместе со снимком. Обработка ушла
+   в слои фона — ровно как на тренажёре. Разметка отдаёт только адрес
+   снимка в --trip-cover, вуаль и тон собираются здесь, поэтому тёмный
+   текст читается на любой фотографии. */
+.home-screen .trip-list-card[style*="--trip-cover"] {
+  background-color: var(--a-card);
+  background-image:
+    linear-gradient(var(--a-photo-veil-top), var(--a-photo-veil-bottom)),
+    linear-gradient(var(--a-photo-tone), var(--a-photo-tone)),
+    var(--trip-cover);
+  background-blend-mode: normal, color, normal;
+  background-size: cover, cover, cover;
+  background-position: center, center, center;
 }
 
 /* ---------- Иконки: один цвет и одна оболочка ----------
@@ -6228,39 +6247,10 @@ h4,
   stroke-width: 0.9;
 }
 
-/* ============================================================
-   КАРТА НА ОСТАЛЬНЫХ ЭКРАНАХ
-   Начинается от нижней границы шапки: маска прозрачна в её полосе,
-   поэтому заголовок и бюджет остаются на чистой бумаге, а карта
-   подхватывает содержимое ниже — как на главной.
-   ============================================================ */
-
-.app-shell,
-.ideas-screen {
-  position: relative;
-}
-
-.app-shell::before,
-.ideas-screen::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: 0.4;
-  background-image: url("./assets/map-home.jpg");
-  background-size: cover;
-  background-position: center;
-  -webkit-mask-image: linear-gradient(180deg, transparent 0%, transparent 22%, rgba(0, 0, 0, 0.2) 30%, rgba(0, 0, 0, 0.2) 76%, #000 100%);
-  mask-image: linear-gradient(180deg, transparent 0%, transparent 22%, rgba(0, 0, 0, 0.2) 30%, rgba(0, 0, 0, 0.2) 76%, #000 100%);
-}
-
-/* Детей не трогаем: position: relative перебивал fixed у нижней панели
-   и кнопки добавления, и они выпадали в поток. */
-.app-shell,
-.ideas-screen {
-  background: none;
-}
+/* Карта на экране поездки снята: фоновый слой во весь экран — единственное,
+   что этот пас добавил к структуре, а перетаскивание карточек объявлено
+   неприкосновенным. Возвращаем исходное устройство экрана; цвет и
+   типографика остаются. */
 
 /* ============================================================
    МАРКЕР УЧАСТНИКА
