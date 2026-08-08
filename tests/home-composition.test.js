@@ -74,12 +74,17 @@ test("one green across the app", () => {
 });
 
 test("photo treatment lives in one place", () => {
-  // The trainer builds its sepia from background layers and trip covers use a
-  // filter; both read the same tokens so they cannot drift apart.
+  // The trainer builds its tint from background layers and trip covers use a
+  // filter; both read tokens declared in one rule so they cannot drift apart.
+  // The trainer's hue is deliberately its own — brand green against the sepia
+  // of real trips — because that colour is the only thing telling a traveller
+  // it is not a trip. Geometry stays identical on purpose.
   const body = ruleBody(".home-screen");
   assert.match(body, /--a-photo-tone:/);
   assert.match(body, /--a-photo-filter:/);
-  assert.match(ruleBody(".home-screen .trainer-card"), /var\(--a-photo-tone\)/);
+  assert.match(body, /--a-trainer-tone: #2f5d55/);
+  assert.match(ruleBody(".home-screen .trainer-card"), /var\(--a-trainer-tone\)/);
+  assert.doesNotMatch(ruleBody(".home-screen .trainer-card"), /var\(--a-photo-tone\)/);
 });
 
 test("the trainer repeats the trip card exactly", () => {

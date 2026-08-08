@@ -24,7 +24,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.66";
+const APP_VERSION = "1.1.2.67";
 const APP_RELEASE_SUMMARY = "Кнопки черновика читаются целиком, а цена в чужой валюте не попадёт в бюджет.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -9111,17 +9111,90 @@ function getDropZoneFromPoint(x, y, fallbackTarget = null) {
   return candidates[0]?.candidate || null;
 }
 
+// Позиция вставки считается по геометрии соседей, а не по тому, что оказалось
+// под пальцем. Иначе живой предпросмотр невозможен: карточка встаёт на место
+// падения, попадает под палец сама, и раскладка начинает колебаться между
+// двумя положениями. Перетаскиваемая карточка из замера исключена — поэтому у
+// раскладки есть единственное устойчивое состояние, к которому она сходится.
+function getInsertionReference(zone, x, y) {
+  const cards = [...zone.children].filter(
+    (child) => child.dataset?.dragId && child.dataset.dragId !== draggedItemId,
+  );
+  return (
+    cards.find((card) => {
+      const rect = card.getBoundingClientRect();
+      // Допуск в половину высоты: в ленте дня карточки в одну строку, и
+      // правило сводится к сравнению по X; в сетке «Без даты» строки
+      // сравниваются раньше горизонтали.
+      if (y < rect.top) return true;
+      if (y > rect.bottom) return false;
+      return x < rect.left + rect.width / 2;
+    }) || null
+  );
+}
+
 function getDropDataFromPoint(x, y, fallbackTarget = null) {
-  const target = document.elementFromPoint(x, y) || fallbackTarget;
   const zone = getDropZoneFromPoint(x, y, fallbackTarget);
   if (!zone) return null;
-  const targetCard = zone.contains(target) ? target.closest?.("[data-drag-id]") : null;
-  const beforeItemId = targetCard && targetCard.dataset.dragId !== draggedItemId ? targetCard.dataset.dragId : null;
+  const reference = getInsertionReference(zone, x, y);
   return {
     date: zone.dataset.dropDate || "",
-    beforeItemId,
+    beforeItemId: reference?.dataset.dragId || null,
     zone,
   };
+}
+
+// Пустая лента дня заметно ниже ленты с карточками. Если увести карточку из
+// её дня по-настоящему, день схлопывается, всё ниже подпрыгивает под пальцем
+// и цель уезжает из-под него — ровно то, от чего страхует пункт 4 эталона.
+// Поэтому исходное место остаётся занятым: габарит берётся у самой карточки
+// мелким клоном, поэтому совпадает точно и переживёт правку её размеров.
+function ensureOriginSlot(drag) {
+  if (drag.originSlot) return drag.originSlot;
+  const slot = drag.card.cloneNode(false);
+  slot.removeAttribute("data-drag-id");
+  slot.removeAttribute("draggable");
+  slot.removeAttribute("id");
+  slot.classList.remove("dragging-source");
+  slot.classList.add("drag-origin-slot");
+  drag.originSlot = slot;
+  return slot;
+}
+
+// Карточка живьём встаёт туда, куда упадёт, и раздвигает соседей: результат
+// виден до того, как палец отпущен. Двигается сама карточка, а не заглушка, —
+// внутри одной ленты это и есть тот самый сдвиг соседа, без лишних объектов.
+function previewDropPosition(drag, data) {
+  if (!drag?.card || !data?.zone) return;
+  const card = drag.card;
+  const leavingOrigin = data.zone !== drag.originParent;
+  if (leavingOrigin && !drag.originSlot?.isConnected && drag.originParent?.isConnected) {
+    drag.originParent.insertBefore(ensureOriginSlot(drag), drag.originNext);
+  }
+  if (!leavingOrigin && drag.originSlot?.isConnected) drag.originSlot.remove();
+
+  const reference = data.beforeItemId
+    ? [...data.zone.children].find((child) => child.dataset?.dragId === data.beforeItemId)
+    : null;
+  if (reference) {
+    if (reference.previousElementSibling !== card) data.zone.insertBefore(card, reference);
+    return;
+  }
+  if (data.zone.lastElementChild !== card) data.zone.appendChild(card);
+}
+
+// Место-заглушка снимается при любом исходе: и когда карточка доехала, и
+// когда перетаскивание отменили.
+function clearOriginSlot(drag) {
+  drag?.originSlot?.remove();
+  if (drag) drag.originSlot = null;
+}
+
+// Падения не случилось — карточку надо вернуть туда, где она стояла. После
+// успешного moveItem это лишнее: он перерисовывает список целиком.
+function restoreDragOrigin(drag) {
+  if (!drag?.card || !drag.originParent?.isConnected) return;
+  drag.originParent.insertBefore(drag.card, drag.originNext);
 }
 
 function clearDropHighlights() {
@@ -9189,8 +9262,12 @@ function finishDragClickGuard() {
 
 function bindDesktopDrag() {
   let desktopDragPoint = null;
+  let desktopDrag = null;
 
-  function cleanupDesktopDrag() {
+  function cleanupDesktopDrag({ moved = false } = {}) {
+    clearOriginSlot(desktopDrag);
+    if (!moved) restoreDragOrigin(desktopDrag);
+    desktopDrag = null;
     $$(".dragging-source").forEach((element) => element.classList.remove("dragging-source"));
     clearDropHighlights();
     stopAutoScroll();
@@ -9211,6 +9288,7 @@ function bindDesktopDrag() {
     }
     draggedItemId = card.dataset.dragId;
     desktopDragPoint = { x: event.clientX, y: event.clientY };
+    desktopDrag = { card, originParent: card.parentElement, originNext: card.nextElementSibling };
     card.classList.add("dragging-source");
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", draggedItemId);
@@ -9222,14 +9300,20 @@ function bindDesktopDrag() {
     desktopDragPoint = { x: event.clientX, y: event.clientY };
     event.preventDefault();
     const data = getDropDataFromPoint(event.clientX, event.clientY, event.target);
-    if (data) markDropZone(data.zone);
+    if (data) {
+      markDropZone(data.zone);
+      previewDropPosition(desktopDrag, data);
+    }
   });
 
   document.addEventListener("dragenter", (event) => {
     if (!draggedItemId) return;
     event.preventDefault();
     const data = getDropDataFromPoint(event.clientX, event.clientY, event.target);
-    if (data) markDropZone(data.zone);
+    if (data) {
+      markDropZone(data.zone);
+      previewDropPosition(desktopDrag, data);
+    }
   });
 
   document.addEventListener("drop", (event) => {
@@ -9239,7 +9323,7 @@ function bindDesktopDrag() {
     event.preventDefault();
     moveItem(draggedItemId, data.date, data.beforeItemId, "drag_desktop");
     finishDragClickGuard();
-    cleanupDesktopDrag();
+    cleanupDesktopDrag({ moved: true });
   });
 
   document.addEventListener("dragend", () => {
@@ -9285,11 +9369,17 @@ function bindPointerDrag() {
     pointerDrag = null;
     window.clearTimeout(drag.timer);
 
+    clearOriginSlot(drag);
+    let moved = false;
     if (drop && drag.active && event) {
       const data = getDropDataFromPoint(event.clientX, event.clientY);
-      if (data) moveItem(drag.id, data.date, data.beforeItemId, "drag_touch");
+      if (data) {
+        moveItem(drag.id, data.date, data.beforeItemId, "drag_touch");
+        moved = true;
+      }
       finishDragClickGuard();
     }
+    if (!moved) restoreDragOrigin(drag);
 
     stopAutoScroll();
     drag.ghost?.remove();
@@ -9329,6 +9419,8 @@ function bindPointerDrag() {
       active: false,
       ghost: null,
       pointerType: event.pointerType,
+      originParent: card.parentElement,
+      originNext: card.nextElementSibling,
       timer: event.pointerType === "mouse" ? null : window.setTimeout(() => startPointerDrag(event), longPressDelay),
     };
   });
@@ -9355,7 +9447,10 @@ function bindPointerDrag() {
     pointerDrag.lastY = event.clientY;
     pointerDrag.ghost.style.transform = `translate(${event.clientX - pointerDrag.startX}px, ${event.clientY - pointerDrag.startY}px)`;
     const data = getDropDataFromPoint(event.clientX, event.clientY);
-    if (data) markDropZone(data.zone);
+    if (data) {
+      markDropZone(data.zone);
+      previewDropPosition(pointerDrag, data);
+    }
   }, { passive: false });
 
   document.addEventListener("pointerup", (event) => {
