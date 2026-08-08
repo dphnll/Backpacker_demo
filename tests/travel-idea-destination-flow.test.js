@@ -4,12 +4,16 @@ const path = require("node:path");
 const test = require("node:test");
 
 const appSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+const stylesSource = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
 
 function functionSource(name) {
-  const start = appSource.indexOf(`function ${name}(`);
+  const startMatch = new RegExp(`(?:async\\s+)?function ${name}\\(`).exec(appSource);
+  const start = startMatch?.index ?? -1;
   assert.ok(start >= 0, `${name} should exist`);
-  const next = appSource.indexOf("\nfunction ", start + 1);
-  return appSource.slice(start, next >= 0 ? next : appSource.length);
+  const rest = appSource.slice(start + 1);
+  const nextMatch = /\n(?:async\s+)?function /.exec(rest);
+  const end = nextMatch ? start + 1 + nextMatch.index : appSource.length;
+  return appSource.slice(start, end);
 }
 
 test("TravelIdea destination flow uses all non-demo trips and no empty picker", () => {
@@ -99,4 +103,14 @@ test("existing TripItem copy source bucket exclusion remains scoped to trip item
   assert.match(confirmSource, /createTripItemCopy/);
   assert.match(confirmSource, /creation_method: "copy"/);
   assert.match(confirmSource, /copy_destination_type: copyDestinationType/);
+});
+
+test("TravelIdea destination actions stay sticky at the PWA bottom", () => {
+  const actionsStart = stylesSource.indexOf(".card-copy-actions {");
+  assert.ok(actionsStart >= 0, "card copy actions styles should exist");
+  const actionsEnd = stylesSource.indexOf("\n}", actionsStart);
+  const actionsSource = stylesSource.slice(actionsStart, actionsEnd);
+  assert.match(actionsSource, /position:\s*sticky/);
+  assert.match(actionsSource, /bottom:\s*-14px/);
+  assert.match(actionsSource, /env\(safe-area-inset-bottom\)/);
 });

@@ -1,8 +1,8 @@
-const CACHE_NAME = "backpacker-pwa-v101";
+const CACHE_NAME = "backpacker-pwa-v102";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=cover-and-money-20260808",
+  "./styles.css?v=drag-ghost-20260808",
   "./financial-core.js",
   "./trip-date-core.js",
   "./trip-draft-quantity-core.js",
@@ -26,16 +26,17 @@ const APP_SHELL = [
   "./assets/status-maybe.png",
   "./assets/status-paid.png",
   "./assets/status-want.png",
-  "./icons/backpacker-192.png?v=logo-20260808",
-  "./icons/backpacker-512.png?v=logo-20260808",
-  "./icons/apple-touch-icon.png?v=logo-20260808",
+  "./icons/backpacker-192.png?v=logo-beige-20260808",
+  "./icons/backpacker-512.png?v=logo-beige-20260808",
+  "./icons/backpacker-maskable-512.png?v=logo-beige-20260808",
+  "./icons/apple-touch-icon.png?v=logo-beige-20260808",
   "./icons/card-copy.png",
   "./icons/piggy-bank.png",
   "./fonts/inter-cyrillic.woff2",
   "./fonts/inter-latin.woff2",
   "./assets/map-home.jpg",
   "./icons/backpacker-logo-transparent.png",
-  "./icons/backpacker-logo.svg?v=logo-20260808"
+  "./icons/backpacker-logo.svg?v=logo-beige-20260808"
 ];
 
 self.addEventListener("install", (event) => {
