@@ -82,6 +82,12 @@ a {
   pointer-events: none;
 }
 
+/* Сплэш уходил мгновенной подменой кадра. Плавный уход даёт карте под ним
+   дочитаться и превращает исчезновение в переход, а не в рывок. */
+.app-splash {
+  transition: opacity 320ms ease;
+}
+
 .app-splash-tiles {
   position: absolute;
   inset: 0;

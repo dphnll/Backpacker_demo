@@ -24,7 +24,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.65";
+const APP_VERSION = "1.1.2.66";
 const APP_RELEASE_SUMMARY = "Кнопки черновика читаются целиком, а цена в чужой валюте не попадёт в бюджет.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -7653,8 +7653,22 @@ function showIntroSlide(index) {
   trackEvent("onboarding_slide_viewed", { onboarding_version: ONBOARDING_VERSION, slide_index: index });
 }
 
+// Сплэш снимался сразу, как только startApp доходил до этой строки — в
+// локальном режиме это несколько десятков миллисекунд, и увидеть его было
+// физически нельзя. Экран запуска держится минимум эту паузу от загрузки
+// страницы; если приложение поднималось дольше, задержка не добавляется.
+const APP_SPLASH_MIN_MS = 900;
+const appSplashOpenedAt = Date.now();
+
 function hideAppSplash() {
-  $("#appSplash")?.classList.add("hidden");
+  const splash = $("#appSplash");
+  if (!splash) return;
+  const left = APP_SPLASH_MIN_MS - (Date.now() - appSplashOpenedAt);
+  if (left > 0) {
+    window.setTimeout(hideAppSplash, left);
+    return;
+  }
+  splash.classList.add("hidden");
 }
 
 function showIntroScreen(trigger = "first_open") {
