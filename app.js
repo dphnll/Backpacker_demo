@@ -24,7 +24,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.69";
+const APP_VERSION = "1.1.2.70";
 const APP_RELEASE_SUMMARY = "Кнопки черновика читаются целиком, а цена в чужой валюте не попадёт в бюджет.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -1420,7 +1420,16 @@ function renderExtensionConnectCard() {
   const request = extensionConnectState.request;
   const existing = $("#extensionConnectCard");
   if (!request) {
-    if (existing) existing.hidden = true;
+    // Removed, not hidden. `ensureExtensionConnectCard` writes the card's layout
+    // as an inline `display: grid`, and an inline declaration outranks the
+    // `[hidden] { display: none }` rule that the `hidden` attribute leans on —
+    // `styles.css` carries no `.extension-connect-card` rule to override it
+    // either. Setting `hidden` therefore left the card on screen after «Не
+    // сейчас» and after «Закрыть», until a reload dropped it by other means.
+    // Taking the node out closes it outright and takes its listeners with it;
+    // `ensureExtensionConnectCard` rebuilds the whole card if a new connect
+    // request ever arrives.
+    if (existing) existing.remove();
     return;
   }
   const card = ensureExtensionConnectCard();
