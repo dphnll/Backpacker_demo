@@ -1,4 +1,4 @@
-const CACHE_NAME = "backpacker-pwa-v107";
+const CACHE_NAME = "backpacker-pwa-v108";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -13,6 +13,7 @@ const APP_SHELL = [
   "./travel-ideas-client.js",
   "./trip-item-attachments-core.js",
   "./trip-item-attachments-client.js",
+  "./platform-file-boundary-core.js",
   "./private-trip-sync-core.js",
   "./private-trip-sync-client.js",
   "./app.js?v=private-trip-sync-contract-fix-20260803",

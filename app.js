@@ -24,7 +24,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.70";
+const APP_VERSION = "1.1.2.71";
 const APP_RELEASE_SUMMARY = "Кнопки черновика читаются целиком, а цена в чужой валюте не попадёт в бюджет.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -1038,6 +1038,19 @@ async function requireRecoverableIdentityForExtensionConnect(request) {
 
 function getTravelIdeaCore() {
   return window.BackpackerTravelIdeas;
+}
+
+function getPlatformFileBoundaryCore() {
+  return window.BackpackerPlatformFileBoundary;
+}
+
+/** True only when a native shell has installed that particular file action. */
+function hasPlatformFileAction(action) {
+  return Boolean(getPlatformFileBoundaryCore()?.isPlatformFileActionAvailable?.(action));
+}
+
+function runPlatformFileAction(action, args) {
+  return getPlatformFileBoundaryCore().callPlatformFileAction(action, args);
 }
 
 function getTravelIdeasClientApi() {
@@ -4913,9 +4926,43 @@ async function uploadPendingTripItemAttachments(item) {
   }
 }
 
+/**
+ * Hands an already-signed URL to the native shell. Kept separate from the
+ * browser path on purpose: the branch is decided before any window exists,
+ * because a shell has no popup to pre-open and an `about:blank` tab opened "just
+ * in case" would be left sitting on screen.
+ */
+async function openTripItemAttachmentThroughPlatform(attachment) {
+  const failWith = (message) => {
+    tripItemAttachmentsState = { ...tripItemAttachmentsState, error: message };
+    renderTripItemAttachments();
+  };
+  try {
+    await ensureSupabaseOwnerSession();
+    const signedUrl = await getTripItemAttachmentsClientApi().createTripItemAttachmentSignedUrl(
+      getSupabaseClient(),
+      attachment,
+      120,
+    );
+    const result = await runPlatformFileAction("openRemoteDocument", [signedUrl]);
+    // Cancelling is the user closing the viewer, not a problem to report.
+    if (result.status === "success" || result.status === "cancelled") return;
+    failWith("Не удалось открыть вложение.");
+  } catch (error) {
+    failWith(
+      getTripItemAttachmentsClientApi()?.getTripItemAttachmentErrorMessage?.(error)
+        || "Не удалось открыть вложение.",
+    );
+  }
+}
+
 async function openTripItemAttachment(attachmentId) {
   const attachment = getTripItemAttachmentById(attachmentId);
   if (!attachment) return;
+  if (hasPlatformFileAction("openRemoteDocument")) {
+    await openTripItemAttachmentThroughPlatform(attachment);
+    return;
+  }
   const previewWindow = window.open("about:blank", "_blank");
   if (previewWindow) previewWindow.opener = null;
   try {
@@ -7531,37 +7578,88 @@ async function prepareTripPdfExport(deliveryMethod) {
   try {
     blob = await buildTripPdfBlob(options);
   } catch (error) {
-    trackEvent("export_failed", {
-      ...getTripAnalyticsContext(),
-      export_type: "trip_pdf",
-      delivery_method: deliveryMethod,
-      failure_reason_bucket: classifyTripPdfGenerationFailure(error),
-    });
+    trackTripPdfExportFailed(deliveryMethod, classifyTripPdfGenerationFailure(error));
     showToast("Не удалось создать PDF. Попробуйте ещё раз.");
-    tripPdfGenerating = false;
-    setTripPdfButtonsBusy(false);
+    finishTripPdfExport();
     return;
   }
   const fileName = getTripPdfFileName();
+  // `export_completed` deliberately does not fire here. A built Blob is not a
+  // delivered document: the save sheet can still be dismissed, the share sheet
+  // cancelled, the write refused. The callers below fire it once delivery has
+  // actually happened, so the funnel counts exports that reached the user.
+  return { blob, fileName, optionProps };
+}
+
+function trackTripPdfExportCompleted(deliveryMethod, optionProps) {
   trackEvent("export_completed", {
     ...getTripAnalyticsContext(),
     export_type: "trip_pdf",
     delivery_method: deliveryMethod,
     ...optionProps,
   });
-  return { blob, fileName };
+}
+
+function trackTripPdfExportFailed(deliveryMethod, failureReasonBucket) {
+  trackEvent("export_failed", {
+    ...getTripAnalyticsContext(),
+    export_type: "trip_pdf",
+    delivery_method: deliveryMethod,
+    failure_reason_bucket: failureReasonBucket,
+  });
+}
+
+function finishTripPdfExport() {
+  tripPdfGenerating = false;
+  setTripPdfButtonsBusy(false);
 }
 
 async function downloadTripPdf() {
   const result = await prepareTripPdfExport("download");
   if (!result) return;
-  downloadBlobFile(result.fileName, result.blob);
-  showToast("PDF сохранён");
-  tripPdfGenerating = false;
-  setTripPdfButtonsBusy(false);
+  try {
+    if (hasPlatformFileAction("savePdf")) {
+      const outcome = await runPlatformFileAction("savePdf", [result.fileName, result.blob]);
+      // Dismissing the save sheet is a decision, not a fault: no toast, no event.
+      if (outcome.status === "cancelled") return;
+      if (outcome.status === "failure") {
+        trackTripPdfExportFailed("download", "native_save");
+        showToast("Не удалось сохранить PDF. Попробуйте ещё раз.");
+        return;
+      }
+    } else {
+      downloadBlobFile(result.fileName, result.blob);
+    }
+    trackTripPdfExportCompleted("download", result.optionProps);
+    showToast("PDF сохранён");
+  } finally {
+    finishTripPdfExport();
+  }
 }
 
 async function shareTripPdf() {
+  // The native sheet wins over `navigator.canShare`: inside a shell the web
+  // share API may exist and still be the wrong door.
+  if (hasPlatformFileAction("sharePdf")) {
+    const result = await prepareTripPdfExport("share");
+    if (!result) return;
+    try {
+      const outcome = await runPlatformFileAction("sharePdf", [result.fileName, result.blob]);
+      if (outcome.status === "cancelled") return;
+      if (outcome.status === "failure") {
+        trackTripPdfExportFailed("share", "native_share");
+        showToast("Не удалось отправить PDF. Попробуйте ещё раз.");
+        return;
+      }
+      trackEvent("share_completed", { ...getTripAnalyticsContext(), share_format: "pdf", method: "native_share" });
+      trackTripPdfExportCompleted("share", result.optionProps);
+      showToast("PDF отправлен");
+    } finally {
+      finishTripPdfExport();
+    }
+    return;
+  }
+
   const probeFile = new File(["probe"], "probe.pdf", { type: "application/pdf" });
   const canShareFiles = Boolean(navigator.canShare?.({ files: [probeFile] }) && navigator.share);
   const deliveryMethod = canShareFiles ? "share" : "download";
@@ -7576,24 +7674,22 @@ async function shareTripPdf() {
         files: [file],
       });
       trackEvent("share_completed", { ...getTripAnalyticsContext(), share_format: "pdf", method: "web_share" });
+      trackTripPdfExportCompleted(deliveryMethod, result.optionProps);
       showToast("PDF отправлен");
     } else {
       downloadBlobFile(result.fileName, result.blob);
+      trackTripPdfExportCompleted(deliveryMethod, result.optionProps);
       showToast("PDF сохранён. Его можно отправить из загрузок.");
     }
   } catch (error) {
+    // A dismissed share sheet raises AbortError. It was never a failure, and it
+    // is not a completed export either — neither event fires.
     if (error?.name !== "AbortError") {
-      trackEvent("export_failed", {
-        ...getTripAnalyticsContext(),
-        export_type: "trip_pdf",
-        delivery_method: deliveryMethod,
-        failure_reason_bucket: "share_api",
-      });
+      trackTripPdfExportFailed(deliveryMethod, "share_api");
       showToast("Не удалось создать PDF. Попробуйте ещё раз.");
     }
   } finally {
-    tripPdfGenerating = false;
-    setTripPdfButtonsBusy(false);
+    finishTripPdfExport();
   }
 }
 
