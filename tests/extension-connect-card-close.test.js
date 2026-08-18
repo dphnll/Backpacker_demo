@@ -64,10 +64,15 @@ test("closing the card does not touch the connect credential flow or the URL cle
   // Dismissal is inert: it must not mint, send or clear a credential.
   assert.doesNotMatch(dismissSource, /callExtensionConnectFunction|sendCredentialToExtension|buildCredentialBridgeMessage/);
 
-  // The ordinary connect flow still mints server-side and hands the credential
-  // straight to the extension, then strips the params.
+  // The ordinary connect flow first verifies the official CWS ID, then mints
+  // server-side and hands the credential straight to that extension before
+  // stripping the params.
+  assert.ok(
+    connectSource.indexOf("core.normalizeExtensionId(request.extensionId, window.location.href)")
+      < connectSource.indexOf('callExtensionConnectFunction("connect"'),
+  );
   assert.match(connectSource, /callExtensionConnectFunction\("connect", \{ clientKey: request\.clientKey \}\)/);
   assert.match(connectSource, /core\.buildCredentialBridgeMessage\(/);
-  assert.match(connectSource, /sendCredentialToExtension\(request\.extensionId, message\)/);
+  assert.match(connectSource, /sendCredentialToExtension\(officialExtensionId, message\)/);
   assert.match(connectSource, /core\.stripExtensionConnectParams/);
 });

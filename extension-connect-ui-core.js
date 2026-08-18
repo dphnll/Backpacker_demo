@@ -3,6 +3,7 @@
 
   const CONNECT_QUERY_PARAM = "extensionConnect";
   const CONNECT_MESSAGE_TYPE = "BACKPACKER_EXTENSION_CONNECT_CREDENTIAL_V1";
+  const OFFICIAL_CWS_EXTENSION_ID = "okpfmpplfciccfddgibkcoliemfimifc";
 
   class ExtensionConnectUiError extends TypeError {
     constructor(code, field) {
@@ -24,9 +25,21 @@
     return text;
   }
 
-  function normalizeExtensionId(value) {
+  function isLocalExtensionConnectUrl(href) {
+    try {
+      const url = new URL(href);
+      return ["localhost", "127.0.0.1"].includes(url.hostname);
+    } catch {
+      return false;
+    }
+  }
+
+  function normalizeExtensionId(value, href = "") {
     const text = trim(value, "extensionId");
     if (!/^[a-p]{32}$/.test(text)) fail("invalid_extension_id", "extensionId");
+    if (text !== OFFICIAL_CWS_EXTENSION_ID && !isLocalExtensionConnectUrl(href)) {
+      fail("untrusted_extension_id", "extensionId");
+    }
     return text;
   }
 
@@ -53,7 +66,7 @@
     const url = new URL(href);
     if (url.searchParams.get(CONNECT_QUERY_PARAM) !== "1") return null;
     return {
-      extensionId: normalizeExtensionId(url.searchParams.get("extensionId") || ""),
+      extensionId: normalizeExtensionId(url.searchParams.get("extensionId") || "", url.href),
       clientKey: normalizeClientKey(url.searchParams.get("clientKey") || ""),
       nonce: normalizeNonce(url.searchParams.get("nonce") || ""),
     };
@@ -134,9 +147,11 @@
   const api = {
     CONNECT_MESSAGE_TYPE,
     CONNECT_QUERY_PARAM,
+    OFFICIAL_CWS_EXTENSION_ID,
     ExtensionConnectUiError,
     assertNoCredentialInUrl,
     buildCredentialBridgeMessage,
+    isLocalExtensionConnectUrl,
     normalizeClientKey,
     normalizeAccountEmail,
     normalizeExtensionId,

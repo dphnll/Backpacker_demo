@@ -24,7 +24,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.71";
+const APP_VERSION = "1.1.2.72";
 const APP_RELEASE_SUMMARY = "Кнопки черновика читаются целиком, а цена в чужой валюте не попадёт в бюджет.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -1589,10 +1589,11 @@ async function submitExtensionConnectIdentityForm(event) {
 async function connectBackpackerExtension() {
   const request = extensionConnectState.request;
   const core = getExtensionConnectUiCore();
-  if (!request || !core?.buildCredentialBridgeMessage) return;
+  if (!request || !core?.buildCredentialBridgeMessage || !core?.normalizeExtensionId) return;
   extensionConnectState = { ...extensionConnectState, status: "connecting", error: "" };
   renderExtensionConnectCard();
   try {
+    const officialExtensionId = core.normalizeExtensionId(request.extensionId, window.location.href);
     const identityState = await requireRecoverableIdentityForExtensionConnect(request);
     if (identityState.identityRequired) {
       extensionConnectState = { ...extensionConnectState, status: "identity_required", error: "" };
@@ -1606,7 +1607,7 @@ async function connectBackpackerExtension() {
       credential: payload.credential,
       connection: payload.connection,
     });
-    await sendCredentialToExtension(request.extensionId, message);
+    await sendCredentialToExtension(officialExtensionId, message);
     extensionConnectState = { ...extensionConnectState, status: "connected", error: "" };
     if (core.stripExtensionConnectParams && window.history?.replaceState) {
       window.history.replaceState({}, document.title, core.stripExtensionConnectParams(window.location.href));
