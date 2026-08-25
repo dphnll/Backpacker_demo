@@ -40,7 +40,7 @@ test("TravelIdea confirm opens an ordinary editable item draft without writing i
   assert.match(draftSource, /openTrip\(targetTripId, { persistNavigation: false, refreshProposals: false }\)/);
   assert.match(draftSource, /openItemSheet\(null,\s*{/);
   assert.match(draftSource, /initialDraft/);
-  assert.match(draftSource, /creationMethod: "other"/);
+  assert.match(draftSource, /creationMethod: "idea"/);
   assert.match(draftSource, /returnScreenOnCancel: "ideas"/);
   assert.match(draftSource, /inlineWarning: localizeItemDraftWarning\(draft\.priceWarning\)/);
   assert.doesNotMatch(draftSource, /state\.items\.push|targetState\.items\.push|saveState|persistTripStore|trackEvent\("item_created"/);
@@ -58,7 +58,8 @@ test("TravelIdea item draft uses transient context and ordinary saveItem creatio
   assert.match(saveSource, /const createContext = isNew \? { \.\.\.itemCreateContext } : getDefaultItemCreateContext\(\)/);
   assert.match(saveSource, /state\.items\.push\(item\)/);
   assert.match(saveSource, /closeItemSheetAfterSave\(\)/);
-  assert.match(saveSource, /creation_method: createContext\.creationMethod \|\| "manual"/);
+  assert.match(saveSource, /creation_source: createContext\.creationMethod \|\| "manual"/);
+  assert.match(saveSource, /source_idea_id: createContext\.sourceIdeaId/);
 });
 
 test("TravelIdea item draft cancel cleans context and returns to Ideas", () => {
@@ -101,7 +102,7 @@ test("existing TripItem copy source bucket exclusion remains scoped to trip item
   assert.match(actionsSource, /omitSourceBucket: cardCopyState\.sourceKind === "trip_item" && targetState\.trip\.id === state\.trip\.id/);
   assert.match(confirmSource, /omitSourceBucket: cardCopyState\.sourceKind === "trip_item" && targetState\.trip\.id === state\.trip\.id/);
   assert.match(confirmSource, /createTripItemCopy/);
-  assert.match(confirmSource, /creation_method: "copy"/);
+  assert.match(confirmSource, /creation_source: "copy"/);
   assert.match(confirmSource, /copy_destination_type: copyDestinationType/);
 });
 

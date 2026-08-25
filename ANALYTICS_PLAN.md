@@ -53,13 +53,57 @@ Safe properties:
 
 Every event must include:
 
-- `analytics_schema_version`: current value `2026-07-01.1`;
-  the previous value `2026-06-25.1` remains a valid historical value and must not be deleted or overwritten;
+- `analytics_schema_version`: current value `2026-08-25.1`;
+  the previous values `2026-07-01.1` and `2026-06-25.1` remain valid historical values and must not be deleted, overwritten or backfilled;
   see "Feature analytics — July observation release" for the migration strategy;
+- `event_contract_version`: current value `0.1`; this is independent from the date-based source schema and from the future Founder Analytics DTO version;
 - `app_version` or `release_id`: current release marker;
 - `environment`: `production | local | preview`;
 - `is_internal_user`: boolean;
 - `is_test_user`: boolean.
+
+### Backpacker Analytics Contract v0.1 source schema
+
+The source contract starts at `analytics_schema_version = 2026-08-25.1` and does not rewrite historical events.
+
+Every contract event carries only this required source envelope in addition to its event allowlist:
+
+- `analytics_schema_version`, `event_contract_version`, `app_version` or `release_id`;
+- `environment`, `is_internal_user`, `is_test_user`, `identity_type`;
+- `source_event_timestamp`;
+- `$geoip_disable = true`.
+
+The PWA capture path also carries browser-local `anon_user_id` and `session_id`. The authenticated Edge capture uses its stable source `distinct_id` at the PostHog transport level and does not repeat the account ID as an event property.
+
+The current `distinct_id` remains browser-local and is declared as `identity_type = anonymous_browser`. Authenticated identity linking is a separate future design and must not be inferred from account data, IP, fingerprinting or other heuristics.
+
+Contract event allowlists:
+
+| Event | Emit boundary | Event properties |
+| --- | --- | --- |
+| `trip_created` | A new canonical trip is persisted. | `trip_id`, `trip_origin`, safe phase buckets, `creation_source`, safe trip-count fields |
+| `trip_first_value_reached` | The versioned threshold first becomes true. | trip context, `definition_version`, safe counts |
+| `item_created` | A canonical TripItem is persisted. | trip/item context, safe item enums/booleans, `creation_source`; `source_idea_id` only when source is `idea`; copy destination enum where applicable |
+| `item_updated` | A persisted TripItem has a real field change. | trip/item context, safe item enums/booleans, controlled `changed_fields` |
+| `item_day_changed` | A persisted item moves to a different day/undated bucket. | trip/item context, `from_bucket`, `to_bucket`, controlled method/boolean |
+| `trip_settings_updated` | At least one meaningful trip setting is persisted. | trip context, controlled `changed_fields`, safe booleans |
+| `trip_working_plan_reached` | The versioned observation threshold first becomes true. | trip context, `definition_version`, safe counts/buckets/booleans |
+| `trip_share_created` | The server confirms a new valid collaboration grant. | trip context, opaque `collaboration_id`, `actor_role`, `access_mode`, `share_source` |
+| `shared_trip_opened` | An authorized recipient successfully loads the shared trip. | `trip_id`, `trip_origin`, opaque `collaboration_id`, `actor_role`, `access_mode` |
+| `idea_saved` | An idea is successfully persisted. | opaque `idea_id`, `capture_source` |
+| `idea_add_to_trip_started` | The destination picker opens for a persisted idea. Diagnostic only. | opaque `idea_id`, `capture_source` |
+
+Controlled source enums:
+
+- `creation_source`: `manual | idea | copy | proposal | ai_draft | other`;
+- `capture_source`: `manual | extension | other`;
+- `actor_role`: `owner | recipient`;
+- `access_mode`: `view | propose | edit`;
+- `share_source`: `link | direct | in_app | other`.
+
+Unknown enum values normalize to `other`. Contract-event payloads are reduced to the common envelope and per-event allowlist before either PostHog SDK capture or direct fallback capture. Missing required correlation properties suppress the malformed success event.
+
+Extension-origin `idea_saved` is emitted by `travel-idea-ingestion` only after a newly created database row. Idempotent retries returning an existing idea do not emit again. The Edge Function uses the shared source contract and schedules capture with `EdgeRuntime.waitUntil`, so analytics delivery does not change the ingestion response. Runtime activation requires `POSTHOG_PROJECT_API_KEY`; `POSTHOG_INGESTION_HOST` and `BACKPACKER_ENVIRONMENT` are optional controlled configuration and must be verified during the live/source smoke before deploy approval.
 
 Onboarding events must include:
 
@@ -239,9 +283,11 @@ Rules:
 - if trip has no valid dates: `unknown`;
 - exact dates stay local.
 
-## Event dictionary
+## Legacy and supporting diagnostic event dictionary
 
-All events include the global properties from "Analytics versions" and safe context:
+The existing diagnostic events retain their historical semantics and safe context. Contract success events under `2026-08-25.1` use the stricter allowlist above.
+
+Diagnostic context may include:
 
 - `anon_user_id`;
 - `session_id`;

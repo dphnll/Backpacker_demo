@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.2.77 - 2026-08-25
+
+- Добавлен source layer Backpacker Analytics Contract v0.1 со схемой `2026-08-25.1`: строгий allowlist событий и properties, отдельная версия event contract, source timestamp и `$geoip_disable` для SDK и fallback capture path.
+- Успешные продуктовые сигналы теперь привязаны к подтверждённым действиям: collaboration grant/load, сохранение Ideas, создание TripItem из Ideas/AI Draft/accepted proposals, реальные изменения карточек, дней и настроек. Исторические названия и схемы не переписываются.
+- Extension-origin `idea_saved` формируется в существующей ingestion Edge Function только после нового DB insert; идемпотентный retry не дублирует событие, а сбой analytics delivery не меняет product response. PostHog project key читается только из Edge runtime binding.
+- В аналитику не проходят названия поездок и карточек, направления, заметки, URL, токены, точные даты, файлы, AI/voice content или PII. Текущий `distinct_id` остаётся browser-local; identity merge не добавлялся.
+
 ## 1.1.2.76 - 2026-08-25
 
 - Окно выбора PDF/XLS теперь открывается поверх шторки «Поделиться», а не под ней. Кнопки скачивания сметы и плана по дням снова принимают клики прямо из Share flow.

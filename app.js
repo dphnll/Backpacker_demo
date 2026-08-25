@@ -19,13 +19,15 @@ const ANALYTICS_LAST_OPEN_KEY = "backpacker.analytics.lastOpen.v1";
 const ANALYTICS_MILESTONES_KEY = "backpacker.analytics.milestones.v1";
 const DONATION_STATE_KEY = "backpacker.donation.state.v1";
 const ANALYTICS_CONFIG = window.BACKPACKER_ANALYTICS || {};
-const ANALYTICS_SCHEMA_VERSION = "2026-07-01.1";
+const ANALYTICS_SOURCE_CONTRACT = window.BackpackerAnalyticsSource;
+const ANALYTICS_SCHEMA_VERSION = ANALYTICS_SOURCE_CONTRACT?.ANALYTICS_SCHEMA_VERSION || "2026-08-25.1";
+const ANALYTICS_EVENT_CONTRACT_VERSION = ANALYTICS_SOURCE_CONTRACT?.EVENT_CONTRACT_VERSION || "0.1";
 const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.76";
-const APP_RELEASE_SUMMARY = "Выбор PDF или XLS открывается поверх окна «Поделиться» и принимает клики.";
+const APP_VERSION = "1.1.2.77";
+const APP_RELEASE_SUMMARY = "Source events соответствуют Backpacker Analytics Contract v0.1.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -444,15 +446,25 @@ function getUserTripCount() {
   return trips.filter((entry) => !entry.isDemo).length;
 }
 
+function getAnalyticsIdentityType() {
+  // The current analytics distinct_id remains browser-local. Supabase account
+  // identity must not silently replace or merge it before the separately
+  // approved anonymous-to-account identity design and smoke.
+  return "anonymous_browser";
+}
+
 function getAnalyticsContext(extra = {}) {
   return {
     anon_user_id: getOrCreateAnalyticsUserId(),
     session_id: analyticsSessionId,
     analytics_schema_version: ANALYTICS_SCHEMA_VERSION,
+    event_contract_version: ANALYTICS_EVENT_CONTRACT_VERSION,
     app_version: APP_VERSION,
     environment: getAnalyticsEnvironment(),
     is_internal_user: getAnalyticsFlag("internal"),
     is_test_user: getAnalyticsFlag("test_user"),
+    identity_type: getAnalyticsIdentityType(),
+    "$geoip_disable": true,
     screen: currentScreen,
     display_mode: getDisplayMode(),
     ...extra,
@@ -460,7 +472,21 @@ function getAnalyticsContext(extra = {}) {
 }
 
 function trackEvent(name, props = {}) {
-  const payload = getAnalyticsContext(props);
+  const eventProps = ANALYTICS_SOURCE_CONTRACT?.sanitizeEventProperties
+    ? ANALYTICS_SOURCE_CONTRACT.sanitizeEventProperties(name, props)
+    : props;
+  const missingRequired = ANALYTICS_SOURCE_CONTRACT?.getMissingRequiredProperties?.(name, eventProps) || [];
+  if (missingRequired.length) {
+    if (ANALYTICS_CONFIG.debug) console.warn("[Backpacker analytics] skipped malformed event", name, missingRequired);
+    return;
+  }
+  const rawPayload = getAnalyticsContext({
+    ...eventProps,
+    source_event_timestamp: new Date().toISOString(),
+  });
+  const payload = ANALYTICS_SOURCE_CONTRACT?.sanitizeContractEventPayload
+    ? ANALYTICS_SOURCE_CONTRACT.sanitizeContractEventPayload(name, rawPayload)
+    : rawPayload;
   if (ANALYTICS_CONFIG.debug) {
     console.info("[Backpacker analytics]", name, payload);
   }
@@ -477,6 +503,7 @@ function sendPostHogEvent(name, payload) {
     api_key: ANALYTICS_CONFIG.posthogKey,
     event: name,
     distinct_id: payload.anon_user_id,
+    timestamp: payload.source_event_timestamp,
     properties: payload,
   });
   const url = `${host}/capture/`;
@@ -2012,6 +2039,10 @@ async function submitIdeaForm(event) {
       saved = await api.insertTravelIdea(client, payload);
       ideasState.ideas = [saved, ...ideasState.ideas];
       ideasState.activeCollectionKey = getIdeaCollectionKey(saved.collection_id);
+      trackEvent("idea_saved", {
+        idea_id: saved.id,
+        capture_source: saved.source || payload.source,
+      });
       showToast(window.t("ideas.toast.created"));
     }
     closeSheet("ideaSheet");
@@ -2390,7 +2421,7 @@ async function loadReadOnlyShareFromUrl() {
   try {
     const payload = await callTripShareFunction("read", { token }, { useExistingSession: true });
     const nextState = normalizeState(payload.state);
-    return {
+    const share = {
       shareId: payload.shareId || "",
       sourceTripId: payload.tripId || nextState.trip.id,
       title: nextState.trip.title || window.t("share.received.trip.fallback"),
@@ -2408,6 +2439,16 @@ async function loadReadOnlyShareFromUrl() {
       source: "public_link",
       state: nextState,
     };
+    if (!share.isOwner && share.shareId && share.sourceTripId) {
+      trackEvent("shared_trip_opened", {
+        trip_id: share.sourceTripId,
+        trip_origin: "user_created",
+        collaboration_id: share.shareId,
+        actor_role: "recipient",
+        access_mode: "view",
+      });
+    }
+    return share;
   } catch {
     return { invalid: true, state: normalizeState(structuredClone(seedState)), options: { includeBudget: false } };
   }
@@ -3703,7 +3744,13 @@ async function openReceivedTrip(shareId) {
     };
     state = nextState;
     showTripScreen();
-    trackEvent("received_trip_opened", { share_id: shareId });
+    trackEvent("shared_trip_opened", {
+      trip_id: readOnlyShare.sourceTripId,
+      trip_origin: "user_created",
+      collaboration_id: readOnlyShare.shareId,
+      actor_role: "recipient",
+      access_mode: "view",
+    });
   } catch (error) {
     if (error.status === 410) {
       showToast(window.t("home.received.access.closed"));
@@ -4293,11 +4340,13 @@ async function acceptExpenseProposal(proposalId) {
   resolvingExpenseProposalIds.add(proposalId);
   renderProposalInbox();
   try {
+    const previousItems = structuredClone(state.items);
     await syncCurrentTripShareBeforeAccept();
     const payload = await callTripShareFunction("accept_expense_proposal", { proposalId }, { requireOwner: true });
     if (payload.state) {
       state = normalizeState(payload.state);
       saveState();
+      trackPersistedItemAnalyticsChanges(previousItems, state.items, "proposal");
     }
     await refreshAuthorExpenseProposals();
     render();
@@ -4332,11 +4381,13 @@ async function acceptItemProposal(proposalId) {
   resolvingItemProposalIds.add(proposalId);
   renderProposalInbox();
   try {
+    const previousItems = structuredClone(state.items);
     await syncCurrentTripShareBeforeAccept();
     const payload = await callTripShareFunction("accept_item_proposal", { proposalId }, { requireOwner: true });
     if (payload.state) {
       state = normalizeState(payload.state);
       saveState();
+      trackPersistedItemAnalyticsChanges(previousItems, state.items, "proposal");
     }
     await refreshAuthorExpenseProposals();
     render();
@@ -5483,6 +5534,38 @@ function getItemAnalyticsFlags(item) {
   };
 }
 
+function getItemAnalyticsChangedFields(previousItem, nextItem) {
+  const fields = [
+    "title", "type", "status", "priority", "date", "startTime", "durationMinutes", "price", "paidAmount",
+    "participantId", "allocations", "link", "locationText", "notes",
+  ];
+  return fields.filter((field) => JSON.stringify(previousItem?.[field] ?? null) !== JSON.stringify(nextItem?.[field] ?? null));
+}
+
+function trackPersistedItemAnalyticsChanges(previousItems = [], nextItems = [], creationSource = "proposal") {
+  const previousById = new Map(previousItems.map((item) => [item.id, item]));
+  nextItems.forEach((item) => {
+    const previousItem = previousById.get(item.id);
+    if (!previousItem) {
+      trackEvent("item_created", {
+        ...getTripAnalyticsContext(),
+        item_id: item.id,
+        ...getItemAnalyticsFlags(item),
+        creation_source: creationSource,
+      });
+      return;
+    }
+    const changedFields = getItemAnalyticsChangedFields(previousItem, item);
+    if (!changedFields.length) return;
+    trackEvent("item_updated", {
+      ...getTripAnalyticsContext(),
+      item_id: item.id,
+      ...getItemAnalyticsFlags(item),
+      changed_fields: changedFields,
+    });
+  });
+}
+
 function readItemFormDate(value, existing = null) {
   const parsed = parseDateFromInput(value);
   if (parsed) return parsed;
@@ -5573,16 +5656,20 @@ async function saveItem(event) {
   if (existingIndex >= 0) state.items[existingIndex] = item;
   else state.items.push(item);
   saveState();
-  const changedFields = existing
-    ? ["type", "status", "priority", "date", "startTime", "durationMinutes", "price", "paidAmount", "link", "locationText", "notes"]
-        .filter((field) => String(existing[field] ?? "") !== String(item[field] ?? ""))
-    : [];
-  trackEvent(isNew ? "item_created" : "item_updated", {
-    ...getTripAnalyticsContext(),
-    item_id: item.id,
-    ...getItemAnalyticsFlags(item),
-    ...(isNew ? { creation_method: createContext.creationMethod || "manual" } : { changed_fields: changedFields }),
-  });
+  const changedFields = existing ? getItemAnalyticsChangedFields(existing, item) : [];
+  if (isNew || changedFields.length) {
+    trackEvent(isNew ? "item_created" : "item_updated", {
+      ...getTripAnalyticsContext(),
+      item_id: item.id,
+      ...getItemAnalyticsFlags(item),
+      ...(isNew
+        ? {
+          creation_source: createContext.creationMethod || "manual",
+          ...(createContext.sourceIdeaId ? { source_idea_id: createContext.sourceIdeaId } : {}),
+        }
+        : { changed_fields: changedFields }),
+    });
+  }
   if (getTripOrigin() === "demo" && !isNew) {
     trackEvent("trainer_action_completed", {
       ...getTripAnalyticsContext(),
@@ -5808,6 +5895,10 @@ function openTravelIdeaDestinationPicker() {
     history.pushState({ backpackerCardCopySheet: true }, "");
     cardCopySheetHistoryArmed = true;
   }
+  trackEvent("idea_add_to_trip_started", {
+    idea_id: sourceIdea.id,
+    capture_source: sourceIdea.source,
+  });
 }
 
 function dismissCardCopySheet(method = "close") {
@@ -6009,7 +6100,7 @@ function openTravelIdeaItemDraft({ sourceIdea, targetState, targetDate }) {
     openTrip(targetTripId, { persistNavigation: false, refreshProposals: false });
     openItemSheet(null, {
       initialDraft,
-      creationMethod: "other",
+      creationMethod: "idea",
       returnScreenOnCancel: "ideas",
       inlineWarning: localizeItemDraftWarning(draft.priceWarning),
       source: "travel_idea",
@@ -6090,7 +6181,7 @@ function confirmCardCopy() {
     ...getTripAnalyticsContext(targetState.trip),
     item_id: copiedItem.id,
     ...getItemAnalyticsFlags(copiedItem),
-    creation_method: "copy",
+    creation_source: "copy",
     copy_destination_type: copyDestinationType,
   });
   cardCopyState.isSubmitting = false;
@@ -6115,17 +6206,18 @@ function moveItem(itemId, targetDate, beforeItemId = null, method = "drag_deskto
   });
   saveState();
   render();
-  trackEvent("item_day_changed", {
-    ...getTripAnalyticsContext(),
-    item_id: moving.id,
-    item_type: moving.type,
-    item_status: moving.status,
-    from: previousDate ? "day" : "undated",
-    to: moving.date ? "day" : "undated",
-    method,
-    reordered_inside_bucket: previousDate === moving.date,
-    dropped_before_item: Boolean(beforeItemId),
-  });
+  if (previousDate !== moving.date) {
+    trackEvent("item_day_changed", {
+      ...getTripAnalyticsContext(),
+      item_id: moving.id,
+      item_type: moving.type,
+      item_status: moving.status,
+      from_bucket: previousDate ? "day" : "undated",
+      to_bucket: moving.date ? "day" : "undated",
+      method,
+      dropped_before_item: Boolean(beforeItemId),
+    });
+  }
   if (getTripOrigin() === "demo") {
     trackEvent("trainer_action_completed", { ...getTripAnalyticsContext(), action_type: "item_day_changed", trainer_version: TRAINER_VERSION });
   }
@@ -6543,13 +6635,15 @@ function saveTrip(event) {
     : window.t("trip.setup.saved"));
   const changedFields = ["title", "destination", "startDate", "endDate", "currency", "budgetLimit", "preferencesText"]
     .filter((field) => String(previousTrip[field] ?? "") !== String(state.trip[field] ?? ""));
-  trackEvent("trip_settings_updated", {
-    ...getTripAnalyticsContext(),
-    changed_fields: changedFields,
-    currency_changed: previousCurrency !== data.currency,
-    has_budget: Boolean(parseMoney(state.trip.budgetLimit)),
-    has_dates: Boolean(state.trip.startDate && state.trip.endDate),
-  });
+  if (changedFields.length) {
+    trackEvent("trip_settings_updated", {
+      ...getTripAnalyticsContext(),
+      changed_fields: changedFields,
+      currency_changed: previousCurrency !== data.currency,
+      has_budget: Boolean(parseMoney(state.trip.budgetLimit)),
+      has_dates: Boolean(state.trip.startDate && state.trip.endDate),
+    });
+  }
   checkTripMilestones();
 }
 
@@ -6648,6 +6742,15 @@ async function publishTripShare(options = {}) {
     ownerSessionLimitation: "Anonymous Auth: после потери браузерной сессии управление ссылкой не восстанавливается до появления постоянных аккаунтов.",
   };
   saveTripShareRecord(record);
+  if (record.shareId && record.shareId !== existing?.shareId) {
+    trackEvent("trip_share_created", {
+      ...getTripAnalyticsContext(),
+      collaboration_id: record.shareId,
+      actor_role: "owner",
+      access_mode: "view",
+      share_source: "link",
+    });
+  }
   return record;
 }
 
@@ -9666,6 +9769,14 @@ async function createTripFromAiDraft() {
       creation_source: "ai_draft",
       trip_count_after_create: getUserTripCount(),
       is_second_user_trip: getUserTripCount() >= 2,
+    });
+    entry.state.items.forEach((item) => {
+      trackEvent("item_created", {
+        ...getTripAnalyticsContext(entry.state.trip),
+        item_id: item.id,
+        ...getItemAnalyticsFlags(item),
+        creation_source: "ai_draft",
+      });
     });
     checkTripMilestones();
   } catch {
