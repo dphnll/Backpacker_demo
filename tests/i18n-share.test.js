@@ -167,9 +167,9 @@ test("Share translations interpolate author, link, and proposal UI", async () =>
 
 test("Share release uses a fresh versioned app asset and PWA cache", () => {
   const serviceWorker = read("service-worker.js");
-  assert.match(index, /\.\/app\.js\?v=i18n-export-20260825/);
-  assert.match(serviceWorker, /backpacker-pwa-v123/);
-  assert.match(serviceWorker, /\.\/app\.js\?v=i18n-export-20260825/);
+  assert.match(index, /\.\/app\.js\?v=share-export-layer-20260825/);
+  assert.match(serviceWorker, /backpacker-pwa-v124/);
+  assert.match(serviceWorker, /\.\/app\.js\?v=share-export-layer-20260825/);
 });
 
 test("Share copy and proposal edge errors use locale keys", () => {

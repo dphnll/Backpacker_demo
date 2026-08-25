@@ -170,11 +170,11 @@ test("index, app bootstrap, and PWA cache are wired to the same foundation", () 
   assert.match(index, /id="languageSelect"/);
   assert.ok(index.indexOf("./i18n.js?v=i18n-foundation-20260820") < index.indexOf("./app.js?"));
   assert.ok(app.indexOf("await window.BackpackerI18n?.init()") < app.indexOf("bindEvents();", app.indexOf("async function bootstrapApp")));
-  assert.match(serviceWorker, /backpacker-pwa-v123/);
-  assert.match(index, /\.\/styles\.css\?v=i18n-trip-setup-20260820/);
-  assert.match(serviceWorker, /\.\/styles\.css\?v=i18n-trip-setup-20260820/);
-  assert.match(index, /\.\/app\.js\?v=i18n-export-20260825/);
-  assert.match(serviceWorker, /\.\/app\.js\?v=i18n-export-20260825/);
+  assert.match(serviceWorker, /backpacker-pwa-v124/);
+  assert.match(index, /\.\/styles\.css\?v=share-export-layer-20260825/);
+  assert.match(serviceWorker, /\.\/styles\.css\?v=share-export-layer-20260825/);
+  assert.match(index, /\.\/app\.js\?v=share-export-layer-20260825/);
+  assert.match(serviceWorker, /\.\/app\.js\?v=share-export-layer-20260825/);
   assert.match(serviceWorker, /\.\/locales\/ru\.json/);
   assert.match(serviceWorker, /\.\/locales\/en\.json/);
 

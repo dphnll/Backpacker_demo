@@ -3821,7 +3821,7 @@ h3 {
 .export-format-dialog {
   position: fixed;
   inset: 0;
-  z-index: 45;
+  z-index: 80;
   display: grid;
   place-items: center;
 }

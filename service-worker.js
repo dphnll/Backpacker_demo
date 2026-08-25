@@ -1,8 +1,8 @@
-const CACHE_NAME = "backpacker-pwa-v123";
+const CACHE_NAME = "backpacker-pwa-v124";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=i18n-trip-setup-20260820",
+  "./styles.css?v=share-export-layer-20260825",
   "./financial-core.js",
   "./trip-date-core.js",
   "./trip-draft-quantity-core.js",
@@ -19,7 +19,7 @@ const APP_SHELL = [
   "./i18n.js?v=i18n-foundation-20260820",
   "./locales/ru.json",
   "./locales/en.json",
-  "./app.js?v=i18n-export-20260825",
+  "./app.js?v=share-export-layer-20260825",
   "./analytics-config.js",
   "./supabase-config.public.js",
   "./vendor/pdf-lib.min.js",

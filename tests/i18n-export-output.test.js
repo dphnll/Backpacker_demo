@@ -11,6 +11,7 @@ const read = (name) => fs.readFileSync(path.join(root, name), "utf8").replace(/^
 const app = read("app.js");
 const index = read("index.html");
 const serviceWorker = read("service-worker.js");
+const styles = read("styles.css");
 const dictionaries = {
   ru: JSON.parse(read("locales/ru.json")),
   en: JSON.parse(read("locales/en.json")),
@@ -293,8 +294,19 @@ test("Legacy text and CSV builders plus formatters follow active export locale",
 });
 
 test("Export localization ships through a fresh app asset and cache", () => {
-  assert.match(app, /const APP_VERSION = "1\.1\.2\.75"/);
-  assert.match(index, /\.\/app\.js\?v=i18n-export-20260825/);
-  assert.match(serviceWorker, /backpacker-pwa-v123/);
-  assert.match(serviceWorker, /\.\/app\.js\?v=i18n-export-20260825/);
+  assert.match(app, /const APP_VERSION = "1\.1\.2\.76"/);
+  assert.match(index, /\.\/styles\.css\?v=share-export-layer-20260825/);
+  assert.match(index, /\.\/app\.js\?v=share-export-layer-20260825/);
+  assert.match(serviceWorker, /backpacker-pwa-v124/);
+  assert.match(serviceWorker, /\.\/styles\.css\?v=share-export-layer-20260825/);
+  assert.match(serviceWorker, /\.\/app\.js\?v=share-export-layer-20260825/);
+});
+
+test("Share export format dialog stays above the Share sheet", () => {
+  const sheetZ = Number(styles.match(/\.sheet\s*\{[^}]*z-index:\s*(\d+)/s)?.[1]);
+  const exportDialogZ = Number(styles.match(/\.export-format-dialog\s*\{[^}]*z-index:\s*(\d+)/s)?.[1]);
+
+  assert.ok(Number.isFinite(sheetZ), "Share sheet z-index must stay explicit");
+  assert.ok(Number.isFinite(exportDialogZ), "export format dialog z-index must stay explicit");
+  assert.ok(exportDialogZ > sheetZ, "PDF/XLS choice must receive clicks above Share sheet");
 });
