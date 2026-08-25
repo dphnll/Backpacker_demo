@@ -33,17 +33,12 @@ const SUPABASE_CLIENT_ANALYTICS_EVENTS = new Set([
   "idea_add_to_trip_started",
   "trip_working_plan_reached",
 ]);
-const SERVER_MANAGED_ANALYTICS_EVENTS = new Set([
-  ...SUPABASE_CLIENT_ANALYTICS_EVENTS,
-  "trip_share_created",
-  "shared_trip_opened",
-]);
 const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.78";
-const APP_RELEASE_SUMMARY = "Approved analytics signals сохраняются в private Supabase source; PostHog остаётся shadow source.";
+const APP_VERSION = "1.1.2.79";
+const APP_RELEASE_SUMMARY = "Supabase — единственный runtime source аналитики; legacy PostHog emission отключён.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -576,37 +571,7 @@ function trackEvent(name, props = {}) {
   if (ANALYTICS_CONFIG.debug) {
     console.info("[Backpacker analytics]", name, payload);
   }
-  if (!SERVER_MANAGED_ANALYTICS_EVENTS.has(name)) {
-    if (window.posthog?.capture) {
-      window.posthog.capture(name, payload);
-    } else if (ANALYTICS_CONFIG.posthogKey) {
-      sendPostHogEvent(name, payload);
-    }
-  }
   writeSupabaseAnalyticsEvent(name, payload);
-}
-
-function sendPostHogEvent(name, payload) {
-  const host = (ANALYTICS_CONFIG.posthogHost || "https://eu.i.posthog.com").replace(/\/$/, "");
-  const body = JSON.stringify({
-    api_key: ANALYTICS_CONFIG.posthogKey,
-    event: name,
-    distinct_id: payload.anon_user_id,
-    timestamp: payload.source_event_timestamp,
-    properties: payload,
-  });
-  const url = `${host}/capture/`;
-  if (navigator.sendBeacon) {
-    const sent = navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
-    if (sent) return;
-  }
-  fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body,
-    keepalive: true,
-    credentials: "omit",
-  }).catch(() => {});
 }
 
 function trackAppOpen() {

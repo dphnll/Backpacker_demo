@@ -16,12 +16,17 @@ The core questions:
 
 Analytics must not collect personal travel content.
 
-## Tool split
+## Current runtime architecture
 
-- PostHog: product behavior, event funnels, paths, retention and product milestones.
-- Google Sheet via Telegram bot: qualitative feedback from testers.
+Canonical production chain since `1.1.2.79`:
 
-Google Sheet is not used for high-volume product analytics.
+`Backpacker → private Supabase analytics source → aggregate endpoint → Founder Analytics`
+
+- The private typed Supabase source is the only runtime source of truth.
+- Founder Analytics consumes only the controlled aggregate endpoint; raw Backpacker rows do not cross that boundary.
+- PostHog emission is disabled in browser, analytics-source, sharing and Extension-ingestion runtime paths. The PostHog project and its historical events/dashboards are preserved as legacy evidence only.
+- The `PostHog_метрики` Google Sheet and manual observations are preserved as legacy history only. Its old automatic PostHog sync must remain disabled.
+- Historical architecture and dashboard notes below are retained for audit context; they are not current setup instructions unless explicitly marked otherwise.
 
 ## Privacy boundary
 
@@ -73,7 +78,7 @@ Every contract event carries only this required source envelope in addition to i
 - `source_event_timestamp`;
 - `$geoip_disable = true`.
 
-The PWA capture path also carries browser-local `anon_user_id` and `session_id`. The authenticated Edge capture uses its stable source `distinct_id` at the PostHog transport level and does not repeat the account ID as an event property.
+The PWA context still uses browser-local `anon_user_id` and `session_id` for local milestone/session behavior. The authenticated Edge writer derives the canonical analytics identity from the validated Supabase session and never trusts a client-provided identity.
 
 The current `distinct_id` remains browser-local and is declared as `identity_type = anonymous_browser`. Authenticated identity linking is a separate future design and must not be inferred from account data, IP, fingerprinting or other heuristics.
 
@@ -101,9 +106,9 @@ Controlled source enums:
 - `access_mode`: `view | propose | edit`;
 - `share_source`: `link | direct | in_app | other`.
 
-Unknown enum values normalize to `other`. Contract-event payloads are reduced to the common envelope and per-event allowlist before either PostHog SDK capture or direct fallback capture. Missing required correlation properties suppress the malformed success event.
+Unknown enum values normalize to `other`. Contract-event payloads are reduced to the common envelope and per-event allowlist before the canonical Supabase write. Missing required correlation properties suppress the malformed success event.
 
-Extension-origin `idea_saved` is emitted by `travel-idea-ingestion` only after a newly created database row. Idempotent retries returning an existing idea do not emit again. The Edge Function uses the shared source contract and schedules capture with `EdgeRuntime.waitUntil`, so analytics delivery does not change the ingestion response. Runtime activation requires `POSTHOG_PROJECT_API_KEY`; `POSTHOG_INGESTION_HOST` and `BACKPACKER_ENVIRONMENT` are optional controlled configuration and must be verified during the live/source smoke before deploy approval.
+Extension-origin `idea_saved` is written to the private Supabase source by `travel-idea-ingestion` only after a newly created database row. Idempotent retries returning an existing idea do not emit again. The Edge Function schedules the source write with `EdgeRuntime.waitUntil`, so analytics delivery does not change the ingestion response. PostHog bindings are not part of the runtime contract.
 
 Onboarding events must include:
 
@@ -253,7 +258,7 @@ Properties:
 Send once per user-created trip when all conditions are true:
 
 - same `trip_id`;
-- new session, based on the standard PostHog session when available;
+- new browser-local analytics session;
 - `trip_first_value_reached` was already reached;
 - after returning, the user performs a useful action.
 
@@ -445,7 +450,7 @@ Separate retention into:
 - Without accounts, we cannot reliably join behavior across devices.
 - Without backend, we cannot know whether a shared trip was opened by another person unless import/export or backend sharing is later added.
 
-## Feature analytics — July observation release
+## Historical: Feature analytics — July observation release
 
 Adds observation coverage for features that already shipped in product (`1.1.1.0` copy, `1.1.2.0` share/PDF) without changing UX or business logic. No new product features, no new milestones, no donation flow instrumentation.
 
@@ -453,10 +458,10 @@ Adds observation coverage for features that already shipped in product (`1.1.1.0
 
 - New schema version: `analytics_schema_version = 2026-07-01.1`.
 - Previous version `2026-06-25.1` stays valid and is never deleted or rewritten.
-- Core product-health metrics (first value, working plan, trainer, app opens) must keep counting events tagged with either schema version, so the weekly PostHog → Google Sheets sync does not lose data across the switch.
+- Historical PostHog reports counted both schema versions so the then-active weekly Google Sheets sync did not lose data across the switch. This is retained only to explain historical rows.
 - Only the new feature events below are expected to appear exclusively under `2026-07-01.1`; do not backfill them into the old schema.
-- PostHog dashboards/insights that hard-filter `analytics_schema_version = '2026-06-25.1'` must be updated to accept both values for core metrics.
-- The Google Sheets integration reads an allow-list of schema versions (`ANALYTICS_SCHEMA_VERSIONS` Script Property, comma-separated; falls back to the single historical value when unset) instead of one exact string. No new feature columns are added to the sheet.
+- Preserved legacy PostHog dashboards may contain both historical schema versions. Do not reinterpret or delete those rows.
+- The preserved Google Sheets script documents its historical schema allow-list, but its automatic trigger is no longer an active reporting path.
 
 ### `item_copy_opened`
 
@@ -558,7 +563,7 @@ Adds observation coverage for features that already shipped in product (`1.1.1.0
 ## Files to change during implementation
 
 - `app.js`: event names, product properties, milestone detection, local de-duplication, trip phase buckets.
-- `analytics-config.js`: schema/app version, environment flags, PostHog host/key, internal/test toggles.
+- `analytics-config.js`: provider marker and local debug toggle; it contains no PostHog runtime key or host.
 - `index.html`: load config and optional release marker.
 - `service-worker.js`: bump cache version when analytics files change.
 - `ANALYTICS_PLAN.md`: update `analytics_schema_version` and `definition_version` when definitions change.

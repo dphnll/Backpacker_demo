@@ -1,5 +1,7 @@
 # Backpacker — Feature Adoption dashboard (PostHog setup)
 
+> **LEGACY / DEPRECATED (2026-08-25).** PostHog is no longer a Backpacker runtime analytics source. Preserve existing dashboards, insights and historical events, but do not use this guide to create or reactivate production reporting. Current source of truth: private Supabase analytics source → aggregate endpoint → Founder Analytics.
+
 No programmatic PostHog access was available in this session, so nothing was created automatically. This is a manual, step-by-step setup guide for a human with PostHog EU access (project `209981`, host `https://eu.posthog.com`) to build the dashboard.
 
 Do not create these insights until the corresponding production payloads have been verified (see the final report's "Проверка раскрытых payload" section). Create insights only after confirming events actually arrive with the expected properties.

@@ -1,5 +1,21 @@
 # PostHog → Google Sheets metrics sync
 
+> **LEGACY / DEPRECATED (2026-08-25).** This integration is historical only. Do not install or reactivate its trigger. Current source of truth: private Supabase analytics source → aggregate endpoint → Founder Analytics. Preserve the Sheet rows and manual observation/decision columns.
+
+## Disable the external automatic trigger
+
+The trigger belongs to the spreadsheet-bound Google Apps Script project and cannot be disabled by a Git commit.
+
+1. Open [Backpacker Research](https://docs.google.com/spreadsheets/d/1jQsMqIkejdyxpD7mHI2IqwViAXUTNVFqqJXRiFM17Hk/edit).
+2. Open **Extensions → Apps Script**.
+3. Select `removeAnalyticsTriggers` and press **Run**. The function deletes only time-based triggers whose handler is `syncMetrics`.
+4. Open **Triggers** (clock icon) and verify that no `syncMetrics` trigger remains. Delete it there if it is still listed.
+5. Do not delete the `PostHog_метрики` tab or any rows, and do not clear `main_observation`, `main_problem` or `decision_for_next_week`.
+
+The safe removal function is already present in `posthog_metrics_sync.gs`; no script redeploy is required if the currently bound project contains this version. If it does not, delete the `syncMetrics` trigger directly from the Apps Script **Triggers** page.
+
+## Historical implementation
+
 Aggregated weekly product metrics from PostHog into the `PostHog_метрики` sheet.
 
 ## Target spreadsheet
@@ -16,7 +32,7 @@ Sheets not touched: `Участники`, `Наблюдения`, `Фидбэк`
 | `posthog_metrics_sync.gs` | Main Apps Script — paste into the spreadsheet's bound script |
 | `posthog_metrics_sync_tests.gs` | Pure-function tests — paste alongside, run `runAllTests()` |
 
-## Setup (one-time)
+## Historical setup (do not run)
 
 ### 1. Open the Apps Script editor
 

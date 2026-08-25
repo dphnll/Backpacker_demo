@@ -21,15 +21,14 @@ function functionSource(name) {
 test("source schema and event contract versions are independent and loaded before app", () => {
   assert.equal(sourceContract.ANALYTICS_SCHEMA_VERSION, "2026-08-25.1");
   assert.equal(sourceContract.EVENT_CONTRACT_VERSION, "0.1");
-  assert.ok(indexSource.indexOf("analytics-source-contract.js") < indexSource.indexOf("app.js?v=analytics-supabase-source-20260825"));
-  assert.match(workerSource, /backpacker-pwa-v126/);
+  assert.ok(indexSource.indexOf("analytics-source-contract.js") < indexSource.indexOf("app.js?v=analytics-legacy-cleanup-20260825"));
+  assert.match(workerSource, /backpacker-pwa-v127/);
   assert.match(workerSource, /analytics-source-contract\.js\?v=analytics-contract-20260825/);
 });
 
-test("every capture path receives the privacy and source-time envelope", () => {
+test("canonical Supabase capture receives the privacy and source-time envelope", () => {
   const context = functionSource("getAnalyticsContext");
   const track = functionSource("trackEvent");
-  const fallback = functionSource("sendPostHogEvent");
   assert.match(context, /event_contract_version: ANALYTICS_EVENT_CONTRACT_VERSION/);
   assert.match(context, /identity_type: getAnalyticsIdentityType\(\)/);
   assert.match(context, /"\$geoip_disable": true/);
@@ -37,8 +36,8 @@ test("every capture path receives the privacy and source-time envelope", () => {
   assert.match(track, /sanitizeEventProperties\(name, props\)/);
   assert.match(track, /sanitizeContractEventPayload\(name, rawPayload\)/);
   assert.match(track, /missingRequired\.length[\s\S]*return/);
-  assert.match(fallback, /timestamp: payload\.source_event_timestamp/);
-  assert.match(fallback, /distinct_id: payload\.anon_user_id/);
+  assert.match(track, /writeSupabaseAnalyticsEvent\(name, payload\)/);
+  assert.doesNotMatch(track, /posthog|sendBeacon|sendPostHogEvent/i);
 });
 
 test("contract success payloads contain only the approved common envelope and event allowlist", () => {
@@ -47,7 +46,7 @@ test("contract success payloads contain only the approved common envelope and ev
     session_id: "session-1",
     analytics_schema_version: "2026-08-25.1",
     event_contract_version: "0.1",
-    app_version: "1.1.2.78",
+    app_version: "1.1.2.79",
     environment: "production",
     is_internal_user: false,
     is_test_user: false,

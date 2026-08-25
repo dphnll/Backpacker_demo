@@ -182,9 +182,9 @@ test("Plan translations interpolate days, dates, duration, and copy confirmation
 
 test("Plan remains included in the current versioned app asset and PWA cache", () => {
   const serviceWorker = read("service-worker.js");
-  assert.match(index, /\.\/app\.js\?v=analytics-supabase-source-20260825/);
-  assert.match(serviceWorker, /backpacker-pwa-v126/);
-  assert.match(serviceWorker, /\.\/app\.js\?v=analytics-supabase-source-20260825/);
+  assert.match(index, /\.\/app\.js\?v=analytics-legacy-cleanup-20260825/);
+  assert.match(serviceWorker, /backpacker-pwa-v127/);
+  assert.match(serviceWorker, /\.\/app\.js\?v=analytics-legacy-cleanup-20260825/);
 });
 
 test("All events filters and empty state stay localized", () => {

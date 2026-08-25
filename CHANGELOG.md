@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.2.79 - 2026-08-25
+
+- PostHog runtime emission отключён во всех Backpacker production paths: browser capture/fallback, client analytics Edge shadow, sharing lifecycle и Extension ingestion. Canonical typed Supabase source, privacy allowlist, idempotency и event semantics не менялись.
+- Analytics documentation теперь фиксирует цепочку `private Supabase analytics source → aggregate endpoint → Founder Analytics` как source of truth. PostHog dashboards и Google Sheet сохранены только как historical/legacy surfaces; их данные не удаляются.
+- Daily PostHog → Google Sheets trigger принадлежит внешнему bound Apps Script и не управляется Git release. В legacy README добавлена точная безопасная команда удаления trigger без удаления строк или manual observations.
+
 ## 1.1.2.78 - 2026-08-25
 
 - Approved core signals теперь fire-and-forget записываются через authenticated Edge boundary в закрытый Supabase analytics source; PostHog сохранён как временный shadow/bootstrap source и получает тот же server-validated typed payload после принятия source-записи.
