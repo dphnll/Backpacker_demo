@@ -163,7 +163,7 @@ test("Item editor translations interpolate currency, owner, validation, and conf
 
 test("Item editor remains included in the current versioned app asset and PWA cache", () => {
   const serviceWorker = read("service-worker.js");
-  assert.match(index, /\.\/app\.js\?v=analytics-contract-20260825/);
-  assert.match(serviceWorker, /backpacker-pwa-v125/);
-  assert.match(serviceWorker, /\.\/app\.js\?v=analytics-contract-20260825/);
+  assert.match(index, /\.\/app\.js\?v=analytics-supabase-source-20260825/);
+  assert.match(serviceWorker, /backpacker-pwa-v126/);
+  assert.match(serviceWorker, /\.\/app\.js\?v=analytics-supabase-source-20260825/);
 });

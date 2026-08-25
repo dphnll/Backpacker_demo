@@ -22,12 +22,28 @@ const ANALYTICS_CONFIG = window.BACKPACKER_ANALYTICS || {};
 const ANALYTICS_SOURCE_CONTRACT = window.BackpackerAnalyticsSource;
 const ANALYTICS_SCHEMA_VERSION = ANALYTICS_SOURCE_CONTRACT?.ANALYTICS_SCHEMA_VERSION || "2026-08-25.1";
 const ANALYTICS_EVENT_CONTRACT_VERSION = ANALYTICS_SOURCE_CONTRACT?.EVENT_CONTRACT_VERSION || "0.1";
+const SUPABASE_CLIENT_ANALYTICS_EVENTS = new Set([
+  "trip_created",
+  "trip_first_value_reached",
+  "item_created",
+  "item_updated",
+  "item_day_changed",
+  "trip_settings_updated",
+  "idea_saved",
+  "idea_add_to_trip_started",
+  "trip_working_plan_reached",
+]);
+const SERVER_MANAGED_ANALYTICS_EVENTS = new Set([
+  ...SUPABASE_CLIENT_ANALYTICS_EVENTS,
+  "trip_share_created",
+  "shared_trip_opened",
+]);
 const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.77";
-const APP_RELEASE_SUMMARY = "Source events соответствуют Backpacker Analytics Contract v0.1.";
+const APP_VERSION = "1.1.2.78";
+const APP_RELEASE_SUMMARY = "Approved analytics signals сохраняются в private Supabase source; PostHog остаётся shadow source.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -76,6 +92,7 @@ let itemCreateContext = {
   toastOnSave: "",
 };
 let analyticsIsReturningUser = false;
+let supabaseAnalyticsSessionPromise = null;
 let cardCopyState = {
   sourceKind: "trip_item",
   sourceItemId: "",
@@ -471,6 +488,75 @@ function getAnalyticsContext(extra = {}) {
   };
 }
 
+function createAnalyticsEventId() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function getAnalyticsSourceFunctionUrl() {
+  const config = getSupabaseConfig();
+  if (!config.url) return "";
+  return `${String(config.url).replace(/\/+$/, "")}/functions/v1/analytics-source`;
+}
+
+function getAnalyticsServerContext(eventId = createAnalyticsEventId()) {
+  return {
+    event_id: eventId,
+    app_version: APP_VERSION,
+    environment: getAnalyticsEnvironment(),
+    is_internal_user: getAnalyticsFlag("internal"),
+    is_test_user: getAnalyticsFlag("test_user"),
+  };
+}
+
+async function getSupabaseAnalyticsAccessToken() {
+  if (!supabaseAnalyticsSessionPromise) {
+    supabaseAnalyticsSessionPromise = ensureSupabaseOwnerSession()
+      .finally(() => { supabaseAnalyticsSessionPromise = null; });
+  }
+  return supabaseAnalyticsSessionPromise;
+}
+
+function writeSupabaseAnalyticsEvent(eventName, payload) {
+  if (!SUPABASE_CLIENT_ANALYTICS_EVENTS.has(eventName)) return;
+  const config = getSupabaseConfig();
+  const url = getAnalyticsSourceFunctionUrl();
+  if (!url || !config.anonKey) return;
+  const eventId = createAnalyticsEventId();
+  const sourcePayload = { ...payload };
+  delete sourcePayload.anon_user_id;
+  delete sourcePayload.session_id;
+  delete sourcePayload.identity_type;
+  delete sourcePayload["$geoip_disable"];
+
+  void getSupabaseAnalyticsAccessToken()
+    .then((accessToken) => fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: config.anonKey,
+        Authorization: `Bearer ${accessToken}`,
+      },
+      cache: "no-store",
+      body: JSON.stringify({ eventId, eventName, payload: sourcePayload }),
+    }))
+    .then((response) => {
+      if (!response.ok && ANALYTICS_CONFIG.debug) {
+        console.warn("[Backpacker analytics] Supabase source write failed", eventName, response.status);
+      }
+    })
+    .catch((error) => {
+      if (ANALYTICS_CONFIG.debug) {
+        console.warn("[Backpacker analytics] Supabase source unavailable", eventName, error?.name || "unexpected");
+      }
+    });
+}
+
 function trackEvent(name, props = {}) {
   const eventProps = ANALYTICS_SOURCE_CONTRACT?.sanitizeEventProperties
     ? ANALYTICS_SOURCE_CONTRACT.sanitizeEventProperties(name, props)
@@ -490,11 +576,14 @@ function trackEvent(name, props = {}) {
   if (ANALYTICS_CONFIG.debug) {
     console.info("[Backpacker analytics]", name, payload);
   }
-  if (window.posthog?.capture) {
-    window.posthog.capture(name, payload);
-  } else if (ANALYTICS_CONFIG.posthogKey) {
-    sendPostHogEvent(name, payload);
+  if (!SERVER_MANAGED_ANALYTICS_EVENTS.has(name)) {
+    if (window.posthog?.capture) {
+      window.posthog.capture(name, payload);
+    } else if (ANALYTICS_CONFIG.posthogKey) {
+      sendPostHogEvent(name, payload);
+    }
   }
+  writeSupabaseAnalyticsEvent(name, payload);
 }
 
 function sendPostHogEvent(name, payload) {
@@ -878,7 +967,7 @@ async function getExistingSupabaseAccessToken() {
   return current.data.session?.access_token || "";
 }
 
-async function callTripShareFunction(action, payload = {}, { requireOwner = false, useExistingSession = false } = {}) {
+async function callTripShareFunction(action, payload = {}, { requireOwner = false, useExistingSession = false, ensureSession = false } = {}) {
   const config = getSupabaseConfig();
   const url = getTripShareFunctionUrl();
   if (!url || !config.anonKey) throw new Error("supabase_not_configured");
@@ -888,6 +977,8 @@ async function callTripShareFunction(action, payload = {}, { requireOwner = fals
   };
   if (requireOwner) {
     headers.Authorization = `Bearer ${await ensureSupabaseOwnerSession()}`;
+  } else if (ensureSession) {
+    headers.Authorization = `Bearer ${await getSupabaseAnalyticsAccessToken()}`;
   } else if (useExistingSession) {
     const token = await getExistingSupabaseAccessToken();
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -896,7 +987,7 @@ async function callTripShareFunction(action, payload = {}, { requireOwner = fals
     method: "POST",
     headers,
     cache: "no-store",
-    body: JSON.stringify({ action, ...payload }),
+    body: JSON.stringify({ action, ...payload, analytics: getAnalyticsServerContext() }),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -2419,7 +2510,7 @@ async function loadReadOnlyShareFromUrl() {
     return { invalid: true, state: normalizeState(structuredClone(seedState)), options: { includeBudget: false } };
   }
   try {
-    const payload = await callTripShareFunction("read", { token }, { useExistingSession: true });
+    const payload = await callTripShareFunction("read", { token }, { ensureSession: true });
     const nextState = normalizeState(payload.state);
     const share = {
       shareId: payload.shareId || "",

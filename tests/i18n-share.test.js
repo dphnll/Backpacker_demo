@@ -120,7 +120,7 @@ test("Share model, permissions, hidden-budget, and Supabase actions remain uncha
 
 test("read-only and received flows keep their existing access gates", () => {
   const load = functionSource("loadReadOnlyShareFromUrl", "isReadOnlyMode");
-  assert.match(load, /callTripShareFunction\("read", \{ token \}, \{ useExistingSession: true \}\)/);
+  assert.match(load, /callTripShareFunction\("read", \{ token \}, \{ ensureSession: true \}\)/);
   assert.match(load, /includeBudget: payload\.includeBudget !== false/);
 
   const button = functionSource("renderSaveReceivedTripButton", "saveReceivedTrip");
@@ -167,9 +167,9 @@ test("Share translations interpolate author, link, and proposal UI", async () =>
 
 test("Share release uses a fresh versioned app asset and PWA cache", () => {
   const serviceWorker = read("service-worker.js");
-  assert.match(index, /\.\/app\.js\?v=analytics-contract-20260825/);
-  assert.match(serviceWorker, /backpacker-pwa-v125/);
-  assert.match(serviceWorker, /\.\/app\.js\?v=analytics-contract-20260825/);
+  assert.match(index, /\.\/app\.js\?v=analytics-supabase-source-20260825/);
+  assert.match(serviceWorker, /backpacker-pwa-v126/);
+  assert.match(serviceWorker, /\.\/app\.js\?v=analytics-supabase-source-20260825/);
 });
 
 test("Share copy and proposal edge errors use locale keys", () => {

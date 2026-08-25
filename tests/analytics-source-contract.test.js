@@ -21,8 +21,8 @@ function functionSource(name) {
 test("source schema and event contract versions are independent and loaded before app", () => {
   assert.equal(sourceContract.ANALYTICS_SCHEMA_VERSION, "2026-08-25.1");
   assert.equal(sourceContract.EVENT_CONTRACT_VERSION, "0.1");
-  assert.ok(indexSource.indexOf("analytics-source-contract.js") < indexSource.indexOf("app.js?v=analytics-contract-20260825"));
-  assert.match(workerSource, /backpacker-pwa-v125/);
+  assert.ok(indexSource.indexOf("analytics-source-contract.js") < indexSource.indexOf("app.js?v=analytics-supabase-source-20260825"));
+  assert.match(workerSource, /backpacker-pwa-v126/);
   assert.match(workerSource, /analytics-source-contract\.js\?v=analytics-contract-20260825/);
 });
 
@@ -47,7 +47,7 @@ test("contract success payloads contain only the approved common envelope and ev
     session_id: "session-1",
     analytics_schema_version: "2026-08-25.1",
     event_contract_version: "0.1",
-    app_version: "1.1.2.77",
+    app_version: "1.1.2.78",
     environment: "production",
     is_internal_user: false,
     is_test_user: false,

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.2.78 - 2026-08-25
+
+- Approved core signals теперь fire-and-forget записываются через authenticated Edge boundary в закрытый Supabase analytics source; PostHog сохранён как временный shadow/bootstrap source и получает тот же server-validated typed payload после принятия source-записи.
+- Analytics identity для private source определяется Edge Function по Supabase Auth session. Клиентские `anon_user_id` и `session_id` не отправляются в Supabase writer, а сбой аналитики не меняет результат продуктового действия.
+- Private source использует typed columns, event/enums CHECK constraints, idempotency и once-only indexes, закрытые privileges, 90-day retention и aggregate-only boundary. Raw content, URLs, exact dates, PII, IP/GeoIP и generic properties JSONB не сохраняются.
+
 ## 1.1.2.77 - 2026-08-25
 
 - Добавлен source layer Backpacker Analytics Contract v0.1 со схемой `2026-08-25.1`: строгий allowlist событий и properties, отдельная версия event contract, source timestamp и `$geoip_disable` для SDK и fallback capture path.
