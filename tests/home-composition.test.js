@@ -114,10 +114,13 @@ test("both bottom bars are the same object", () => {
 test("budget labels do not repeat their own group heading", () => {
   // Inside a group already titled «Идеи, хотелки, запас» the long forms wrapped
   // to three lines next to a short number.
-  assert.match(appSource, /<span>Запас<\/span>/);
-  assert.match(appSource, /<span>Всего с запасом<\/span>/);
-  assert.match(appSource, /<span>Остаток с запасом<\/span>/);
-  assert.doesNotMatch(appSource, /<span>Остаток с учётом идей, хотелок, запаса<\/span>/);
-  // The copied estimate and the PDF carry the same wording.
-  assert.match(appSource, /`Всего с запасом: \$\{formatMoney\(totals\.possibleTotal\)\}`/);
+  assert.match(appSource, /window\.t\("budget\.metric\.backup"\)/);
+  assert.match(appSource, /window\.t\("budget\.metric\.possible"\)/);
+  assert.match(appSource, /window\.t\("budget\.metric\.remaining\.all"\)/);
+  assert.doesNotMatch(
+    appSource,
+    /<span>\$\{escapeHtml\(window\.t\("budget\.section\.flexible"\)\)\}<\/span>/,
+  );
+  // The text share uses the same short metric through the locale layer.
+  assert.match(appSource, /window\.t\("share\.text\.budget\.total", \{ amount: formatBudgetMoney\(totals\.possibleTotal\) \}\)/);
 });

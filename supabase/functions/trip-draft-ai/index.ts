@@ -1,3 +1,11 @@
+// @ts-ignore Deno bundles the repository-root side-effect import.
+import "../../../trip-draft-ai-core.js";
+
+// The schema and the prompt rules live in one shared module so the Node contract tests
+// exercise exactly what is sent to the model.
+// @ts-ignore The shared module registers itself on globalThis for both runtimes.
+const draftCore = (globalThis as Record<string, any>).BackpackerTripDraftAiCore;
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -66,6 +74,7 @@ async function transcribe(body: Record<string, unknown>, openAiKey: string) {
             ? "ogg"
             : "webm";
   form.append("model", Deno.env.get("OPENAI_TRANSCRIBE_MODEL") || "gpt-4o-mini-transcribe");
+  form.append("language", draftCore.normalizeAiDraftLocale(body.locale));
   form.append("file", new Blob([parsed.bytes], { type: parsed.mimeType }), `trip-voice.${extension}`);
 
   const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
@@ -78,58 +87,6 @@ async function transcribe(body: Record<string, unknown>, openAiKey: string) {
   return json({ text: safeString(data.text, 20000) });
 }
 
-const tripDraftSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["trip", "items", "questions"],
-  properties: {
-    trip: {
-      type: "object",
-      additionalProperties: false,
-      required: ["title", "destination", "startDate", "endDate", "dayCount", "datePrecision", "dateSourceText", "currency", "budgetLimit", "preferencesText"],
-      properties: {
-        title: { type: "string" },
-        destination: { type: "string" },
-        startDate: { type: "string", description: "YYYY-MM-DD or empty string" },
-        endDate: { type: "string", description: "YYYY-MM-DD or empty string" },
-        dayCount: { type: "number", description: "Trip duration in days. If the user gives a range like 3-4 days, use the maximum value. Use 1 when unknown." },
-        datePrecision: { type: "string", enum: ["exact", "approximate", "none"], description: "exact for dates explicitly provided by the user, approximate for inferred dates from natural-language periods, none when dates are empty." },
-        dateSourceText: { type: ["string", "null"], description: "Original user phrase that caused approximate date inference, otherwise null." },
-        currency: { type: "string", enum: ["RUB", "EUR", "SEK", "USD", "GEL", "TRY", "RSD", "BAM"] },
-        budgetLimit: { type: "number" },
-        preferencesText: { type: "string" },
-      },
-    },
-    items: {
-      type: "array",
-      maxItems: 80,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["title", "type", "status", "priority", "date", "dayIndex", "startTime", "durationMinutes", "price", "link", "locationText", "notes"],
-        properties: {
-          title: { type: "string" },
-          type: { type: "string", enum: ["stay", "transport", "excursion", "food", "place", "spa", "shopping", "idea", "other"] },
-          status: { type: "string", enum: ["paid", "fixed", "want", "maybe", "backup", "skipped"] },
-          priority: { type: "string", enum: ["must", "nice", "optional"] },
-          date: { type: "string", description: "YYYY-MM-DD when explicitly known, otherwise empty string" },
-          dayIndex: { type: "number", description: "1-based day number when user mentions Day 1/2/etc or sequence is clear and exact dates are unknown. Use 0 when unknown." },
-          startTime: { type: "string", description: "HH:MM when explicitly known, otherwise empty string" },
-          durationMinutes: { type: "number" },
-          price: { type: "number" },
-          link: { type: "string" },
-          locationText: { type: "string" },
-          notes: { type: "string" },
-        },
-      },
-    },
-    questions: {
-      type: "array",
-      maxItems: 5,
-      items: { type: "string" },
-    },
-  },
-} as const;
 
 function extractOutputText(data: Record<string, unknown>) {
   if (typeof data.output_text === "string") return data.output_text;
@@ -141,56 +98,24 @@ function extractOutputText(data: Record<string, unknown>) {
     .join("\n");
 }
 
-const tripDraftSystemPrompt = [
-  "You convert a free-form travel plan into a Backpacker trip draft.",
-  "Return only structured JSON matching the provided schema.",
-  "Preserve the user's language for all human-facing fields: trip title, destination, item titles, locations, notes, preferencesText, and questions.",
-  "Extract explicitly mentioned destination, date range, duration, activities, constraints, transport preferences, people count, budget, and must-not-do preferences.",
-  "Always set trip.dayCount. If exact dates are unknown but the user states duration, use that duration. If the user gives a duration range like 3-4 days, use the maximum value.",
-  "Use RUB as default currency unless the user explicitly names another currency.",
-  "If the user gives a relative or partial exact date without a year, infer the nearest future year from today's date.",
-  "If the user gives an approximate period, you may suggest a concrete date range inside that period and set trip.datePrecision to approximate. Put the original phrase in trip.dateSourceText.",
-  "Approximate period rules: first half of month means choose a range in the first half; middle of month means around the middle; second half means start after the 15th; end of month means the last 7-10 days. Use the stated duration. If the year is missing, choose the nearest future matching month; if that month has passed this year, use next year. If ambiguous, leave dates empty and set datePrecision none.",
-  "If dates are explicitly named by the user, set datePrecision exact and dateSourceText null. If dates are empty, set datePrecision none and dateSourceText null.",
-  "If an item has an explicit date or can be placed inside the extracted date range, set date as YYYY-MM-DD. If exact dates are unknown but the item belongs to Day 1, Day 2, etc., leave date empty and set dayIndex. If the day is truly unknown, leave date empty and dayIndex 0 so the app can put it into parking.",
-  "If time is not explicitly known, leave startTime empty. Do not invent exact times.",
-  "Create one item for each concrete activity, place, meal idea, transport, stay, spa, shopping item, or open idea mentioned by the user.",
-  "Interpret explicit item quantities deterministically: one/один/одна means 1; two/два/две/пара means 2; three/три means 3; several/несколько means 3; numeric N means N; a numeric range N-M means its upper bound M.",
-  "When the user gives an explicit quantity for a place or activity category, create that many separate items instead of one aggregate item. Keep different meaningful titles when known; otherwise use neutral numbered titles in the user's language, such as 'Кофейня 1', 'Кофейня 2'.",
-  "Do not replace specific user ideas with generic tasks like 'choose accommodation' unless the user only asked for planning help and did not name concrete ideas.",
-  "Default status for ideas is want. Default priority is nice.",
-  "Use type spa for hammam/spa/bathhouse, excursion for tours/cruises/museums, food for meals/restaurants, place for attractions/walks/viewpoints, stay for accommodation, transport for movement.",
-  "Do not create a ticket type. Tickets for transport are transport; tickets for museums or attractions are excursion or place; tickets for concerts or shows use the best existing non-ticket type.",
-  "Use transport only when the main purpose is moving the traveler from one point to another: flight, train, bus, transfer, taxi, car rental, own car, metro, tram, ferry, boat used as transport, or similar movement. Keep the concrete mode in the item title, e.g. 'Перелёт Москва — Стамбул' or 'Паром до острова'.",
-  "Do not use transport when the main purpose is an experience, tour, meal, or entertainment even if a vehicle is involved. Boat tour, sightseeing bus tour, dinner cruise, canal excursion, or retro tram ride for fun should be excursion, food, activity-like idea, or another existing type by main purpose.",
-  "Format preferencesText as 4-6 short editable bullet lines at most, using categories only when present: '• Обязательно: ...', '• Темп: ...', '• Опционально: ...', '• Ограничения: ...'. Do not repeat the whole source text or duplicate concrete events unless they express a general preference.",
-  "Health, allergies, mobility, food restrictions, pace, and dislikes are planning constraints only. Record them in preferencesText or item notes.",
-  "Do not provide medical advice, diagnoses, treatment guidance, or health risk assessment.",
-  "Ask up to five short clarifying questions only for important missing planning data.",
-].join("\n");
 
 async function parseDraft(body: Record<string, unknown>, openAiKey: string) {
   const text = safeString(body.text, 30000);
+  const locale = draftCore.normalizeAiDraftLocale(body.locale);
   if (text.length < 20) return json({ error: "text_too_short" }, 400);
 
-  const prompt = [
-    "Ты помогаешь превратить свободное описание поездки в черновик Backpacker.",
-    "Верни только структурированный JSON по схеме.",
-    "Всегда заполняй trip.dayCount. Если точных календарных дат нет, но пользователь сказал количество дней, используй его. Если сказал диапазон вроде 3-4 дня, бери максимум: 4.",
-    "Если пользователь указал приблизительный период вроде 'во второй половине августа', можешь предложить конкретный диапазон внутри периода, указать trip.datePrecision='approximate' и сохранить исходную формулировку в trip.dateSourceText. Первая половина месяца — диапазон в первой половине, середина — около середины, вторая половина — старт после 15 числа, конец месяца — последние 7-10 дней. Если год не указан, бери ближайший будущий подходящий месяц; если месяц уже прошёл в текущем году, бери следующий год. Если неоднозначно — оставь даты пустыми, datePrecision='none', dateSourceText=null.",
-    "Если пользователь назвал точные даты, ставь trip.datePrecision='exact' и trip.dateSourceText=null. Если дат нет — datePrecision='none' и dateSourceText=null.",
-    "Если точная дата события неизвестна, но понятно, что это День 1, День 2 и т.п., оставь date пустым и заполни dayIndex номером дня.",
-    "Если дата, день или время явно не указаны, оставляй date/startTime пустыми, а dayIndex 0: такие элементы попадут в парковку.",
-    "Не выдумывай медицинские советы. Аллергии, здоровье, мобильность, питание, темп и запреты фиксируй только как ограничения планирования в preferencesText или notes.",
-    "Не создавай диагнозы, риски лечения или рекомендации по лечению.",
-    "Не создавай тип ticket или 'Билет'. Билеты на транспорт — transport; билеты в музей/достопримечательность — excursion или place; билеты на концерт/событие — лучший существующий тип по смыслу.",
-    "Тип transport используй только когда главная задача события — перемещение из точки в точку: перелёт, поезд, автобус, трансфер, такси, аренда авто, своё авто, метро, трамвай, паром/катер/теплоход как способ добраться. Конкретный способ оставляй в названии карточки.",
-    "Если транспорт используется ради впечатления или экскурсии — прогулка на теплоходе, обзорная автобусная экскурсия, круиз с ужином, лодка по каналам — не ставь transport; выбирай excursion, food, idea или другой существующий тип по главной цели.",
-    "preferencesText оформи короткими редактируемыми строками с буллитами, максимум 4-6 строк: '• Обязательно: ...', '• Темп: ...', '• Опционально: ...', '• Ограничения: ...'. Не повторяй исходное описание целиком, не дублируй события, объединяй близкие идеи и пропускай пустые категории.",
-    "Статус по умолчанию для идей: want. Приоритет по умолчанию: nice.",
-    "Явные количества мест и событий трактуй так: один/одна — 1; два/две/пара — 2; три — 3; несколько — 3; точное число N — N; диапазон N–M — верхняя граница M.",
-    "Если пользователь указал количество однотипных мест или событий, создай нужное количество отдельных items, а не одну обобщённую карточку. Сохраняй разные осмысленные названия; если конкретные места неизвестны, используй нейтральную нумерацию вроде 'Кофейня 1', 'Кофейня 2'.",
-  ].join("\n");
+  try {
+    draftCore.assertSupportedSchemaVersion(body.schemaVersion);
+  } catch (error) {
+    // A client built against another contract must fail loudly rather than silently
+    // receive fields it cannot read.
+    return json({ error: (error as { code?: string }).code || "trip_draft_schema_version_unsupported" }, 400);
+  }
+
+  // Date grounding: the model must never guess what day it is today.
+  const today = safeString(body.today, 10);
+  const timezone = safeString(body.timezone, 80);
+  const prompt = draftCore.buildTripDraftPrompt({ today, timezone, locale });
 
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -202,7 +127,7 @@ async function parseDraft(body: Record<string, unknown>, openAiKey: string) {
       model: Deno.env.get("OPENAI_TRIP_DRAFT_MODEL") || "gpt-5.5",
       reasoning: { effort: Deno.env.get("OPENAI_TRIP_DRAFT_REASONING") || "low" },
       input: [
-        { role: "system", content: `${tripDraftSystemPrompt}\n\n${prompt}` },
+        { role: "system", content: prompt },
         { role: "user", content: text },
       ],
       text: {
@@ -210,7 +135,7 @@ async function parseDraft(body: Record<string, unknown>, openAiKey: string) {
           type: "json_schema",
           name: "backpacker_trip_draft",
           strict: true,
-          schema: tripDraftSchema,
+          schema: draftCore.tripDraftSchema,
         },
       },
     }),
@@ -219,7 +144,91 @@ async function parseDraft(body: Record<string, unknown>, openAiKey: string) {
   if (!response.ok) return json({ error: "parse_failed" }, response.status);
   const outputText = extractOutputText(data as Record<string, unknown>);
   try {
-    return json({ draft: JSON.parse(outputText) });
+    // Guardrails are applied server-side too, so a hallucinated link or price never
+    // leaves the function even if the model ignored the rules.
+    const draft = draftCore.applyDraftGuardrails(JSON.parse(outputText), text);
+    return json({ draft, schemaVersion: draftCore.TRIP_DRAFT_AI_SCHEMA_VERSION });
+  } catch {
+    return json({ error: "invalid_model_output" }, 502);
+  }
+}
+
+
+// Booking Pack: the traveller's own documents go straight to the model. The provider accepts
+// PDF as input_file and images as input_image, both as base64 data URLs, so no OCR step,
+// no extraction service and no upload to a Files API is involved.
+async function parseDocuments(body: Record<string, unknown>, openAiKey: string) {
+  const locale = draftCore.normalizeAiDraftLocale(body.locale);
+  try {
+    draftCore.assertSupportedSchemaVersion(body.schemaVersion, draftCore.BOOKING_PACK_SCHEMA_VERSION);
+  } catch (error) {
+    return json({ error: (error as { code?: string }).code || "trip_draft_schema_version_unsupported" }, 400);
+  }
+
+  const files = Array.isArray(body.files) ? body.files : [];
+  if (!files.length) return json({ error: "no_documents" }, 400);
+  if (files.length > draftCore.BOOKING_PACK_MAX_FILES) return json({ error: "too_many_documents" }, 400);
+
+  const parts: Record<string, unknown>[] = [];
+  let totalBytes = 0;
+  for (const entry of files) {
+    const file = entry as Record<string, unknown>;
+    const dataUrl = String(file.dataUrl || "");
+    const mimeType = String(file.mimeType || "").toLowerCase();
+    const fileName = safeString(file.fileName, 200) || "document";
+    const match = dataUrl.match(/^data:([^;,]+);base64,(.+)$/);
+    if (!match) return json({ error: "invalid_document" }, 400);
+    totalBytes += Math.floor((match[2].length * 3) / 4);
+    if (totalBytes > draftCore.BOOKING_PACK_MAX_TOTAL_BYTES) return json({ error: "documents_too_large" }, 413);
+    if (mimeType === "application/pdf") {
+      parts.push({ type: "input_file", filename: fileName, file_data: dataUrl });
+    } else if (["image/jpeg", "image/png", "image/webp"].includes(mimeType)) {
+      parts.push({ type: "input_image", image_url: dataUrl });
+    } else {
+      return json({ error: "unsupported_document_type" }, 400);
+    }
+  }
+
+  const comment = safeString(body.comment, 2000);
+  parts.push({
+    type: "input_text",
+    text: locale === "en"
+      ? (comment
+        ? `Read the attached trip documents. Traveller comment: ${comment}`
+        : "Read the attached trip documents.")
+      : (comment
+        ? `Разбери приложенные документы поездки. Комментарий путешественника: ${comment}`
+        : "Разбери приложенные документы поездки."),
+  });
+
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${openAiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: Deno.env.get("OPENAI_TRIP_DRAFT_MODEL") || "gpt-5.5",
+      reasoning: { effort: Deno.env.get("OPENAI_BOOKING_PACK_REASONING") || "medium" },
+      input: [
+        { role: "system", content: draftCore.buildBookingPackPrompt({ today: safeString(body.today, 10), timezone: safeString(body.timezone, 80), locale }) },
+        { role: "user", content: parts },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "backpacker_booking_pack",
+          strict: true,
+          schema: draftCore.bookingPackSchema,
+        },
+      },
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) return json({ error: "parse_failed" }, response.status);
+  const outputText = extractOutputText(data as Record<string, unknown>);
+  try {
+    // Evidence rules run server-side too, so an unproven price never leaves the function.
+    const fileIds = files.map((entry) => String((entry as Record<string, unknown>).sourceFileId || ""));
+    const draft = draftCore.applyBookingPackEvidenceRules(JSON.parse(outputText), { fileIds, locale });
+    return json({ draft, schemaVersion: draftCore.BOOKING_PACK_SCHEMA_VERSION });
   } catch {
     return json({ error: "invalid_model_output" }, 502);
   }
@@ -244,6 +253,7 @@ Deno.serve(async (req) => {
   try {
     if (body.action === "transcribe") return await transcribe(body, openAiKey);
     if (body.action === "parse") return await parseDraft(body, openAiKey);
+    if (body.action === "parse_documents") return await parseDocuments(body, openAiKey);
     return json({ error: "unknown_action" }, 400);
   } catch {
     return json({ error: "trip_draft_ai_failed" }, 500);

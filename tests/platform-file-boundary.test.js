@@ -170,7 +170,7 @@ test("a saved PDF reports success only after the save resolved, and a cancelled 
   const cancelled = source.indexOf('outcome.status === "cancelled"');
   const failure = source.indexOf('outcome.status === "failure"');
   const completed = source.indexOf("trackTripPdfExportCompleted");
-  const toast = source.indexOf('showToast("PDF сохранён")');
+  const toast = source.indexOf('showToast(window.t("share.pdf.saved"))');
 
   assert.ok(cancelled >= 0 && failure >= 0, "both non-success outcomes are handled");
   assert.ok(cancelled < completed && failure < completed, "success reporting comes after both early exits");

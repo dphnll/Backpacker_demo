@@ -11,6 +11,12 @@
   const CURRENCY_VALUES = Object.freeze(["RUB", "EUR", "SEK", "USD", "GEL", "TRY", "RSD", "BAM"]);
   const MAX_ITEMS = 80;
   const MAX_QUESTIONS = 5;
+  const AI_DRAFT_LOCALES = Object.freeze(["ru", "en"]);
+
+  function normalizeAiDraftLocale(value) {
+    const locale = String(value ?? "").trim().toLowerCase().split(/[-_]/)[0];
+    return AI_DRAFT_LOCALES.includes(locale) ? locale : "ru";
+  }
 
   function draftError(code) {
     const error = new Error(code);
@@ -103,12 +109,13 @@
     },
   };
 
-  // One source of truth for the rules. There is deliberately no second English copy:
-  // two lists drifted apart once already.
+  // Russian remains the fallback contract. English is kept beside it and contract-tested
+  // for the same safety rules so generated UI content follows the selected product locale.
   const TRIP_DRAFT_RULES = [
     "Ты превращаешь свободное описание поездки в черновик Backpacker.",
     "Верни только структурированный JSON по схеме.",
-    "Сохраняй язык пользователя во всех человекочитаемых полях: название поездки, направление, названия карточек, локации, заметки, preferencesText и вопросы.",
+    "Пиши все создаваемые человекочитаемые поля по-русски: название поездки, направление, названия карточек, локации, заметки, preferencesText и вопросы.",
+    "Не изменяй исходный текст пользователя. Собственные имена и дословные фрагменты источника сохраняй на исходном языке и не переводи автоматически.",
     "Извлекай только то, что пользователь назвал сам: направление, даты, длительность, активности, ограничения, транспорт, число участников, бюджет и запреты.",
     "",
     "ДАТЫ",
@@ -164,14 +171,85 @@
     "Задай не больше пяти коротких уточняющих вопросов и только про действительно важные недостающие данные планирования.",
   ];
 
-  function buildTripDraftPrompt({ today = "", timezone = "" } = {}) {
-    const groundingLines = [
+  const TRIP_DRAFT_RULES_EN = [
+    "Turn the traveller's free-form trip description into an editable Backpacker draft.",
+    "Return only structured JSON that matches the schema.",
+    "Write all generated human-readable fields in English: trip title, destination, item titles, locations, notes, preferencesText, and questions.",
+    "Do not alter the traveller's original source text. Preserve proper names and verbatim source excerpts in their original language; do not translate them automatically.",
+    "Extract only facts the traveller actually provided: destination, dates, duration, activities, constraints, transport, participant count, budget, and exclusions.",
+    "",
+    "DATES",
+    "Today's date is supplied explicitly. Use only that value and never rely on your own notion of the current date.",
+    "Always set trip.dayCount. If exact dates are absent but a duration is stated, use that duration. For a range such as 3-4 days, use the maximum.",
+    "When exact dates are stated, use datePrecision='exact' and dateSourceText=null.",
+    "For an approximate period, you may suggest a concrete range inside it, use datePrecision='approximate', and preserve the traveller's wording in dateSourceText. First half means a range in the first half, middle means around mid-month, second half starts after day 15, and end of month means the last 7-10 days.",
+    "If the year is absent, choose the nearest future occurrence of the stated month relative to today's supplied date. If that month has passed this year, use next year.",
+    "If the period is ambiguous, leave dates empty, set datePrecision='none', and dateSourceText=null.",
+    "If an item's calendar date is unknown but Day 1, Day 2, and so on is clear, leave date empty and set dayIndex.",
+    "If neither day nor time is stated, leave date and startTime empty and use dayIndex=0 so the item remains Unscheduled.",
+    "Never invent an exact time. If no time is stated, leave startTime empty.",
+    "",
+    "LINKS",
+    "Never invent a URL. Return a link only when the traveller included it in the source text.",
+    "If the traveller supplied no link, link must be an empty string. An empty link is a normal result.",
+    "Never insert a remembered website address, even when you are confident the place exists.",
+    "",
+    "PRICES",
+    "Never invent a price. Return a number only when the traveller stated it.",
+    "priceConfidence='confirmed' means the traveller gave an exact price. Set price to that number and priceSourceText to their wording.",
+    "priceConfidence='estimate' means the traveller gave an approximate price or range. Use the lower bound for price and preserve the full wording in priceSourceText, for example 'EUR 20-30'.",
+    "priceConfidence='unknown' means no price appears in the source. Use price=0 and priceSourceText=null. This is normal and expected.",
+    "Never turn a range into an exact price: always use priceConfidence='estimate' and keep the full range in priceSourceText.",
+    "Do not estimate costs from your knowledge of a country, city, or venue.",
+    "",
+    "BUDGET",
+    "budgetLimit is only an amount explicitly stated by the traveller. Otherwise use 0.",
+    "budgetLevel is only a level explicitly stated by the traveller: low for budget, inexpensive, or modest; medium for a mid-range budget; high for expensive, unlimited, premium, or luxury. Otherwise use unknown.",
+    "Never derive budgetLevel from an amount and never derive an amount from a level. If only one is stated, leave the other empty.",
+    "If both level and amount are stated, fill both.",
+    "budgetSourceText is the traveller's original budget wording, otherwise null.",
+    "",
+    "ITEM TYPES",
+    "Do not create a ticket type. Transport tickets are transport; museum or attraction tickets are excursion or place; concert tickets use the best existing type.",
+    "Use transport only when the main purpose is moving from one place to another: flight, train, bus, transfer, taxi, car rental, metro, tram, or ferry. Keep the specific mode in the item title.",
+    "When transport is the experience itself, such as a sightseeing boat ride, bus tour, or dinner cruise, use excursion, food, or another type matching the main purpose, not transport.",
+    "Use spa for spas, hammams, baths, and wellness; excursion for tours and museums; food for eating; place for walks and viewpoints; stay for accommodation.",
+    "",
+    "ITEMS AND QUANTITIES",
+    "Create one item for every specific place, event, meal, transport segment, stay, or idea the traveller named.",
+    "Do not replace specific traveller ideas with generic tasks such as 'choose accommodation' when specific places were named.",
+    "Interpret explicit quantities as follows: one=1; two or a couple=2; three=3; several=3; number N=N; range N-M=the upper bound M.",
+    "When a quantity of similar places is stated, create that many separate items instead of one generic item. Keep meaningful titles; when specific places are unknown, number them neutrally, for example 'Coffee shop 1', 'Coffee shop 2'.",
+    "Default status is want. Default priority is nice.",
+    "",
+    "PREFERENCES AND CONSTRAINTS",
+    "Format preferencesText as 4-6 short bullet lines using only categories present in the source: '• Must-have: ...', '• Pace: ...', '• Optional: ...', '• Constraints: ...'. Do not retell the full source or duplicate concrete events.",
+    "Health, allergies, mobility, food requirements, pace, and exclusions are planning constraints. Record them in preferencesText or item notes.",
+    "Do not provide medical advice, diagnoses, or risk assessments.",
+    "",
+    "QUESTIONS",
+    "Ask no more than five short clarification questions, and only about important missing planning information.",
+  ];
+
+  const TRIP_DRAFT_RULES_BY_LOCALE = Object.freeze({
+    ru: TRIP_DRAFT_RULES,
+    en: TRIP_DRAFT_RULES_EN,
+  });
+
+  function buildTripDraftPrompt({ today = "", timezone = "", locale = "ru" } = {}) {
+    const normalizedLocale = normalizeAiDraftLocale(locale);
+    const groundingLines = (normalizedLocale === "en" ? [
+      "TIME CONTEXT",
+      today ? `Today's date: ${today}.` : "Today's date was not supplied: do not infer calendar years and use datePrecision='none'.",
+      timezone ? `Traveller timezone: ${timezone}.` : "",
+      "",
+    ] : [
       "КОНТЕКСТ ВРЕМЕНИ",
       today ? `Сегодняшняя дата: ${today}.` : "Сегодняшняя дата не передана: не выводи даты по году и оставь datePrecision='none'.",
       timezone ? `Часовой пояс пользователя: ${timezone}.` : "",
       "",
-    ].filter((line) => line !== "");
-    return [...groundingLines, ...TRIP_DRAFT_RULES].join("\n");
+    ]).filter((line) => line !== "");
+    return [...groundingLines, ...TRIP_DRAFT_RULES_BY_LOCALE[normalizedLocale]].join("\n");
   }
 
   // The expected contract is a parameter so the document path can validate its own version
@@ -340,6 +418,8 @@
     "Номер рейса, поезда или автобусного маршрута можно оставить в названии или заметке: это полезные сведения о маршруте.",
     "Проживание: одна карточка на всё бронирование, с датой заезда. Не создавай отдельную карточку на каждую ночь.",
     "Экскурсии, рестораны и мероприятия: одна карточка на одну бронь.",
+    "Статус карточки: 'paid'. Билеты, ваучеры на проживание и подтверждения экскурсий обычно уже оплачены.",
+    "Ставь 'fixed' только если в документе прямо сказано, что оплата ещё не сделана: 'к оплате', 'не оплачено', 'ожидает оплаты', 'оплатить до', unpaid, awaiting payment. Номер брони и слово 'бронирование' сами по себе таким признаком не являются.",
     "Если один документ описывает несколько событий — создай несколько карточек и укажи у всех один и тот же sourceFileIndex.",
     "Если одно событие подтверждено несколькими документами — перечисли все их индексы в sourceFileIndex.",
     "",
@@ -361,14 +441,66 @@
     "Задай не больше пяти коротких вопросов, если документ нечитаем, данные противоречат друг другу или важного факта не хватает.",
   ];
 
-  function buildBookingPackPrompt({ today = "", timezone = "" } = {}) {
-    const grounding = [
+  const BOOKING_PACK_RULES_EN = [
+    "Extract trip facts from the traveller's tickets, bookings, vouchers, and confirmations.",
+    "Return only structured JSON that matches the schema. The attached documents are the only source of facts.",
+    "Write all generated human-readable fields in English. Preserve proper names, route names, and verbatim evidence excerpts exactly as printed in the document; do not translate them automatically.",
+    "Never invent information. When a fact is absent, leave its field empty and ask a question only when needed.",
+    "Do not use your own knowledge of prices, schedules, hotels, or attractions.",
+    "",
+    "DATES AND TIMES",
+    "Today's date is supplied explicitly. Use it only to resolve a year that is not printed in the document.",
+    "Take date and startTime from the document. If no time is printed, leave startTime empty.",
+    "Do not invent trip dates; the application derives them from extracted items.",
+    "",
+    "ITEMS",
+    "Transport: create one item per travel segment. A return ticket creates two separate items.",
+    "Keep the mode and route in a transport item title, for example 'Flight London — Tbilisi'.",
+    "A flight, train, or bus number may remain in the title or notes because it describes the route.",
+    "Accommodation: create one item for the full booking, dated on check-in. Do not create one item per night.",
+    "Tours, restaurants, and events: create one item per booking.",
+    "Default item status is 'paid'. Tickets, accommodation vouchers, and tour confirmations are normally already paid.",
+    "Use 'fixed' only when the document explicitly says payment is still due: unpaid, awaiting payment, payment pending, pay by, balance due, or equivalent wording. A booking reference or the word booking alone is not evidence of unpaid status.",
+    "If one document contains several events, create several items and give each the same sourceFileIndex.",
+    "If several documents confirm one event, include all their indexes in sourceFileIndex.",
+    "",
+    "PRICE",
+    "price is only a number printed in the document.",
+    "currency is the currency printed next to that number, always as a three-letter ISO 4217 code such as RUB, EUR, USD, GEL, GBP, PLN, or AED. Map ₽ to RUB, € to EUR, $ to USD, ₾ to GEL, and £ to GBP. If no currency is printed or implied by a symbol, use currency=null.",
+    "Never infer currency from the departure country, document language, or any assumption.",
+    "evidenceText is a short verbatim excerpt proving the price, no longer than 160 characters. Do not return a paragraph or full document line.",
+    "Use priceKind='exact' for an exact total and 'approximate' for an approximation or range.",
+    "If the document has no price, use price=0, currency=null, priceKind=null, and evidenceText=null. This is normal.",
+    "Never estimate a price yourself.",
+    "",
+    "DO NOT EXTRACT",
+    "Do not copy booking codes or PNRs, ticket numbers, QR or barcode numbers or images, passenger names, passport details, card numbers, or any payment credentials into item fields.",
+    "Those details remain in the attached source document and are not needed by the application.",
+    "Flight, train, and bus route numbers are allowed because they describe the route rather than identify the traveller.",
+    "",
+    "QUESTIONS",
+    "Ask no more than five short questions when a document is unreadable, sources conflict, or an important fact is missing.",
+  ];
+
+  const BOOKING_PACK_RULES_BY_LOCALE = Object.freeze({
+    ru: BOOKING_PACK_RULES,
+    en: BOOKING_PACK_RULES_EN,
+  });
+
+  function buildBookingPackPrompt({ today = "", timezone = "", locale = "ru" } = {}) {
+    const normalizedLocale = normalizeAiDraftLocale(locale);
+    const grounding = (normalizedLocale === "en" ? [
+      "TIME CONTEXT",
+      today ? `Today's date: ${today}.` : "Today's date was not supplied: do not infer a year that is absent from the document.",
+      timezone ? `Traveller timezone: ${timezone}.` : "",
+      "",
+    ] : [
       "КОНТЕКСТ ВРЕМЕНИ",
       today ? `Сегодняшняя дата: ${today}.` : "Сегодняшняя дата не передана: год из документа не достраивай.",
       timezone ? `Часовой пояс пользователя: ${timezone}.` : "",
       "",
-    ].filter((line) => line !== "");
-    return [...grounding, ...BOOKING_PACK_RULES].join("\n");
+    ]).filter((line) => line !== "");
+    return [...grounding, ...BOOKING_PACK_RULES_BY_LOCALE[normalizedLocale]].join("\n");
   }
 
   const VIRTUAL_DAY_PREFIX = "day-";
@@ -402,18 +534,34 @@
     return index;
   }
 
-  function getChronologyTitle(item) {
-    return String(item?.title || "").trim() || "Карточка";
+  function getChronologyTitle(item, locale = "ru") {
+    return String(item?.title || "").trim() || (normalizeAiDraftLocale(locale) === "en" ? "Item" : "Карточка");
+  }
+
+  function getChronologyQuestion(kind, title, locale = "ru") {
+    const normalizedLocale = normalizeAiDraftLocale(locale);
+    const messages = normalizedLocale === "en" ? {
+      calendar_missing: `“${title}” has a date, but the trip has no calendar dates. Add trip dates or choose a trip day.`,
+      date_outside: `“${title}” falls outside the trip dates. Which day should it use?`,
+      date_conflict: `“${title}” has conflicting date and day values. The date was kept; check that it is correct.`,
+      day_outside: `“${title}” refers to a day that does not exist in this trip. Which day should it use?`,
+    } : {
+      calendar_missing: `Для «${title}» указана дата, но у поездки не заданы даты. Задайте даты поездки или выберите день.`,
+      date_outside: `Для «${title}» указана дата вне дат поездки. На какой день её поставить?`,
+      date_conflict: `Для «${title}» дата и день не совпали. Оставили дату — проверьте, верно ли.`,
+      day_outside: `Для «${title}» назван день, которого нет в поездке. На какой день её поставить?`,
+    };
+    return messages[kind] || "";
   }
 
   // Resolves one card's day from the traveller's own signals only. Array position is never
   // consulted, so shuffling the model's output cannot change where a card lands.
-  function resolveTripItemDay(item = {}, trip = {}) {
+  function resolveTripItemDay(item = {}, trip = {}, locale = "ru") {
     const startDate = isValidIsoDate(trip.startDate) ? String(trip.startDate).trim() : "";
     const endDate = isValidIsoDate(trip.endDate) ? String(trip.endDate).trim() : "";
     const hasCalendar = Boolean(startDate && endDate && endDate >= startDate);
     const dayCount = Math.max(1, Math.trunc(Number(trip.dayCount)) || 1);
-    const title = getChronologyTitle(item);
+    const title = getChronologyTitle(item, locale);
     const rawDate = isValidIsoDate(item.date) ? String(item.date).trim() : "";
     const dayIndex = normalizeDayIndex(item.dayIndex, dayCount);
 
@@ -421,22 +569,22 @@
       if (!hasCalendar) {
         // A calendar date cannot be placed on a numbered day, and keeping it would hide the
         // card from the plan entirely.
-        return { date: "", question: `Для «${title}» указана дата, но у поездки не заданы даты. Задайте даты поездки или выберите день.` };
+        return { date: "", question: getChronologyQuestion("calendar_missing", title, locale) };
       }
       if (rawDate < startDate || rawDate > endDate) {
         // Never clamped to the first or last day: that would invent a decision.
-        return { date: "", question: `Для «${title}» указана дата вне дат поездки. На какой день её поставить?` };
+        return { date: "", question: getChronologyQuestion("date_outside", title, locale) };
       }
       const derivedIndex = countTripDaysBetween(startDate, rawDate) + 1;
       if (dayIndex > 0 && dayIndex !== derivedIndex) {
-        return { date: rawDate, question: `Для «${title}» дата и день не совпали. Оставили дату — проверьте, верно ли.` };
+        return { date: rawDate, question: getChronologyQuestion("date_conflict", title, locale) };
       }
       return { date: rawDate };
     }
 
     if (dayIndex > 0) {
       if (dayIndex > dayCount) {
-        return { date: "", question: `Для «${title}» назван день, которого нет в поездке. На какой день её поставить?` };
+        return { date: "", question: getChronologyQuestion("day_outside", title, locale) };
       }
       return { date: hasCalendar ? addTripDays(startDate, dayIndex - 1) : `${VIRTUAL_DAY_PREFIX}${dayIndex}` };
     }
@@ -468,7 +616,7 @@
     const generated = [];
     const nextItems = items.map((rawItem) => {
       const item = rawItem && typeof rawItem === "object" ? { ...rawItem } : {};
-      const resolved = resolveTripItemDay(item, trip);
+      const resolved = resolveTripItemDay(item, trip, input.locale);
       if (resolved.question) generated.push(resolved.question);
       item.date = resolved.date;
       // The day is settled here, so a contradicting index must not survive downstream.
@@ -541,10 +689,40 @@
     return { startDate: dates[0], endDate: dates[dates.length - 1] };
   }
 
+  // A document in the pack is a ticket or a voucher, which the traveller has normally already
+  // paid for, so "paid" is the default. Only wording that actually says money is still owed
+  // moves a card to "booked".
+  //
+  // Deliberately absent: "бронь" and "бронирование" on their own. Every paid voucher carries
+  // a booking reference, so matching those would send the whole pack to "booked".
+  // \w does not cover Cyrillic, hence the explicit letter classes.
+  const BOOKING_PACK_UNPAID_MARKERS = [
+    /к\s*оплате/i,
+    /не\s*оплач[а-яё]*/i,
+    /ожида[а-яё]*\s*оплат[а-яё]*/i,
+    /оплатит[а-яё]*\s*до/i,
+    /требует[а-яё]*\s*оплат[а-яё]*/i,
+    /подлежит\s*оплате/i,
+    /unpaid/i,
+    /awaiting\s*payment/i,
+    /payment\s*pending/i,
+    /pending\s*payment/i,
+    /to\s*be\s*paid/i,
+    /balance\s*due/i,
+  ];
+
+  function resolveBookingPackStatus(item = {}, textForMarkers = "") {
+    if (BOOKING_PACK_UNPAID_MARKERS.some((marker) => marker.test(textForMarkers))) return "fixed";
+    // The model read the document, so its own "still to pay" verdict is kept. Everything
+    // else collapses to "paid": a pack card is never a wish or a backup option.
+    return String(item?.status || "") === "fixed" ? "fixed" : "paid";
+  }
+
   // Evidence rules replace the Slice 1 guardrails on this path. A price is admitted only
   // when the document actually shows it: amount, currency, a quote and a real file behind it.
-  function applyBookingPackEvidenceRules(draft = {}, { fileIds = [] } = {}) {
+  function applyBookingPackEvidenceRules(draft = {}, { fileIds = [], locale = "ru" } = {}) {
     const input = draft && typeof draft === "object" ? draft : {};
+    const normalizedLocale = normalizeAiDraftLocale(locale);
     const rawTrip = input.trip && typeof input.trip === "object" ? input.trip : {};
     const rawItems = Array.isArray(input.items) ? input.items : [];
     const generated = [];
@@ -562,13 +740,19 @@
       const priceAdmitted = Number.isFinite(amount) && amount > 0 && Boolean(documentCurrency)
         && Boolean(evidenceText) && sourceFileIds.length > 0;
       if (!priceAdmitted && Number.isFinite(amount) && amount > 0) {
-        generated.push(`Для «${title || "карточки"}» цена в документе не подтверждена. Проверьте и впишите её вручную.`);
+        generated.push(normalizedLocale === "en"
+          ? `The document does not confirm a price for “${title || "the item"}”. Check it and enter the price manually.`
+          : `Для «${title || "карточки"}» цена в документе не подтверждена. Проверьте и впишите её вручную.`);
       }
+      const notes = sanitizeExtractedText(item.notes, 1000);
       return {
         ...item,
         title,
+        // Status is decided here rather than left to the model, which had no rule for it
+        // and picked differently between runs on the same kind of document.
+        status: resolveBookingPackStatus(item, `${title} ${notes} ${evidenceText}`),
         locationText: sanitizeExtractedText(item.locationText, 160),
-        notes: sanitizeExtractedText(item.notes, 1000),
+        notes,
         // Until the traveller presses create this is an extracted value, never a confirmed fact.
         price: priceAdmitted ? amount : 0,
         priceConfidence: priceAdmitted ? "estimate" : "unknown",
@@ -588,7 +772,7 @@
     return {
       trip: {
         ...rawTrip,
-        title: sanitizeExtractedText(rawTrip.title, 80) || "Поездка по документам",
+        title: sanitizeExtractedText(rawTrip.title, 80) || (normalizedLocale === "en" ? "Trip from documents" : "Поездка по документам"),
         destination: sanitizeExtractedText(rawTrip.destination, 120),
         preferencesText: sanitizeExtractedText(rawTrip.preferencesText, 4000),
         startDate,
@@ -613,12 +797,14 @@
   }
 
   const api = {
+    AI_DRAFT_LOCALES,
     BOOKING_PACK_MAX_EVIDENCE_CHARS,
     BOOKING_PACK_MAX_FILES,
     BOOKING_PACK_MAX_FILE_BYTES,
     BOOKING_PACK_MAX_TOTAL_BYTES,
     BOOKING_PACK_SCHEMA_VERSION,
     BOOKING_PACK_RULES,
+    BOOKING_PACK_RULES_BY_LOCALE,
     PRICE_KIND_VALUES,
     applyBookingPackEvidenceRules,
     bookingPackSchema,
@@ -641,11 +827,13 @@
     PRICE_CONFIDENCE_VALUES,
     TRIP_DRAFT_AI_SCHEMA_VERSION,
     TRIP_DRAFT_RULES,
+    TRIP_DRAFT_RULES_BY_LOCALE,
     applyDraftGuardrails,
     applyTripChronology,
     assertSupportedSchemaVersion,
     buildTripDraftPrompt,
     mergeTripChronologyQuestions,
+    normalizeAiDraftLocale,
     resolveTripItemDay,
     isGroundedAmount,
     isGroundedText,

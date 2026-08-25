@@ -19,7 +19,7 @@ function functionSource(name) {
 test("TravelIdea destination flow uses all non-demo trips and no empty picker", () => {
   assert.match(functionSource("getTravelIdeaDestinationTrips"), /tripStore\.trips\.filter\(\(entry\) => !entry\.isDemo\)/);
   const openSource = functionSource("openTravelIdeaDestinationPicker");
-  assert.match(openSource, /Сначала создайте поездку, чтобы добавить в неё идею\./);
+  assert.match(openSource, /window\.t\("ideas\.add\.to\.trip\.no\.trips"\)/);
   assert.match(openSource, /!getTravelIdeaDestinationTrips\(\)\.length/);
   assert.doesNotMatch(openSource, /createBlankTripEntry|createNewTrip|startTripDraft/);
 });
@@ -42,7 +42,7 @@ test("TravelIdea confirm opens an ordinary editable item draft without writing i
   assert.match(draftSource, /initialDraft/);
   assert.match(draftSource, /creationMethod: "other"/);
   assert.match(draftSource, /returnScreenOnCancel: "ideas"/);
-  assert.match(draftSource, /inlineWarning: draft\.priceWarning/);
+  assert.match(draftSource, /inlineWarning: localizeItemDraftWarning\(draft\.priceWarning\)/);
   assert.doesNotMatch(draftSource, /state\.items\.push|targetState\.items\.push|saveState|persistTripStore|trackEvent\("item_created"/);
   assert.doesNotMatch(appSource, /createTripItemFromTravelIdeaDraft/);
   assert.doesNotMatch(draftSource, /updateTravelIdea|archiveTravelIdea|deleteTravelIdea|removeTravelIdea/);

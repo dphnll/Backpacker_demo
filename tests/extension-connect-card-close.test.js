@@ -38,12 +38,14 @@ test("the card is still built with the inline layout that made `hidden` useless"
   assert.match(functionSource("ensureExtensionConnectCard"), /style\.cssText\s*=\s*"[^"]*display:grid/);
 });
 
-test("both dismiss labels run the same close path, before and after connecting", () => {
+test("both localized dismiss labels run the same close path, before and after connecting", () => {
   const renderSource = functionSource("renderExtensionConnectCard");
 
   // One handler, rewired on every render, whatever the button currently says.
   assert.match(renderSource, /dismissButton\.onclick\s*=\s*dismissExtensionConnectCard/);
-  assert.match(renderSource, /dismissButton\.textContent\s*=\s*connected\s*\?\s*"Закрыть"\s*:\s*"Не сейчас"/);
+  assert.match(renderSource, /dismissButton\.textContent\s*=\s*window\.t\(connected \|\| linkState/);
+  assert.match(renderSource, /"extension\.connect\.action\.close"/);
+  assert.match(renderSource, /"extension\.connect\.action\.cancel"/);
   assert.match(renderSource, /dismissButton\.disabled\s*=\s*false/);
 });
 

@@ -3945,6 +3945,14 @@ h3 {
   gap: 10px;
 }
 
+.sheet-form > .field,
+.sheet-form > .field > input,
+.sheet-form > .field > select,
+.sheet-form > .field > textarea {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .field {
   display: grid;
   gap: 5px;
@@ -5848,6 +5856,34 @@ h4,
   border: 0;
   border-top: 1px solid var(--a-line);
   background: none;
+}
+
+.home-screen .home-language-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(118px, 160px);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  margin-bottom: 58px;
+  color: var(--a-ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.home-screen .home-language-control span,
+.home-screen .home-language-control select {
+  min-width: 0;
+}
+
+.home-screen .home-language-control select {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 30px 8px 10px;
+  border: 1px solid var(--a-line);
+  border-radius: 8px;
+  background: var(--a-card);
+  color: var(--a-ink);
+  font: inherit;
 }
 
 /* Иконки здесь — не svg, а текстовые знаки «i» и «?», картинка копилки и

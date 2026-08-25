@@ -24,7 +24,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.72";
+const APP_VERSION = "1.1.2.75";
 const APP_RELEASE_SUMMARY = "Кнопки черновика читаются целиком, а цена в чужой валюте не попадёт в бюджет.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -40,7 +40,6 @@ const DONATION_FLOW_ENABLED = false;
 const DONATION_URL = ANALYTICS_CONFIG.donationUrl || "https://t.me/bckpckrbot?start=donate";
 const DEFAULT_ITEM_STATUS = "want";
 const DEFAULT_ITEM_PRIORITY = "nice";
-const TRIP_DATE_RANGE_ERROR = "Дата окончания не может быть раньше даты начала";
 const PARTICIPANT_COLORS = ["orange", "yellow", "blue", "teal", "purple", "pink"];
 const ANALYTICS_MILESTONE_CONFIG = {
   definitionVersion: ANALYTICS_DEFINITION_VERSION,
@@ -758,10 +757,10 @@ async function handleRecoverableAuthCallback() {
     return refreshRecoverableAuthSession();
   }
   if (info.hasError) {
-    recoverableAuthState.error = "Не удалось подтвердить email. Попробуйте отправить ссылку ещё раз.";
+    recoverableAuthState.error = window.t("share.profile.email.callback.confirm.error");
     recoverableAuthState.status = "";
     cleanRecoverableAuthCallbackUrl();
-    showToast("Не удалось подтвердить email");
+    showToast(window.t("share.profile.email.callback.confirm.toast"));
     renderProfileSheet();
     return refreshRecoverableAuthSession();
   }
@@ -776,16 +775,16 @@ async function handleRecoverableAuthCallback() {
     const user = await refreshRecoverableAuthSession({ refreshProfile: true });
     recoverableAuthState.error = "";
     recoverableAuthState.status = user?.hasEmailIdentity
-      ? "Готово: доступ сохранён."
-      : "Вход выполнен.";
+      ? window.t("share.profile.email.callback.saved")
+      : window.t("share.profile.email.callback.signed.in");
     showToast(recoverableAuthState.status);
     closeRecoverableAuthSheetAfterSuccess(user);
     await resumePendingExtensionConnectAfterRecoverableAuth(user);
     return user;
   } catch {
-    recoverableAuthState.error = "Ссылка открылась, но сессию не удалось восстановить. Попробуйте отправить ссылку ещё раз.";
+    recoverableAuthState.error = window.t("share.profile.email.callback.restore.error");
     recoverableAuthState.status = "";
-    showToast("Не удалось восстановить доступ");
+    showToast(window.t("share.profile.email.callback.restore.toast"));
     renderProfileSheet();
     return null;
   } finally {
@@ -881,6 +880,14 @@ async function callTripShareFunction(action, payload = {}, { requireOwner = fals
   return data;
 }
 
+function getTripDraftLocale() {
+  return window.BackpackerI18n?.getLocale?.() === "en" ? "en" : "ru";
+}
+
+function tripDraftT(key, params = {}) {
+  return window.t(`ai.draft.${key}`, params);
+}
+
 async function callTripDraftAiFunction(action, payload = {}) {
   const config = getSupabaseConfig();
   const url = getTripDraftAiFunctionUrl();
@@ -893,7 +900,7 @@ async function callTripDraftAiFunction(action, payload = {}) {
       Authorization: `Bearer ${await ensureSupabaseOwnerSession()}`,
     },
     cache: "no-store",
-    body: JSON.stringify({ action, ...payload }),
+    body: JSON.stringify({ action, ...payload, locale: getTripDraftLocale() }),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -1111,7 +1118,7 @@ function persistPrivateTripSyncConflicts() {
 
 function rememberPrivateTripSyncConflict(baseTitle, copyId) {
   if (privateTripSyncConflicts.some((entry) => entry.copyId === copyId)) return;
-  privateTripSyncConflicts.push({ baseTitle: String(baseTitle || "Поездка").trim(), copyId });
+  privateTripSyncConflicts.push({ baseTitle: String(baseTitle || window.t("home.trip.untitled")).trim(), copyId });
   persistPrivateTripSyncConflicts();
 }
 
@@ -1335,12 +1342,12 @@ async function syncPrivateTripsWithCloud({ silent = false } = {}) {
     else if (currentScreen === "trip" && !isReadOnlyMode()) render();
     // Every automatic sync passes silent, so a conflict must announce itself regardless:
     // the home screen notice explains it in full, the toast only draws attention to it.
-    if (conflictCount) showToast("Поездку меняли на двух устройствах — сохранены обе версии");
-    else if (nextTripCount > previousTripCount) showToast("Поездки на устройствах объединены");
+    if (conflictCount) showToast(window.t("home.sync.toast.conflict"));
+    else if (nextTripCount > previousTripCount) showToast(window.t("home.sync.toast.merged"));
     return { conflictCount, status: "synced", tripCount: nextTripCount };
   } catch (error) {
     privateTripSyncState.applyingRemote = false;
-    if (!silent) showToast("Не удалось синхронизировать поездки. Локальные данные сохранены.");
+    if (!silent) showToast(window.t("home.sync.toast.error"));
     throw error;
   } finally {
     privateTripSyncState.running = false;
@@ -1358,10 +1365,10 @@ function getIdeaCollectionKey(collectionId = "") {
 }
 
 function getCurrentIdeaCollectionTitle() {
-  if (ideasState.activeCollectionKey === "all") return "Все идеи";
-  if (ideasState.activeCollectionKey === "ungrouped") return "Без подборки";
+  if (ideasState.activeCollectionKey === "all") return window.t("ideas.collection.all");
+  if (ideasState.activeCollectionKey === "ungrouped") return window.t("ideas.collection.unassigned");
   const id = getIdeaCollectionIdFromKey(ideasState.activeCollectionKey);
-  return ideasState.collections.find((collection) => collection.id === id)?.title || "Подборка";
+  return ideasState.collections.find((collection) => collection.id === id)?.title || window.t("ideas.collection.fallback");
 }
 
 async function getCurrentSupabaseUserForIdeas(client) {
@@ -1377,23 +1384,54 @@ async function getCurrentSupabaseUserForIdeas(client) {
 }
 
 function getTravelIdeasErrorCopy(error) {
-  return getTravelIdeasClientApi()?.getTravelIdeasClientErrorMessage?.(error)
-    || "Не удалось выполнить действие с идеями. Попробуйте ещё раз.";
+  const message = String(error?.message || "").toLowerCase();
+  const code = String(error?.code || "").toLowerCase();
+  const status = Number(error?.status || 0);
+  if (error?.message === "supabase_not_configured") return window.t("ideas.error.unavailable");
+  if (status === 401 || status === 403 || code === "42501" || message.includes("permission denied") || message.includes("rls")) {
+    return window.t("ideas.error.access");
+  }
+  if (message.includes("failed to fetch") || message.includes("network")) return window.t("ideas.error.network");
+  if (message.includes("invalid_travel_idea_collection")) return window.t("ideas.error.collection");
+  return window.t("ideas.error.generic");
 }
 
 function getExtensionConnectErrorCopy(error) {
   const status = Number(error?.status || 0);
   const message = String(error?.message || "").toLowerCase();
-  if (error?.message === "supabase_not_configured") return "Supabase не настроен: подключение расширения пока недоступно.";
-  if (status === 401 || status === 403) return "Нужна текущая сессия Backpacker. Войдите или восстановите доступ по email и попробуйте снова.";
-  if (message.includes("extension_channel_unavailable")) return "Не удалось связаться с расширением. Откройте страницу из установленного Backpacker Travel Capture.";
-  if (message.includes("extension_handoff_timeout")) return "Расширение не ответило на подключение. Перезагрузите Backpacker Capture в chrome://extensions и нажмите «Подключить Backpacker» ещё раз.";
-  if (message.includes("extension_rejected:bad_nonce")) return "Запрос подключения устарел. Нажмите «Подключить Backpacker» в расширении ещё раз.";
-  if (message.includes("extension_rejected:bad_origin")) return "Расширение отклонило страницу подключения. Проверьте, что открыт Backpacker demo, и начните подключение из расширения ещё раз.";
-  if (message.includes("extension_rejected:bad_account")) return "Backpacker не передал email аккаунта в расширение. Войдите по email и попробуйте подключить расширение ещё раз.";
-  if (message.includes("extension_rejected")) return "Расширение не приняло подключение. Нажмите «Подключить Backpacker» в расширении ещё раз.";
-  if (message.includes("failed to fetch") || message.includes("network")) return "Сеть не ответила. Проверьте интернет и попробуйте ещё раз.";
-  return "Не удалось подключить расширение. Попробуйте ещё раз.";
+  if (error?.message === "supabase_not_configured") return window.t("extension.connect.error.supabase");
+  if (status === 401 || status === 403 || message.includes("recoverable_identity_required")) {
+    return window.t("extension.connect.error.auth.required");
+  }
+  if (message.includes("extension_channel_unavailable")) return window.t("extension.connect.error.channel.unavailable");
+  if (message.includes("extension_handoff_timeout")) return window.t("extension.connect.error.handoff.timeout");
+  if (message.includes("extension_rejected:bad_nonce")) return window.t("extension.connect.error.link.expired");
+  if (message.includes("extension_rejected:bad_origin")) return window.t("extension.connect.error.origin");
+  if (message.includes("extension_rejected:bad_account")) return window.t("extension.connect.error.account");
+  if (message.includes("extension_rejected")) return window.t("extension.connect.error.rejected");
+  if (message.includes("failed to fetch") || message.includes("network")) return window.t("extension.connect.error.network");
+  return window.t("extension.connect.error.generic");
+}
+
+function getExtensionConnectLinkErrorState(error) {
+  const untrusted = String(error?.code || "").toLowerCase() === "untrusted_extension_id";
+  return {
+    status: untrusted ? "link_untrusted" : "link_invalid",
+    error: window.t(untrusted
+      ? "extension.connect.error.link.untrusted"
+      : "extension.connect.error.link.invalid"),
+  };
+}
+
+function getExtensionConnectRuntimeErrorState(error) {
+  const message = String(error?.message || "").toLowerCase();
+  if (message.includes("extension_rejected:bad_nonce")) {
+    return {
+      status: "link_expired",
+      error: window.t("extension.connect.error.link.expired"),
+    };
+  }
+  return { status: "error", error: getExtensionConnectErrorCopy(error) };
 }
 
 function ensureExtensionConnectCard() {
@@ -1403,22 +1441,26 @@ function ensureExtensionConnectCard() {
   card.id = "extensionConnectCard";
   card.className = "extension-connect-card";
   card.style.cssText = "position:fixed;inset:16px;z-index:1200;display:grid;place-items:center;background:rgba(18,54,61,.18);";
+  card.setAttribute("role", "dialog");
+  card.setAttribute("aria-modal", "true");
+  card.setAttribute("aria-labelledby", "extensionConnectTitle");
+  card.setAttribute("aria-describedby", "extensionConnectSummary extensionConnectStatus");
   card.innerHTML = `
-    <div class="extension-connect-card__body" style="max-width:420px;padding:18px;border-radius:18px;background:#fffdf8;box-shadow:0 22px 60px rgba(18,54,61,.22);color:#12363d;">
+    <div class="extension-connect-card__body" style="width:100%;min-width:0;max-width:420px;max-height:calc(100dvh - 32px);overflow:auto;padding:18px;border-radius:18px;background:#fffdf8;box-shadow:0 22px 60px rgba(18,54,61,.22);color:#12363d;">
       <p class="home-card-kicker">Backpacker Travel Capture</p>
-      <h2>Подключить расширение?</h2>
-      <p id="extensionConnectSummary">Идеи из расширения будут сохраняться в Backpacker после подключения.</p>
-      <p class="extension-connect-card__status" id="extensionConnectStatus" aria-live="polite"></p>
-      <form class="recoverable-auth-form" id="extensionConnectIdentityForm" hidden>
+      <h2 id="extensionConnectTitle" tabindex="-1"></h2>
+      <p id="extensionConnectSummary"></p>
+      <p class="extension-connect-card__status" id="extensionConnectStatus" role="status" aria-live="polite" aria-atomic="true" style="overflow-wrap:anywhere;"></p>
+      <form class="recoverable-auth-form" id="extensionConnectIdentityForm" aria-labelledby="extensionConnectIdentityEmailLabel" hidden>
         <label class="field wide">
-          Email для доступа
+          <span id="extensionConnectIdentityEmailLabel"></span>
           <input id="extensionConnectEmailInput" name="extensionConnectEmail" type="email" autocomplete="email" placeholder="you@example.com" />
         </label>
-        <button class="primary-button" id="extensionConnectEmailButton" type="submit">Отправить ссылку</button>
+        <button class="primary-button" id="extensionConnectEmailButton" type="submit"></button>
       </form>
       <div class="extension-connect-card__actions" style="display:flex;gap:10px;flex-wrap:wrap;">
-        <button class="primary-button" id="extensionConnectConfirmButton" type="button">Подключить</button>
-        <button class="ghost-button" id="extensionConnectDismissButton" type="button">Не сейчас</button>
+        <button class="primary-button" id="extensionConnectConfirmButton" type="button"></button>
+        <button class="ghost-button" id="extensionConnectDismissButton" type="button"></button>
       </div>
     </div>
   `;
@@ -1426,6 +1468,7 @@ function ensureExtensionConnectCard() {
   $("#extensionConnectConfirmButton")?.addEventListener("click", connectBackpackerExtension);
   $("#extensionConnectDismissButton")?.addEventListener("click", dismissExtensionConnectCard);
   $("#extensionConnectIdentityForm")?.addEventListener("submit", submitExtensionConnectIdentityForm);
+  $("#extensionConnectTitle")?.focus();
   return card;
 }
 
@@ -1446,54 +1489,84 @@ function renderExtensionConnectCard() {
     return;
   }
   const card = ensureExtensionConnectCard();
+  const title = $("#extensionConnectTitle");
   const status = $("#extensionConnectStatus");
   const button = $("#extensionConnectConfirmButton");
   const dismissButton = $("#extensionConnectDismissButton");
   const summary = $("#extensionConnectSummary");
   const identityForm = $("#extensionConnectIdentityForm");
+  const identityEmailLabel = $("#extensionConnectIdentityEmailLabel");
   const emailButton = $("#extensionConnectEmailButton");
   const connected = extensionConnectState.status === "connected";
   const connecting = extensionConnectState.status === "connecting";
   const identityRequired = extensionConnectState.status === "identity_required";
-  const blocked = extensionConnectState.status === "error" && Boolean(extensionConnectState.error);
+  const linkState = ["link_invalid", "link_untrusted", "link_expired"].includes(extensionConnectState.status);
   card.hidden = false;
   card.classList.toggle("extension-connect-card--error", Boolean(extensionConnectState.error));
   card.classList.toggle("extension-connect-card--connected", connected);
   const authUser = getCurrentRecoverableAuthUser();
   const connectedEmail = authUser?.hasEmailIdentity ? authUser.email : "";
+  if (title) {
+    const titleKey = connected
+      ? "extension.connect.title.connected"
+      : extensionConnectState.status === "link_untrusted"
+      ? "extension.connect.title.link.untrusted"
+      : extensionConnectState.status === "link_expired"
+      ? "extension.connect.title.link.expired"
+      : extensionConnectState.status === "link_invalid"
+      ? "extension.connect.title.link.invalid"
+      : "extension.connect.title.default";
+    title.textContent = window.t(titleKey);
+  }
   if (summary) {
-    summary.textContent = connected
-      ? "Подключено к Backpacker."
+    summary.textContent = linkState
+      ? window.t("extension.connect.summary.restart")
+      : connected
+      ? window.t("extension.connect.summary.connected")
       : identityRequired
-      ? "Сохраните доступ по email — так идеи из браузера будут видны в Backpacker и на других устройствах."
-      : "Идеи из расширения будут сохраняться в Backpacker после подключения.";
+      ? window.t("extension.connect.summary.identity")
+      : window.t("extension.connect.summary.default");
   }
   if (status) {
+    status.setAttribute("role", extensionConnectState.error ? "alert" : "status");
     status.textContent = extensionConnectState.error
       || (connected
         ? (connectedEmail
-          ? `Идеи из расширения будут сохраняться для ${connectedEmail}.`
-          : "Идеи из расширения будут сохраняться в этот Backpacker.")
+          ? window.t("extension.connect.status.connected.account", { email: connectedEmail })
+          : window.t("extension.connect.status.connected.generic"))
         : (identityRequired
-          ? "Введите email — пришлём ссылку для входа. После неё подключение продолжится."
-          : "Подключение будет передано напрямую в расширение, не через URL."));
+          ? (recoverableAuthState.status || window.t("extension.connect.status.identity"))
+          : window.t("extension.connect.status.default")));
   }
   if (identityForm) {
     identityForm.hidden = !identityRequired;
   }
+  if (identityEmailLabel) {
+    identityEmailLabel.textContent = window.t("extension.connect.identity.email.label");
+  }
   if (emailButton) {
     emailButton.disabled = recoverableAuthState.upgradeSending;
-    emailButton.textContent = recoverableAuthState.upgradeSending ? "Отправляем..." : "Отправить ссылку";
+    emailButton.textContent = window.t(recoverableAuthState.upgradeSending
+      ? "extension.connect.action.email.sending"
+      : "extension.connect.action.email.send");
   }
   if (button) {
-    button.hidden = identityRequired;
-    button.disabled = connecting || connected || blocked;
-    button.textContent = connecting ? "Подключаем..." : (connected ? "Подключено" : "Подключить");
+    button.hidden = identityRequired || linkState;
+    button.disabled = connecting || connected;
+    button.textContent = window.t(connecting
+      ? "extension.connect.action.connecting"
+      : connected
+      ? "extension.connect.action.connected"
+      : extensionConnectState.status === "error"
+      ? "extension.connect.action.retry"
+      : "extension.connect.action.connect");
   }
   if (dismissButton) {
     dismissButton.disabled = false;
     dismissButton.onclick = dismissExtensionConnectCard;
-    dismissButton.textContent = connected ? "Закрыть" : "Не сейчас";
+    dismissButton.textContent = window.t(connected || linkState
+      ? "extension.connect.action.close"
+      : "extension.connect.action.cancel");
   }
   renderHomeProfile();
 }
@@ -1545,9 +1618,15 @@ async function submitExtensionConnectIdentityForm(event) {
   event.preventDefault();
   const request = extensionConnectState.request;
   if (!request || recoverableAuthState.upgradeSending) return;
-  const { email, error } = getRecoverableAuthEmailFromInput("#extensionConnectEmailInput");
-  if (error) {
-    extensionConnectState = { ...extensionConnectState, status: "identity_required", error };
+  const { email, error: emailError } = getRecoverableAuthEmailFromInput("#extensionConnectEmailInput");
+  if (emailError) {
+    extensionConnectState = {
+      ...extensionConnectState,
+      status: "identity_required",
+      error: window.t(email
+        ? "extension.connect.identity.email.invalid"
+        : "extension.connect.identity.email.required"),
+    };
     renderExtensionConnectCard();
     return;
   }
@@ -1556,7 +1635,7 @@ async function submitExtensionConnectIdentityForm(event) {
     extensionConnectState = {
       ...extensionConnectState,
       status: "identity_required",
-      error: "Supabase не настроен: доступ по email пока недоступен.",
+      error: window.t("extension.connect.identity.email.unavailable"),
     };
     renderExtensionConnectCard();
     return;
@@ -1570,8 +1649,8 @@ async function submitExtensionConnectIdentityForm(event) {
     storePendingExtensionConnectIntent(request);
     const result = await client.auth.updateUser({ email }, { emailRedirectTo: getRecoverableAuthRedirectUrl() });
     if (result.error) throw result.error;
-    recoverableAuthState.status = "Письмо отправлено, проверьте почту.";
-    showToast("Письмо отправлено");
+    recoverableAuthState.status = window.t("share.profile.email.sent");
+    showToast(window.t("share.profile.email.sent.toast"));
     await refreshRecoverableAuthSession();
   } catch (error) {
     extensionConnectState = {
@@ -1612,9 +1691,9 @@ async function connectBackpackerExtension() {
     if (core.stripExtensionConnectParams && window.history?.replaceState) {
       window.history.replaceState({}, document.title, core.stripExtensionConnectParams(window.location.href));
     }
-    showToast("Расширение подключено");
+    showToast(window.t("extension.connect.toast.connected"));
   } catch (error) {
-    extensionConnectState = { ...extensionConnectState, status: "error", error: getExtensionConnectErrorCopy(error) };
+    extensionConnectState = { ...extensionConnectState, ...getExtensionConnectRuntimeErrorState(error) };
   }
   renderExtensionConnectCard();
 }
@@ -1627,15 +1706,14 @@ function initializeExtensionConnectBridge() {
     const request = core.parseExtensionConnectRequest(window.location.href);
     if (!request) return;
     extensionConnectState = { request, status: "idle", error: "" };
-  } catch {
+  } catch (error) {
     extensionConnectState = {
       request: {
         extensionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         clientKey: "invalid-client",
         nonce: "invalid-nonce-value-invalid-nonce-value",
       },
-      status: "error",
-      error: "Ссылка подключения повреждена. Запустите подключение из расширения ещё раз.",
+      ...getExtensionConnectLinkErrorState(error),
     };
   }
   renderExtensionConnectCard();
@@ -1651,7 +1729,7 @@ async function loadTravelIdeas({ silent = false } = {}) {
   if (!client || !api) {
     ideasState = {
       ...ideasState,
-      error: "Supabase не настроен: облачные идеи пока недоступны.",
+      error: window.t("ideas.error.unavailable"),
       loaded: true,
       loading: false,
     };
@@ -1694,9 +1772,9 @@ function renderIdeaCollectionChips() {
   const container = $("#ideaCollectionChips");
   if (!container) return;
   const chips = [
-    ["all", "Все идеи"],
-    ["ungrouped", "Без подборки"],
-    ...ideasState.collections.map((collection) => [`collection:${collection.id}`, collection.title || "Подборка"]),
+    ["all", window.t("ideas.collection.all")],
+    ["ungrouped", window.t("ideas.collection.unassigned")],
+    ...ideasState.collections.map((collection) => [`collection:${collection.id}`, collection.title || window.t("ideas.collection.fallback")]),
   ];
   container.innerHTML = chips.map(([key, label]) => `
     <button class="idea-collection-chip" type="button" data-idea-collection="${escapeAttr(key)}" aria-pressed="${ideasState.activeCollectionKey === key}">
@@ -1709,30 +1787,34 @@ function formatIdeaCardPrice(viewModel) {
   if (viewModel.priceAmount === null || viewModel.priceAmount === undefined) return "";
   return viewModel.priceCurrency
     ? formatCurrencyAmount(viewModel.priceAmount, viewModel.priceCurrency)
-    : Number(viewModel.priceAmount).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
+    : window.BackpackerI18n.formatNumber(viewModel.priceAmount, { maximumFractionDigits: 2 });
 }
 
 function renderIdeaCard(row) {
   const core = getTravelIdeaCore();
   const viewModel = core.mapTravelIdeaRowToViewModel(row, ideasState.collections);
-  const typeLabel = getTypeLabel(viewModel.semanticType);
+  const title = String(row?.title || "").trim() ? viewModel.title : window.t("ideas.card.title.fallback");
+  const collectionTitle = viewModel.collectionId
+    ? ideasState.collections.find((collection) => collection.id === viewModel.collectionId)?.title || window.t("ideas.collection.fallback")
+    : window.t("ideas.collection.unassigned");
+  const typeLabel = getPlanTypeLabel(viewModel.semanticType);
   const price = formatIdeaCardPrice(viewModel);
   const extras = [
     viewModel.locationText,
     price,
-    viewModel.hasLink ? "есть ссылка" : "",
+    viewModel.hasLink ? window.t("ideas.card.has.link") : "",
   ].filter(Boolean).join(" · ");
   const copy = viewModel.excerpt || viewModel.notes || "";
   const icon = typeIcons[viewModel.semanticType] || typeIcons.idea;
   return `
-    <button class="idea-card" type="button" data-open-idea="${escapeAttr(viewModel.id)}">
+    <button class="idea-card" type="button" data-open-idea="${escapeAttr(viewModel.id)}" aria-label="${escapeAttr(window.t("ideas.card.open", { title }))}">
       <span class="idea-card-thumb${viewModel.hasImage ? " has-image" : ""}" aria-hidden="true">
         ${viewModel.hasImage ? `<img class="idea-thumb-image" src="${escapeAttr(viewModel.imageUrl)}" alt="${escapeAttr(viewModel.imageAlt)}" loading="lazy" />` : ""}
         <span class="idea-card-thumb-fallback">${icon}</span>
       </span>
       <span class="idea-card-body">
-        <strong class="idea-card-title">${escapeHtml(viewModel.title)}</strong>
-        <span class="idea-card-meta">${escapeHtml(typeLabel)} · ${escapeHtml(viewModel.collectionTitle)}</span>
+        <strong class="idea-card-title">${escapeHtml(title)}</strong>
+        <span class="idea-card-meta">${escapeHtml(typeLabel)} · ${escapeHtml(collectionTitle)}</span>
         ${extras ? `<span class="idea-card-extra">${escapeHtml(extras)}</span>` : ""}
         ${copy ? `<span class="idea-card-copy">${escapeHtml(copy)}</span>` : ""}
       </span>
@@ -1742,16 +1824,16 @@ function renderIdeaCard(row) {
 
 function renderIdeasStateCard(kind) {
   if (kind === "loading") {
-    return `<article class="ideas-state-card"><strong>Загружаем идеи...</strong><p>Подтягиваем облачные подборки и сохранённые места.</p></article>`;
+    return `<article class="ideas-state-card"><strong>${escapeHtml(window.t("ideas.state.loading.title"))}</strong><p>${escapeHtml(window.t("ideas.state.loading.copy"))}</p></article>`;
   }
   if (kind === "error") {
     return `
       <article class="ideas-state-card is-error">
-        <strong>Не удалось открыть идеи</strong>
+        <strong>${escapeHtml(window.t("ideas.state.error.title"))}</strong>
         <p>${escapeHtml(ideasState.error)}</p>
         <div class="ideas-state-actions">
-          <button class="ghost-button" type="button" data-ideas-retry>Повторить</button>
-          <button class="primary-button" type="button" data-open-idea-form>Добавить идею</button>
+          <button class="ghost-button" type="button" data-ideas-retry>${escapeHtml(window.t("ideas.state.error.retry"))}</button>
+          <button class="primary-button" type="button" data-open-idea-form>${escapeHtml(window.t("ideas.add"))}</button>
         </div>
       </article>
     `;
@@ -1759,22 +1841,22 @@ function renderIdeasStateCard(kind) {
   if (kind === "empty-all") {
     return `
       <article class="ideas-state-card">
-        <strong>Пока нет идей</strong>
-        <p>Сохраняйте места, ссылки и хотелки до того, как появилась конкретная поездка.</p>
+        <strong>${escapeHtml(window.t("ideas.state.empty.title"))}</strong>
+        <p>${escapeHtml(window.t("ideas.state.empty.copy"))}</p>
         <div class="ideas-state-actions">
-          <button class="primary-button" type="button" data-open-idea-form>Добавить идею</button>
-          <button class="ghost-button" type="button" data-open-idea-collection-form>Создать подборку</button>
+          <button class="primary-button" type="button" data-open-idea-form>${escapeHtml(window.t("ideas.add"))}</button>
+          <button class="ghost-button" type="button" data-open-idea-collection-form>${escapeHtml(window.t("ideas.collection.create"))}</button>
         </div>
       </article>
     `;
   }
   return `
     <article class="ideas-state-card">
-      <strong>В «${escapeHtml(getCurrentIdeaCollectionTitle())}» пока пусто</strong>
-      <p>Можно добавить новую идею сразу в эту подборку или выбрать другой chip сверху.</p>
+      <strong>${escapeHtml(window.t("ideas.state.empty.filter.title", { collection: getCurrentIdeaCollectionTitle() }))}</strong>
+      <p>${escapeHtml(window.t("ideas.state.empty.filter.copy"))}</p>
       <div class="ideas-state-actions">
-        <button class="primary-button" type="button" data-open-idea-form>Добавить идею</button>
-        <button class="ghost-button" type="button" data-open-idea-collection-form>Новая подборка</button>
+        <button class="primary-button" type="button" data-open-idea-form>${escapeHtml(window.t("ideas.add"))}</button>
+        <button class="ghost-button" type="button" data-open-idea-collection-form>${escapeHtml(window.t("ideas.collection.new"))}</button>
       </div>
     </article>
   `;
@@ -1830,12 +1912,12 @@ function renderIdeaFormSelects(selectedCollectionKey = "ungrouped", selectedType
   const form = $("#ideaForm");
   if (!form) return;
   form.elements.semanticType.innerHTML = itemTypes
-    .map(([key, label]) => `<option value="${escapeAttr(key)}">${escapeHtml(label)}</option>`)
+    .map(([key]) => `<option value="${escapeAttr(key)}">${escapeHtml(getPlanTypeLabel(key))}</option>`)
     .join("");
   form.elements.semanticType.value = selectedType || "idea";
   form.elements.collectionKey.innerHTML = [
-    ["ungrouped", "Без подборки"],
-    ...ideasState.collections.map((collection) => [`collection:${collection.id}`, collection.title || "Подборка"]),
+    ["ungrouped", window.t("ideas.collection.unassigned")],
+    ...ideasState.collections.map((collection) => [`collection:${collection.id}`, collection.title || window.t("ideas.collection.fallback")]),
   ].map(([key, label]) => `<option value="${escapeAttr(key)}">${escapeHtml(label)}</option>`).join("");
   form.elements.collectionKey.value = selectedCollectionKey || "ungrouped";
   form.elements.priceCurrency.innerHTML = [
@@ -1850,7 +1932,7 @@ function openIdeaSheet(ideaId = "") {
   if (!form) return;
   const idea = ideaId ? ideasState.ideas.find((entry) => entry.id === ideaId) : null;
   ideasState.editingIdeaId = idea?.id || "";
-  $("#ideaSheetTitle").textContent = idea ? "Редактировать идею" : "Добавить идею";
+  $("#ideaSheetTitle").textContent = window.t(idea ? "ideas.form.title.edit" : "ideas.form.title.create");
   $("#ideaFormError").textContent = "";
   renderIdeaFormSelects(
     idea ? getIdeaCollectionKey(idea.collection_id) : getDefaultIdeaFormCollectionKey(),
@@ -1893,14 +1975,14 @@ async function submitIdeaForm(event) {
   if (ideasState.saving) return;
   if (!validateMoneyFields(form, ["priceAmount"])) {
     form.reportValidity();
-    $("#ideaFormError").textContent = MONEY_INPUT_ERROR;
+    $("#ideaFormError").textContent = window.t("ideas.form.validation.price");
     return;
   }
   const client = getSupabaseClient();
   const api = getTravelIdeasClientApi();
   const core = getTravelIdeaCore();
   if (!client || !api || !core) {
-    $("#ideaFormError").textContent = "Supabase не настроен: облачные идеи пока недоступны.";
+    $("#ideaFormError").textContent = window.t("ideas.error.unavailable");
     return;
   }
   ideasState.saving = true;
@@ -1914,23 +1996,23 @@ async function submitIdeaForm(event) {
     if (editingId) {
       const patch = core.buildTravelIdeaEditablePatch(input);
       if (!patch) {
-        $("#ideaFormError").textContent = "Введите название идеи.";
+        $("#ideaFormError").textContent = window.t("ideas.form.validation.title");
         return;
       }
       saved = await api.updateTravelIdea(client, editingId, patch);
       ideasState.ideas = ideasState.ideas.map((idea) => idea.id === editingId ? { ...idea, ...saved } : idea);
-      showToast("Идея сохранена");
+      showToast(window.t("ideas.toast.saved"));
     } else {
       const user = await getCurrentSupabaseUserForIdeas(client);
       const payload = core.buildTravelIdeaInsertPayload({ ...input, source: "manual", status: "inbox" }, user.id);
       if (!payload) {
-        $("#ideaFormError").textContent = "Введите название идеи.";
+        $("#ideaFormError").textContent = window.t("ideas.form.validation.title");
         return;
       }
       saved = await api.insertTravelIdea(client, payload);
       ideasState.ideas = [saved, ...ideasState.ideas];
       ideasState.activeCollectionKey = getIdeaCollectionKey(saved.collection_id);
-      showToast("Идея добавлена");
+      showToast(window.t("ideas.toast.created"));
     }
     closeSheet("ideaSheet");
     renderIdeasScreen();
@@ -1960,7 +2042,7 @@ async function archiveCurrentIdea() {
     ideasState.ideas = ideasState.ideas.map((idea) => idea.id === ideaId ? { ...idea, ...archived, status: "archived" } : idea);
     closeSheet("ideaSheet");
     renderIdeasScreen();
-    showToast("Идея отправлена в архив");
+    showToast(window.t("ideas.toast.archived"));
   } catch (error) {
     $("#ideaFormError").textContent = getTravelIdeasErrorCopy(error);
   } finally {
@@ -1989,7 +2071,7 @@ async function submitIdeaCollectionForm(event) {
   const api = getTravelIdeasClientApi();
   const core = getTravelIdeaCore();
   if (!client || !api || !core) {
-    $("#ideaCollectionFormError").textContent = "Supabase не настроен: облачные идеи пока недоступны.";
+    $("#ideaCollectionFormError").textContent = window.t("ideas.error.unavailable");
     return;
   }
   ideasState.saving = true;
@@ -1999,7 +2081,7 @@ async function submitIdeaCollectionForm(event) {
     const user = await getCurrentSupabaseUserForIdeas(client);
     const payload = core.buildTravelIdeaCollectionInsertPayload({ title: form.elements.title.value }, user.id);
     if (!payload) {
-      $("#ideaCollectionFormError").textContent = "Введите название подборки.";
+      $("#ideaCollectionFormError").textContent = window.t("ideas.collection.form.validation.title");
       return;
     }
     const collection = await api.insertTravelIdeaCollection(client, payload);
@@ -2012,7 +2094,7 @@ async function submitIdeaCollectionForm(event) {
     }
     closeSheet("ideaCollectionSheet");
     renderIdeasScreen();
-    showToast("Подборка создана");
+    showToast(window.t("ideas.collection.toast.created"));
   } catch (error) {
     $("#ideaCollectionFormError").textContent = getTravelIdeasErrorCopy(error);
   } finally {
@@ -2030,8 +2112,8 @@ function normalizeDisplayName(value = "") {
 
 function getDisplayNameError(value = "") {
   const displayName = normalizeDisplayName(value);
-  if (!displayName) return "Введите имя или ник";
-  if (displayName.length > 40) return "Имя или ник должны быть не длиннее 40 символов";
+  if (!displayName) return window.t("share.profile.validation.required");
+  if (displayName.length > 40) return window.t("share.profile.validation.long");
   return "";
 }
 
@@ -2051,7 +2133,7 @@ async function loadMyProfile({ createSession = false } = {}) {
     renderShareRoleBanner();
     return payload.profile || null;
   } catch {
-    userProfile = { ...userProfile, loaded: false, loading: false, error: "Не удалось загрузить имя пользователя" };
+    userProfile = { ...userProfile, loaded: false, loading: false, error: window.t("share.profile.loaded.error") };
     renderHomeProfile();
     return null;
   }
@@ -2086,17 +2168,17 @@ function renderHomeProfile() {
 function getHomeProfileLabel() {
   if (userProfile.displayName) return userProfile.displayName;
   if (extensionConnectState.request && extensionConnectState.status === "identity_required") {
-    if (recoverableAuthState.upgradeSending) return "Отправляем письмо...";
-    if (recoverableAuthState.status) return "Проверьте почту";
-    return "Сохраните доступ по email";
+    if (recoverableAuthState.upgradeSending) return window.t("home.profile.email.sending");
+    if (recoverableAuthState.status) return window.t("home.profile.email.check");
+    return window.t("home.profile.email.save");
   }
-  return "Добавьте имя или ник";
+  return window.t("home.profile.add");
 }
 
 function getHomeTripStatusLabel(tripId) {
   const record = shareRecords[tripId];
-  if (record?.shareId && !record.revoked) return "Групповая (автор)";
-  return "Личная";
+  if (record?.shareId && !record.revoked) return window.t("home.trip.status.shared.owner");
+  return window.t("home.trip.status.personal");
 }
 
 function renderProfileSheet() {
@@ -2114,7 +2196,9 @@ function renderProfileSheet() {
   if (error) error.textContent = userProfile.error || "";
   if (button) {
     button.disabled = profileSaving;
-    button.textContent = profileSaving ? "Сохраняем..." : (pendingProfileAction ? "Сохранить и продолжить" : "Сохранить");
+    button.textContent = window.t(profileSaving
+      ? "share.profile.saving"
+      : pendingProfileAction ? "share.profile.save.continue" : "share.profile.save");
   }
   if (!authCard) return;
   const authUser = recoverableAuthState.user;
@@ -2123,24 +2207,24 @@ function renderProfileSheet() {
   const isAnonymous = authUser?.isAnonymous === true;
   if (authSummary) {
     authSummary.textContent = isLinked
-      ? `Вы вошли как ${authUser.email}. Cloud Ideas и идеи из расширения сохраняются в этот Backpacker.`
-      : "Сохраните доступ по email — так Cloud Ideas и идеи из расширения будут видны в Backpacker на телефоне и ноутбуке.";
+      ? window.t("share.profile.email.summary.linked", { email: authUser.email })
+      : window.t("share.profile.email.summary.anonymous");
   }
   if (authStatus) {
     authStatus.classList.toggle("error", Boolean(recoverableAuthState.error));
     authStatus.textContent = recoverableAuthState.error
       || recoverableAuthState.status
-      || (isLinked ? `Доступ сохранён: ${authUser.email}` : "");
+      || (isLinked ? window.t("share.profile.email.saved", { email: authUser.email }) : "");
   }
   if (upgradeForm) upgradeForm.hidden = !isAnonymous || isLinked;
   if (loginForm) loginForm.hidden = isLinked;
   if (sendButton) {
     sendButton.disabled = recoverableAuthState.upgradeSending;
-    sendButton.textContent = recoverableAuthState.upgradeSending ? "Отправляем..." : "Отправить ссылку";
+    sendButton.textContent = window.t(recoverableAuthState.upgradeSending ? "share.profile.email.sending" : "share.profile.email.send");
   }
   if (loginButton) {
     loginButton.disabled = recoverableAuthState.loginSending;
-    loginButton.textContent = recoverableAuthState.loginSending ? "Отправляем..." : "Войти по email";
+    loginButton.textContent = window.t(recoverableAuthState.loginSending ? "share.profile.email.sending" : "share.profile.email.login");
   }
 }
 
@@ -2166,14 +2250,12 @@ function getRecoverableAuthSendErrorMessage(error, { login = false } = {}) {
   const message = String(error?.message || "").toLowerCase();
   const status = Number(error?.status || 0);
   if (status === 429 || code.includes("rate_limit") || message.includes("rate limit") || message.includes("too many")) {
-    return "Слишком много писем за короткое время. Подождите немного и попробуйте позже.";
+    return window.t("share.profile.email.rate.limit");
   }
   if (message.includes("already")) {
-    return "Этот email уже используется. Попробуйте войти по email.";
+    return window.t("share.profile.email.already");
   }
-  return login
-    ? "Не удалось отправить ссылку. Проверьте email или сохраните доступ сначала."
-    : "Не удалось отправить ссылку. Проверьте email и попробуйте ещё раз.";
+  return window.t(login ? "share.profile.email.login.error" : "share.profile.email.send.error");
 }
 
 async function submitRecoverableAuthUpgradeForm(event) {
@@ -2188,7 +2270,7 @@ async function submitRecoverableAuthUpgradeForm(event) {
   }
   const client = getSupabaseClient();
   if (!client) {
-    recoverableAuthState.error = "Supabase не настроен: доступ по email пока недоступен.";
+    recoverableAuthState.error = window.t("share.profile.email.supabase.missing");
     recoverableAuthState.status = "";
     renderProfileSheet();
     return;
@@ -2201,8 +2283,8 @@ async function submitRecoverableAuthUpgradeForm(event) {
     await ensureSupabaseOwnerSession();
     const result = await client.auth.updateUser({ email }, { emailRedirectTo: getRecoverableAuthRedirectUrl() });
     if (result.error) throw result.error;
-    recoverableAuthState.status = "Письмо отправлено, проверьте почту.";
-    showToast("Письмо отправлено");
+    recoverableAuthState.status = window.t("share.profile.email.sent");
+    showToast(window.t("share.profile.email.sent.toast"));
     await refreshRecoverableAuthSession();
   } catch (error) {
     recoverableAuthState.error = getRecoverableAuthSendErrorMessage(error);
@@ -2224,7 +2306,7 @@ async function submitRecoverableAuthLoginForm(event) {
   }
   const client = getSupabaseClient();
   if (!client) {
-    recoverableAuthState.error = "Supabase не настроен: вход по email пока недоступен.";
+    recoverableAuthState.error = window.t("share.profile.email.login.unavailable");
     recoverableAuthState.status = "";
     renderProfileSheet();
     return;
@@ -2242,8 +2324,8 @@ async function submitRecoverableAuthLoginForm(event) {
       },
     });
     if (result.error) throw result.error;
-    recoverableAuthState.status = "Письмо отправлено, проверьте почту.";
-    showToast("Письмо отправлено");
+    recoverableAuthState.status = window.t("share.profile.email.sent");
+    showToast(window.t("share.profile.email.sent.toast"));
   } catch (error) {
     recoverableAuthState.error = getRecoverableAuthSendErrorMessage(error, { login: true });
   } finally {
@@ -2286,12 +2368,12 @@ async function submitProfileForm(event) {
   try {
     await saveMyProfile(value);
     closeSheet("profileSheet");
-    showToast("Имя обновлено");
+    showToast(window.t("share.profile.saved"));
     const action = pendingProfileAction?.action;
     pendingProfileAction = null;
     if (typeof action === "function") await action();
   } catch {
-    userProfile.error = "Не удалось сохранить имя. Проверьте соединение и попробуйте ещё раз.";
+    userProfile.error = window.t("share.profile.save.error");
     renderProfileSheet();
   } finally {
     profileSaving = false;
@@ -2311,7 +2393,7 @@ async function loadReadOnlyShareFromUrl() {
     return {
       shareId: payload.shareId || "",
       sourceTripId: payload.tripId || nextState.trip.id,
-      title: nextState.trip.title || "Поездка",
+      title: nextState.trip.title || window.t("share.received.trip.fallback"),
       destination: nextState.trip.destination || "",
       updatedAt: payload.updatedAt || new Date().toISOString(),
       options: {
@@ -2525,7 +2607,20 @@ function formatMoney(value = 0) {
 }
 
 function formatBudgetMoney(value = 0) {
-  return canShowBudget() ? formatMoney(value) : "Скрыто";
+  if (!canShowBudget()) return window.t("budget.hidden");
+  const amount = Math.round(Number(value) || 0);
+  const currency = state.trip.currency || "";
+  const symbol = window.BackpackerI18n.getLocale() === "en" && currency === "RSD"
+    ? "RSD"
+    : currencySymbol(currency);
+  return `${window.BackpackerI18n.formatNumber(amount, { maximumFractionDigits: 0 })} ${symbol}`.trim();
+}
+
+function formatBudgetDate(dateString) {
+  if (!dateString) return window.t("budget.estimate.undated");
+  const date = new Date(`${dateString}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return window.t("budget.estimate.undated");
+  return window.BackpackerI18n.formatDate(date, { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 function currencySymbol(currency) {
@@ -2559,7 +2654,10 @@ function getSupportedCurrencies() {
 
 function formatCurrencyAmount(value, currency) {
   const amount = Number(value) || 0;
-  return `${amount.toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ${currencySymbol(currency)}`;
+  const symbol = window.BackpackerI18n.getLocale() === "en" && currency === "RSD"
+    ? "RSD"
+    : currencySymbol(currency);
+  return `${window.BackpackerI18n.formatNumber(amount, { maximumFractionDigits: 2 })} ${symbol}`.trim();
 }
 
 function convertCurrencyAmount(value, fromCurrency, toCurrency) {
@@ -2600,13 +2698,17 @@ function renderRatesStatus(message = null) {
     status.textContent = message;
     return;
   }
-  const source = ratesSource === "live" ? "реальный курс" : "демо-курс";
-  const updated = ratesUpdatedAt ? ` · обновлено ${ratesUpdatedAt.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}` : "";
-  status.textContent = `Используется ${source}${updated}. RUB / EUR / SEK / USD / GEL / TRY / RSD / BAM.`;
+  const source = window.t(ratesSource === "live" ? "budget.currency.status.live" : "budget.currency.status.demo");
+  const updated = ratesUpdatedAt
+    ? window.t("budget.currency.status.updated", {
+      time: window.BackpackerI18n.formatDate(ratesUpdatedAt, { hour: "2-digit", minute: "2-digit" }),
+    })
+    : "";
+  status.textContent = window.t("budget.currency.status.summary", { source, updated });
 }
 
 async function refreshExchangeRates() {
-  renderRatesStatus("Обновляю курс...");
+  renderRatesStatus(window.t("budget.currency.status.refreshing"));
   try {
     const response = await fetch("https://open.er-api.com/v6/latest/RUB");
     if (!response.ok) throw new Error("rates request failed");
@@ -2627,7 +2729,7 @@ async function refreshExchangeRates() {
     ratesSource = "demo";
     ratesUpdatedAt = null;
     renderCurrencyCalculator();
-    renderRatesStatus("Не удалось подтянуть реальный курс, пока использую демо-курс.");
+    renderRatesStatus(window.t("budget.currency.status.error"));
     trackEvent("currency_rates_refreshed", { source: "demo", failed: true });
   }
 }
@@ -2638,11 +2740,15 @@ function parseMoney(value) {
 
 const MONEY_INPUT_ERROR = "Проверьте сумму: для копеек используйте 1–2 цифры после точки или запятой.";
 
+function getItemMoneyInputError() {
+  return window.t("item.editor.validation.money");
+}
+
 function validateMoneyInput(input) {
   if (!input) return true;
   input.setCustomValidity("");
   if (!window.BackpackerFinancial?.isValidMoney(input.value)) {
-    input.setCustomValidity(MONEY_INPUT_ERROR);
+    input.setCustomValidity(getItemMoneyInputError());
   }
   return !input.validationMessage;
 }
@@ -2688,6 +2794,93 @@ function formatTripCardDateRange(startDate, endDate) {
   if (startDate) return `с ${formatDate(startDate)}`;
   if (endDate) return `до ${formatDate(endDate)}`;
   return "Даты не заданы";
+}
+
+function formatHomeDate(dateString) {
+  if (!dateString) return "";
+  const date = new Date(`${dateString}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return "";
+  return window.BackpackerI18n.formatDate(date, { day: "numeric", month: "long" });
+}
+
+function formatHomeTripCardDateRange(startDate, endDate) {
+  if (startDate && endDate) {
+    return window.t("home.date.range", { start: formatHomeDate(startDate), end: formatHomeDate(endDate) });
+  }
+  if (startDate) return window.t("home.date.from", { date: formatHomeDate(startDate) });
+  if (endDate) return window.t("home.date.until", { date: formatHomeDate(endDate) });
+  return window.t("home.trip.dates.missing");
+}
+
+function formatHomeTripDayCount(trip) {
+  const count = getTripDayCount(trip);
+  return window.t("home.trip.days", { count });
+}
+
+function formatHomeCurrencyAmount(value, currency) {
+  const amount = Number(value) || 0;
+  return `${window.BackpackerI18n.formatNumber(amount, { maximumFractionDigits: 2 })} ${currencySymbol(currency)}`;
+}
+
+function formatPlanDate(dateString, options = {}) {
+  const virtualIndex = getVirtualDayIndex(dateString);
+  if (virtualIndex) return window.t("plan.day.label", { number: virtualIndex });
+  if (!dateString) return window.t("plan.unscheduled.title").toLowerCase();
+  const date = new Date(`${dateString}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return window.t("plan.unscheduled.title").toLowerCase();
+  return window.BackpackerI18n.formatDate(date, {
+    day: "numeric",
+    month: "long",
+    ...options,
+  });
+}
+
+function formatPlanTripDateRange(startDate, endDate) {
+  if (startDate && endDate) {
+    return window.t("plan.trip.date.range", {
+      start: formatPlanDate(startDate),
+      end: formatPlanDate(endDate),
+    });
+  }
+  if (startDate) return window.t("plan.trip.date.from", { date: formatPlanDate(startDate) });
+  if (endDate) return window.t("plan.trip.date.until", { date: formatPlanDate(endDate) });
+  return window.t("plan.trip.date.missing");
+}
+
+function formatPlanDayCount(count) {
+  return window.t("plan.trip.days", { count: Number(count) || 1 });
+}
+
+function formatPlanMoney(value = 0) {
+  const amount = Math.round(Number(value) || 0);
+  const currency = state.trip.currency || "";
+  const symbol = window.BackpackerI18n.getLocale() === "en" && currency === "RSD"
+    ? "RSD"
+    : currencySymbol(currency);
+  return `${window.BackpackerI18n.formatNumber(amount, { maximumFractionDigits: 0 })} ${symbol}`.trim();
+}
+
+function formatPlanDurationText(minutes) {
+  const total = parseMoney(minutes);
+  if (!total) return "--";
+  const hours = Math.floor(total / 60);
+  const rest = total % 60;
+  return [
+    hours ? window.t("plan.item.duration.hours", { count: hours }) : "",
+    rest ? window.t("plan.item.duration.minutes", { count: rest }) : "",
+  ].filter(Boolean).join(" ");
+}
+
+function getPlanTypeLabel(type) {
+  const key = `item.editor.type.${type}`;
+  const label = window.t(key);
+  return label === key ? window.t("plan.item.type.fallback") : label;
+}
+
+function getPlanStatusLabel(status) {
+  const key = `item.editor.status.${status}`;
+  const label = window.t(key);
+  return label === key ? window.t("plan.item.status.fallback") : label;
 }
 
 function formatDateForInput(dateString) {
@@ -2809,7 +3002,7 @@ function getEndTime(startTime, durationMinutes) {
 
 function getItemDateSlots(dateString) {
   const virtualIndex = getVirtualDayIndex(dateString);
-  if (virtualIndex) return ["Д", String(virtualIndex), "–"];
+  if (virtualIndex) return [window.t("plan.day.short"), String(virtualIndex), "–"];
   if (!dateString) return ["–", "–", "––"];
   const date = new Date(`${dateString}T12:00:00`);
   if (Number.isNaN(date.getTime())) return ["–", "–", "––"];
@@ -2919,12 +3112,15 @@ function renderItemParticipantBadges(item) {
   const participants = itemParticipants.slice(0, 3);
   if (!participants.length) return "";
   const hiddenCount = Math.max(0, itemParticipants.length - participants.length);
-  const label = itemParticipants.map((participant) => participant.name).join(", ");
+  const label = itemParticipants.map(getItemEditorParticipantDisplayName).join(", ");
   return `
-    <span class="item-participant-stack" aria-label="Расход распределен: ${escapeAttr(label)}">
-      ${participants.map((participant) => `
-        <span class="item-side-badge item-participant-badge participant-${escapeAttr(participant.colorKey)}" title="${escapeAttr(participant.name)}">${escapeHtml(participant.initials)}</span>
-      `).join("")}
+    <span class="item-participant-stack" aria-label="${escapeAttr(window.t("plan.item.participants.aria", { participants: label }))}">
+      ${participants.map((participant) => {
+        const displayName = getItemEditorParticipantDisplayName(participant);
+        return `
+          <span class="item-side-badge item-participant-badge participant-${escapeAttr(participant.colorKey)}" title="${escapeAttr(displayName)}">${escapeHtml(displayName.slice(0, 1).toUpperCase())}</span>
+        `;
+      }).join("")}
       ${hiddenCount ? `<span class="item-side-badge item-participant-badge item-participant-more">+${hiddenCount}</span>` : ""}
     </span>
   `;
@@ -3138,7 +3334,7 @@ function renderHomeSupport() {
   // Hiding the trainer is one tap, so the way back has to live on the home screen too.
   $("#showTrainerButton")?.classList.toggle("hidden", !isHidden);
   if (trainerButton) {
-    trainerButton.textContent = isHidden ? "Показать тренажер на главной" : "Скрыть тренажер на главной";
+    trainerButton.textContent = window.t(isHidden ? "home.trainer.settings.show" : "home.trainer.settings.hide");
   }
 }
 
@@ -3149,15 +3345,15 @@ function renderSyncConflictNotice() {
   card.classList.toggle("hidden", !conflicts.length);
   if (!conflicts.length) return;
   const single = conflicts.length === 1;
-  $("#syncConflictTitle").textContent = single ? "Две версии одной поездки" : "Разные версии поездок";
+  $("#syncConflictTitle").textContent = window.t(single ? "home.sync.title.single" : "home.sync.title.multiple");
   $("#syncConflictSummary").textContent = single
-    ? `Поездку «${conflicts[0].baseTitle}» меняли на двух устройствах, пока они не видели друг друга. Backpacker сохранил обе версии — ни одна правка не потерялась.`
-    : `Несколько поездок меняли на двух устройствах, пока они не видели друг друга. Backpacker сохранил обе версии каждой — ни одна правка не потерялась.`;
+    ? window.t("home.sync.summary.single", { title: conflicts[0].baseTitle })
+    : window.t("home.sync.summary.multiple");
   const list = $("#syncConflictList");
   list.innerHTML = "";
   conflicts.forEach((entry) => {
     const item = document.createElement("li");
-    item.textContent = `${entry.baseTitle} — копия с этого устройства`;
+    item.textContent = window.t("home.sync.copy", { title: entry.baseTitle });
     list.append(item);
   });
 }
@@ -3330,8 +3526,8 @@ function renderHome() {
   if (!trips.length) {
     list.innerHTML = `
       <p class="empty-trips">
-        <span>Здесь будут поездки: ваши личные и те, в которые вас пригласят</span>
-        <span>Впервые здесь? Начните с тренажера 👆🏻 или создайте новую поездку</span>
+        <span>${escapeHtml(window.t("home.empty.primary"))}</span>
+        <span>${escapeHtml(window.t("home.empty.secondary"))}</span>
       </p>
     `;
     return;
@@ -3341,7 +3537,7 @@ function renderHome() {
     const trip = entry.state.trip;
     const style = entry.coverDataUrl ? ` style="--trip-cover: url('${escapeAttr(entry.coverDataUrl)}')"` : "";
     const statusLabel = getHomeTripStatusLabel(entry.id);
-    const cardDateRange = formatTripCardDateRange(trip.startDate, trip.endDate);
+    const cardDateRange = formatHomeTripCardDateRange(trip.startDate, trip.endDate);
     return `
       <article class="home-card trip-list-card"${style}>
         <button class="trip-card-open" data-open-trip="${escapeAttr(entry.id)}" type="button">
@@ -3349,25 +3545,25 @@ function renderHome() {
             <span class="home-card-kicker">${escapeHtml(statusLabel)}</span>
           </div>
           <div class="trip-card-title-block">
-            <strong>${escapeHtml(trip.title || "Новая поездка")}</strong>
+            <strong>${escapeHtml(trip.title || window.t("home.trip.untitled"))}</strong>
             <div class="trip-card-submeta">
-              <span>${escapeHtml(trip.destination || "Направление не задано")}</span>
+              <span>${escapeHtml(trip.destination || window.t("home.trip.destination.missing"))}</span>
               <span>${escapeHtml(cardDateRange)}</span>
             </div>
           </div>
           <div class="home-card-meta">
-            <span>${formatTripDayCount(trip)}</span>
-            <span>${formatCurrencyAmount(trip.budgetLimit, trip.currency)}</span>
+            <span>${escapeHtml(formatHomeTripDayCount(trip))}</span>
+            <span>${escapeHtml(formatHomeCurrencyAmount(trip.budgetLimit, trip.currency))}</span>
           </div>
         </button>
-        <button class="cover-trip-button" data-cover-trip="${escapeAttr(entry.id)}" type="button" aria-label="Добавить обложку">
+        <button class="cover-trip-button" data-cover-trip="${escapeAttr(entry.id)}" type="button" aria-label="${escapeAttr(window.t("home.trip.cover.action"))}">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M4 8h4l1.8-2h4.4L16 8h4v11H4V8z"></path>
             <circle cx="12" cy="13.5" r="3"></circle>
             <path d="M18 5v4M16 7h4"></path>
           </svg>
         </button>
-        <button class="delete-trip-button" data-delete-trip="${escapeAttr(entry.id)}" type="button">Удалить</button>
+        <button class="delete-trip-button" data-delete-trip="${escapeAttr(entry.id)}" type="button">${escapeHtml(window.t("home.trip.delete"))}</button>
       </article>
     `;
   }).join("");
@@ -3380,18 +3576,20 @@ function renderReceivedTrips() {
   const shouldShow = receivedSharesLoading || receivedShareCards.length > 0;
   section.classList.toggle("hidden", !shouldShow);
   if (receivedSharesLoading && !receivedShareCards.length) {
-    list.innerHTML = `<p class="empty-trips"><span>Обновляем сохраненные ссылки...</span></p>`;
+    list.innerHTML = `<p class="empty-trips"><span>${escapeHtml(window.t("home.received.loading"))}</span></p>`;
     return;
   }
   list.innerHTML = receivedShareCards.map((entry) => {
-    const dateText = formatTripCardDateRange(entry.startDate, entry.endDate);
-    const destinationText = entry.destination || "Направление не задано";
+    const dateText = formatHomeTripCardDateRange(entry.startDate, entry.endDate);
+    const destinationText = entry.destination || window.t("home.trip.destination.missing");
     const dayCountText = entry.startDate || entry.endDate
-      ? formatTripDayCount({ startDate: entry.startDate, endDate: entry.endDate })
-      : entry.dayCount || "Дни не заданы";
+      ? formatHomeTripDayCount({ startDate: entry.startDate, endDate: entry.endDate })
+      : entry.dayCount ? window.t("home.trip.days", { count: Number(entry.dayCount) }) : window.t("home.trip.days.missing");
     const coverStyle = entry.coverDataUrl ? ` style="--trip-cover: url('${escapeAttr(entry.coverDataUrl)}')"` : "";
-    const statusBadge = entry.revoked ? "Доступ закрыт" : "Групповая (гость) · Read-only";
-    const authorBadge = entry.authorDisplayName ? `Автор: ${entry.authorDisplayName}` : "Автор поездки";
+    const statusBadge = window.t(entry.revoked ? "home.received.access.closed" : "home.received.shared.guest");
+    const authorBadge = entry.authorDisplayName
+      ? window.t("home.received.author.named", { name: entry.authorDisplayName })
+      : window.t("home.received.author");
     return `
       <article class="home-card trip-list-card received-trip-card${entry.revoked ? " received-trip-card-closed" : ""}"${coverStyle}>
         <button class="trip-card-open" data-open-received-trip="${escapeAttr(entry.shareId)}" type="button" ${entry.revoked ? "disabled aria-disabled=\"true\"" : ""}>
@@ -3400,18 +3598,18 @@ function renderReceivedTrips() {
             <span class="home-card-kicker received-trip-author-badge">${escapeHtml(authorBadge)}</span>
           </div>
           <div class="trip-card-title-block">
-            <strong>${escapeHtml(entry.title || "Поездка")}</strong>
+            <strong>${escapeHtml(entry.title || window.t("home.received.trip.untitled"))}</strong>
             <div class="trip-card-submeta">
               <span>${escapeHtml(destinationText)}</span>
-              <span>${escapeHtml(entry.revoked ? "Доступ закрыт" : dateText)}</span>
+              <span>${escapeHtml(entry.revoked ? window.t("home.received.access.closed") : dateText)}</span>
             </div>
           </div>
           <div class="home-card-meta">
             <span>${escapeHtml(dayCountText)}</span>
-            <span>${entry.includeBudget === false ? "Смета скрыта" : escapeHtml(formatCurrencyAmount(entry.budgetLimit || 0, entry.currency || "RUB"))}</span>
+            <span>${entry.includeBudget === false ? escapeHtml(window.t("home.received.budget.hidden")) : escapeHtml(formatHomeCurrencyAmount(entry.budgetLimit || 0, entry.currency || "RUB"))}</span>
           </div>
         </button>
-        <button class="delete-trip-button received-trip-remove-button" data-remove-received-trip="${escapeAttr(entry.shareId)}" type="button">Удалить из списка</button>
+        <button class="delete-trip-button received-trip-remove-button" data-remove-received-trip="${escapeAttr(entry.shareId)}" type="button">${escapeHtml(window.t("home.received.remove"))}</button>
       </article>
     `;
   }).join("");
@@ -3438,7 +3636,7 @@ async function refreshReceivedTrips({ silent = true } = {}) {
     receivedShareCards = Array.isArray(payload.trips) ? payload.trips : [];
     receivedSharesLoaded = true;
   } catch {
-    if (!silent) showToast("Не удалось обновить «Со мной поделились»");
+    if (!silent) showToast(window.t("home.received.refresh.failed"));
   } finally {
     receivedSharesLoading = false;
     renderReceivedTrips();
@@ -3466,18 +3664,18 @@ async function saveReceivedTrip(profileReady = false) {
     readOnlyShare.isSaved = true;
     renderSaveReceivedTripButton();
     await refreshReceivedTrips();
-    showToast("Поездка добавлена в «Со мной поделились»");
+    showToast(window.t("share.received.saved"));
   } catch (error) {
     if (error.status === 409) {
       readOnlyShare.isOwner = true;
       renderSaveReceivedTripButton();
-      showToast("Это ваша ссылка");
+      showToast(window.t("share.received.own"));
     } else if (error.status === 410) {
       readOnlyShare.invalid = true;
       renderSaveReceivedTripButton();
-      showToast("Доступ закрыт");
+      showToast(window.t("share.received.closed"));
     } else {
-      showToast(isSupabaseConfigured() ? "Не удалось добавить поездку" : "Supabase не настроен");
+      showToast(window.t(isSupabaseConfigured() ? "share.received.add.error" : "share.link.supabase.missing"));
     }
   } finally {
     renderSaveReceivedTripButton();
@@ -3492,7 +3690,7 @@ async function openReceivedTrip(shareId) {
     readOnlyShare = {
       shareId: payload.shareId || shareId,
       sourceTripId: payload.tripId || nextState.trip.id,
-      title: nextState.trip.title || "Поездка",
+      title: nextState.trip.title || window.t("share.received.trip.fallback"),
       destination: nextState.trip.destination || "",
       updatedAt: payload.updatedAt || new Date().toISOString(),
       options: {
@@ -3508,11 +3706,11 @@ async function openReceivedTrip(shareId) {
     trackEvent("received_trip_opened", { share_id: shareId });
   } catch (error) {
     if (error.status === 410) {
-      showToast("Доступ закрыт");
+      showToast(window.t("home.received.access.closed"));
       await refreshReceivedTrips();
       return;
     }
-    showToast("Не удалось открыть поездку");
+    showToast(window.t("home.received.open.failed"));
   }
 }
 
@@ -3522,9 +3720,9 @@ async function removeReceivedTrip(shareId) {
     await callTripShareFunction("remove_received", { shareId }, { requireOwner: true });
     receivedShareCards = receivedShareCards.filter((entry) => entry.shareId !== shareId);
     renderReceivedTrips();
-    showToast("Удалено из «Со мной поделились»");
+    showToast(window.t("home.received.removed"));
   } catch {
-    showToast("Не удалось удалить из списка");
+    showToast(window.t("home.received.remove.failed"));
   }
 }
 
@@ -3560,11 +3758,11 @@ async function refreshShareProposalContext() {
 
 function formatProposalStatus(status) {
   return {
-    pending: "На рассмотрении",
-    accepted: "Принято",
-    rejected: "Отклонено",
-    withdrawn: "Отозвано",
-    stale: "Неактуально",
+    pending: window.t("share.proposal.status.pending"),
+    accepted: window.t("share.proposal.status.accepted"),
+    rejected: window.t("share.proposal.status.rejected"),
+    withdrawn: window.t("share.proposal.status.withdrawn"),
+    stale: window.t("share.proposal.status.stale"),
   }[status] || status;
 }
 
@@ -3575,7 +3773,7 @@ function resetExpenseProposalDraft(itemId = "") {
 async function openExpenseProposalSheet(itemId, profileReady = false) {
   if (!isReadOnlyMode()) return;
   if (readOnlyShare?.isOwner || readOnlyShare?.isAuthor) {
-    showToast("Это ваша поездка");
+    showToast(window.t("share.proposal.expense.own.trip"));
     return;
   }
   if (!profileReady) {
@@ -3592,7 +3790,7 @@ function renderExpenseProposalSheet() {
   const item = state.items.find((entry) => entry.id === expenseProposalDraft.itemId);
   const body = $("#expenseProposalBody");
   if (!item) {
-    body.innerHTML = `<p class="field-hint">Расход не найден.</p>`;
+    body.innerHTML = `<p class="field-hint">${escapeHtml(window.t("share.proposal.expense.not.found"))}</p>`;
     return;
   }
   const existingProposal = getOwnProposalForItem(item.id);
@@ -3606,19 +3804,19 @@ function renderExpenseProposalSheet() {
     : 0;
 
   if (!canShowBudget() || shareProposalContext?.includeBudget === false) {
-    body.innerHTML = `<p class="field-hint">Автор скрыл смету. Предложения по расходам недоступны.</p>`;
+    body.innerHTML = `<p class="field-hint">${escapeHtml(window.t("share.proposal.expense.budget.hidden"))}</p>`;
     return;
   }
   if (shareProposalContext?.isOwner) {
-    body.innerHTML = `<p class="field-hint">Автор управляет расходами напрямую.</p>`;
+    body.innerHTML = `<p class="field-hint">${escapeHtml(window.t("share.proposal.expense.owner.direct"))}</p>`;
     return;
   }
   if (existingProposal?.status === "pending") {
     body.innerHTML = `
       <section class="proposal-summary">
         <h3>${escapeHtml(item.title)}</h3>
-        <p>Ваше предложение: <strong>${formatMoney(existingProposal.amount)}</strong> · ${formatProposalStatus(existingProposal.status)}</p>
-        <button class="ghost-button" type="button" data-withdraw-expense-proposal="${escapeAttr(existingProposal.id)}">Отозвать предложение</button>
+        <p>${escapeHtml(window.t("share.proposal.expense.yours", { amount: formatBudgetMoney(existingProposal.amount), status: formatProposalStatus(existingProposal.status) }))}</p>
+        <button class="ghost-button" type="button" data-withdraw-expense-proposal="${escapeAttr(existingProposal.id)}">${escapeHtml(window.t("share.proposal.expense.withdraw"))}</button>
       </section>
     `;
     return;
@@ -3627,8 +3825,8 @@ function renderExpenseProposalSheet() {
     body.innerHTML = `
       <section class="proposal-summary">
         <h3>${escapeHtml(item.title)}</h3>
-        <p>Ваша доля: <strong>${formatMoney(existingProposal.amount)}</strong> · ${formatProposalStatus(existingProposal.status)}</p>
-        <button class="ghost-button" type="button" data-withdraw-accepted-expense-proposal="${escapeAttr(existingProposal.id)}" ${resolvingExpenseProposalIds.has(existingProposal.id) ? "disabled" : ""}>Отозвать долю</button>
+        <p>${escapeHtml(window.t("share.proposal.expense.share", { amount: formatBudgetMoney(existingProposal.amount), status: formatProposalStatus(existingProposal.status) }))}</p>
+        <button class="ghost-button" type="button" data-withdraw-accepted-expense-proposal="${escapeAttr(existingProposal.id)}" ${resolvingExpenseProposalIds.has(existingProposal.id) ? "disabled" : ""}>${escapeHtml(window.t("share.proposal.expense.withdraw.share"))}</button>
       </section>
     `;
     return;
@@ -3637,14 +3835,14 @@ function renderExpenseProposalSheet() {
     body.innerHTML = `
       <section class="proposal-summary">
         <h3>${escapeHtml(item.title)}</h3>
-        <p>Ваше предложение: <strong>${formatMoney(existingProposal.amount)}</strong> · ${formatProposalStatus(existingProposal.status)}</p>
-        <button class="primary-button" type="button" data-new-expense-proposal>Создать новое предложение</button>
+        <p>${escapeHtml(window.t("share.proposal.expense.yours", { amount: formatBudgetMoney(existingProposal.amount), status: formatProposalStatus(existingProposal.status) }))}</p>
+        <button class="primary-button" type="button" data-new-expense-proposal>${escapeHtml(window.t("share.proposal.expense.new"))}</button>
       </section>
     `;
     return;
   }
   if (authorAmount <= 0) {
-    body.innerHTML = `<p class="field-hint">Автор уже распределил весь расход между участниками.</p>`;
+    body.innerHTML = `<p class="field-hint">${escapeHtml(window.t("share.proposal.expense.allocated"))}</p>`;
     return;
   }
 
@@ -3656,20 +3854,20 @@ function renderExpenseProposalSheet() {
   if (!expenseProposalDraft.participantMode) {
     const existingOptions = availableParticipants.length
       ? `
-        <button class="primary-button" type="button" data-proposal-mode="existing">Я уже есть среди участников</button>
-        <button class="ghost-button" type="button" data-proposal-mode="new">Добавить меня как нового участника</button>
+        <button class="primary-button" type="button" data-proposal-mode="existing">${escapeHtml(window.t("share.proposal.expense.existing"))}</button>
+        <button class="ghost-button" type="button" data-proposal-mode="new">${escapeHtml(window.t("share.proposal.expense.add.new"))}</button>
       `
       : `
-        <p class="field-hint">Вас пока нет среди участников. Добавить себя вместе с предложением доли?</p>
-        <button class="primary-button" type="button" data-proposal-mode="new">Добавить меня</button>
+        <p class="field-hint">${escapeHtml(window.t("share.proposal.expense.not.participant"))}</p>
+        <button class="primary-button" type="button" data-proposal-mode="new">${escapeHtml(window.t("share.proposal.expense.add.me"))}</button>
       `;
     body.innerHTML = `
       <section class="proposal-summary">
         <h3>${escapeHtml(item.title)}</h3>
-        <p>Доступно из доли автора: <strong>${formatMoney(authorAmount)}</strong></p>
+        <p>${escapeHtml(window.t("share.proposal.expense.author.available", { amount: formatBudgetMoney(authorAmount) }))}</p>
       </section>
       <section class="proposal-choice">
-        <h3>Как вы участвуете в поездке?</h3>
+        <h3>${escapeHtml(window.t("share.proposal.expense.participation"))}</h3>
         ${existingOptions}
       </section>
     `;
@@ -3679,11 +3877,11 @@ function renderExpenseProposalSheet() {
   if (expenseProposalDraft.participantMode === "existing" && !expenseProposalDraft.participantId) {
     body.innerHTML = `
       <section class="proposal-choice">
-        <h3>Кто вы в списке участников?</h3>
+        <h3>${escapeHtml(window.t("share.proposal.expense.who"))}</h3>
         ${availableParticipants.map((participant) => `
           <button class="ghost-button" type="button" data-proposal-participant="${escapeAttr(participant.id)}">${escapeHtml(participant.name)}</button>
         `).join("")}
-        <button class="ghost-button" type="button" data-proposal-back>Назад</button>
+        <button class="ghost-button" type="button" data-proposal-back>${escapeHtml(window.t("share.proposal.back"))}</button>
       </section>
     `;
     return;
@@ -3693,13 +3891,13 @@ function renderExpenseProposalSheet() {
     const suggestedName = userProfile.displayName || shareProposalContext?.currentUserDisplayName || "";
     body.innerHTML = `
       <section class="proposal-choice">
-        <h3>Как вас показать автору?</h3>
+        <h3>${escapeHtml(window.t("share.proposal.expense.author.display"))}</h3>
         <label class="field wide">
-          Имя
-          <input id="proposalParticipantNameInput" maxlength="40" placeholder="Например, Ваня" value="${escapeAttr(suggestedName)}" />
+          ${escapeHtml(window.t("share.proposal.expense.name"))}
+          <input id="proposalParticipantNameInput" maxlength="40" placeholder="${escapeAttr(window.t("share.proposal.expense.name.placeholder"))}" value="${escapeAttr(suggestedName)}" />
         </label>
-        <button class="primary-button" type="button" data-save-proposal-name>Продолжить</button>
-        <button class="ghost-button" type="button" data-proposal-back>Назад</button>
+        <button class="primary-button" type="button" data-save-proposal-name>${escapeHtml(window.t("share.proposal.continue"))}</button>
+        <button class="ghost-button" type="button" data-proposal-back>${escapeHtml(window.t("share.proposal.back"))}</button>
       </section>
     `;
     return;
@@ -3712,21 +3910,21 @@ function renderExpenseProposalSheet() {
   body.innerHTML = `
     <section class="proposal-summary">
       <h3>${escapeHtml(item.title)}</h3>
-      <p>Общая стоимость: <strong>${formatMoney(item.price)}</strong></p>
-      <p>Текущая доля автора: <strong>${formatMoney(authorAmount)}</strong></p>
-      ${currentUserAmount ? `<p>Ваша текущая доля: <strong>${formatMoney(currentUserAmount)}</strong></p>` : ""}
-      <p>Участник: <strong>${escapeHtml(displayName)}</strong></p>
+      <p>${escapeHtml(window.t("share.proposal.expense.total", { amount: formatBudgetMoney(item.price) }))}</p>
+      <p>${escapeHtml(window.t("share.proposal.expense.author.current", { amount: formatBudgetMoney(authorAmount) }))}</p>
+      ${currentUserAmount ? `<p>${escapeHtml(window.t("share.proposal.expense.your.current", { amount: formatBudgetMoney(currentUserAmount) }))}</p>` : ""}
+      <p>${escapeHtml(window.t("share.proposal.expense.participant", { name: displayName }))}</p>
     </section>
     <section class="proposal-choice">
-      <h3>Сколько вы готовы взять на себя?</h3>
-      <button class="primary-button" type="button" data-proposal-full-amount="${authorAmount}">Весь доступный остаток — ${formatMoney(authorAmount)}</button>
+      <h3>${escapeHtml(window.t("share.proposal.expense.amount.title"))}</h3>
+      <button class="primary-button" type="button" data-proposal-full-amount="${authorAmount}">${escapeHtml(window.t("share.proposal.expense.amount.full", { amount: formatBudgetMoney(authorAmount) }))}</button>
       <label class="field wide">
-        Другая сумма
+        ${escapeHtml(window.t("share.proposal.expense.amount.other"))}
         <input id="proposalAmountInput" inputmode="numeric" placeholder="0" />
       </label>
-      <p class="field-hint">После принятия ваша доля составит ${formatMoney(futureAmount)}.</p>
-      <button class="primary-button" type="button" data-submit-expense-proposal>Отправить предложение</button>
-      <button class="ghost-button" type="button" data-proposal-back>Назад</button>
+      <p class="field-hint">${escapeHtml(window.t("share.proposal.expense.amount.after", { amount: formatBudgetMoney(futureAmount) }))}</p>
+      <button class="primary-button" type="button" data-submit-expense-proposal>${escapeHtml(window.t("share.proposal.expense.submit"))}</button>
+      <button class="ghost-button" type="button" data-proposal-back>${escapeHtml(window.t("share.proposal.back"))}</button>
     </section>
   `;
 }
@@ -3741,7 +3939,7 @@ async function submitExpenseProposal(profileReady = false) {
   const manualAmount = parseMoney($("#proposalAmountInput")?.value);
   const amount = expenseProposalDraft.amount || manualAmount;
   if (amount <= 0) {
-    showToast("Укажите сумму");
+    showToast(window.t("share.proposal.expense.amount.required"));
     return;
   }
   try {
@@ -3755,10 +3953,12 @@ async function submitExpenseProposal(profileReady = false) {
     }, { requireOwner: true });
     shareProposalContext ||= {};
     shareProposalContext.proposals = [payload.proposal, ...(shareProposalContext.proposals || [])];
-    showToast("Предложение отправлено автору");
+    showToast(window.t("share.proposal.expense.sent"));
     renderExpenseProposalSheet();
   } catch (error) {
-    showToast(error?.message === "pending_proposal_exists" ? "У вас уже есть предложение по этому расходу" : "Не удалось отправить предложение");
+    showToast(window.t(error?.message === "pending_proposal_exists"
+      ? "share.proposal.expense.duplicate"
+      : "share.proposal.expense.send.error"));
   }
 }
 
@@ -3770,10 +3970,10 @@ async function withdrawExpenseProposal(proposalId) {
         proposal.id === proposalId ? payload.proposal : proposal
       ));
     }
-    showToast("Предложение отозвано");
+    showToast(window.t("share.proposal.expense.withdrawn"));
     renderExpenseProposalSheet();
   } catch {
-    showToast("Не удалось отозвать предложение");
+    showToast(window.t("share.proposal.expense.withdraw.error"));
   }
 }
 
@@ -3798,10 +3998,10 @@ function renderAcceptedExpenseControls(item) {
   controls.innerHTML = proposals.map((proposal) => `
     <article class="accepted-expense-card">
       <div>
-        <strong>${escapeHtml(proposal.requesterDisplayName || proposal.requesterName || "Участник")}</strong>
-        <p>Взял(а) на себя ${formatMoney(proposal.amount)}.</p>
+        <strong>${escapeHtml(proposal.requesterDisplayName || proposal.requesterName || window.t("item.editor.expense.participant.fallback"))}</strong>
+        <p>${escapeHtml(window.t("item.editor.expense.covered", { amount: formatItemEditorMoney(proposal.amount) }))}</p>
       </div>
-      <button class="ghost-button compact" type="button" data-reject-accepted-expense-proposal="${escapeAttr(proposal.id)}" ${resolvingExpenseProposalIds.has(proposal.id) ? "disabled" : ""}>Отменить долю</button>
+      <button class="ghost-button compact" type="button" data-reject-accepted-expense-proposal="${escapeAttr(proposal.id)}" ${resolvingExpenseProposalIds.has(proposal.id) ? "disabled" : ""}>${escapeHtml(window.t("item.editor.expense.remove.share"))}</button>
     </article>
   `).join("");
 }
@@ -3821,13 +4021,15 @@ function renderEstimateProposalControls() {
   controls.innerHTML = proposals.map((proposal) => `
     <article class="estimate-proposal-action">
       <div>
-        <strong>${escapeHtml(proposal.itemTitle || state.items.find((item) => item.id === proposal.itemId)?.title || "Расход")}</strong>
-        <p>${isReadOnlyMode() ? "Ваша доля" : escapeHtml(proposal.requesterDisplayName || proposal.requesterName || "Участник")}: ${formatMoney(proposal.amount)}</p>
+        <strong>${escapeHtml(proposal.itemTitle || state.items.find((item) => item.id === proposal.itemId)?.title || window.t("budget.estimate.proposal.expense"))}</strong>
+        <p>${isReadOnlyMode()
+          ? escapeHtml(window.t("budget.estimate.proposal.your.share"))
+          : escapeHtml(proposal.requesterDisplayName || proposal.requesterName || window.t("budget.estimate.proposal.participant"))}: ${escapeHtml(formatBudgetMoney(proposal.amount))}</p>
       </div>
       <button class="ghost-button compact" type="button" ${isReadOnlyMode()
         ? `data-withdraw-accepted-expense-proposal="${escapeAttr(proposal.id)}"`
         : `data-reject-accepted-expense-proposal="${escapeAttr(proposal.id)}"`} ${resolvingExpenseProposalIds.has(proposal.id) ? "disabled" : ""}>
-        ${isReadOnlyMode() ? "Отозвать долю" : "Отменить долю"}
+        ${escapeHtml(window.t(isReadOnlyMode() ? "budget.estimate.proposal.withdraw" : "budget.estimate.proposal.cancel"))}
       </button>
     </article>
   `).join("");
@@ -3853,9 +4055,11 @@ async function resolveAcceptedExpenseProposal(proposalId, nextStatus) {
     const currentItem = state.items.find((item) => item.id === $("#itemForm")?.elements?.id?.value);
     renderItemAllocationSummary(currentItem);
     renderAcceptedExpenseControls(currentItem);
-    showToast(nextStatus === "withdrawn" ? "Доля отозвана" : "Доля отменена");
+    showToast(window.t(nextStatus === "withdrawn"
+      ? "item.editor.expense.share.withdrawn"
+      : "item.editor.expense.share.removed"));
   } catch {
-    showToast("Не удалось изменить долю");
+    showToast(window.t("item.editor.expense.share.error"));
   } finally {
     resolvingExpenseProposalIds.delete(proposalId);
     renderProposalInbox();
@@ -3901,14 +4105,16 @@ async function openItemProposalSheet(profileReady = false) {
 function renderItemProposalSheet() {
   const form = $("#itemProposalForm");
   if (!form) return;
-  form.elements.itemType.innerHTML = itemTypes.map(([key, label]) => `<option value="${key}">${label}</option>`).join("");
+  form.elements.itemType.innerHTML = itemTypes.map(([key]) => `<option value="${key}">${escapeHtml(getPlanTypeLabel(key))}</option>`).join("");
   form.elements.title.value = itemProposalDraft.title || "";
   form.elements.itemType.value = itemProposalDraft.itemType || "idea";
   form.elements.link.value = itemProposalDraft.link || "";
   form.elements.price.value = itemProposalDraft.price || "";
   form.elements.notes.value = itemProposalDraft.notes || "";
   $("#itemProposalSubmitButton").disabled = itemProposalSubmitting;
-  $("#itemProposalSubmitButton").textContent = itemProposalSubmitting ? "Отправляем..." : "Отправить автору";
+  $("#itemProposalSubmitButton").textContent = window.t(itemProposalSubmitting
+    ? "share.proposal.item.submitting"
+    : "share.proposal.item.submit");
 }
 
 function getItemProposalFormData(form) {
@@ -3927,11 +4133,11 @@ async function submitItemProposal(event) {
   if (itemProposalSubmitting || !readOnlyShare?.shareId) return;
   const formData = getItemProposalFormData(event.currentTarget);
   if (!formData.title) {
-    showToast("Введите название идеи");
+    showToast(window.t("share.proposal.item.title.required"));
     return;
   }
   if (formData.price !== "" && formData.price < 0) {
-    showToast("Цена не может быть отрицательной");
+    showToast(window.t("share.proposal.item.price.invalid"));
     return;
   }
   itemProposalSubmitting = true;
@@ -3945,10 +4151,12 @@ async function submitItemProposal(event) {
     shareProposalContext ||= {};
     shareProposalContext.itemProposals = [payload.proposal, ...(shareProposalContext.itemProposals || [])];
     closeSheet("itemProposalSheet");
-    showToast("Идея отправлена автору");
+    showToast(window.t("share.proposal.item.sent"));
     renderMyItemProposals();
   } catch (error) {
-    showToast(error?.message === "profile_required" ? "Сначала добавьте имя или ник" : "Не удалось отправить идею");
+    showToast(window.t(error?.message === "profile_required"
+      ? "share.proposal.item.profile.required"
+      : "share.proposal.item.send.error"));
   } finally {
     itemProposalSubmitting = false;
     renderItemProposalSheet();
@@ -3962,10 +4170,10 @@ async function withdrawItemProposal(proposalId) {
     shareProposalContext.itemProposals = (shareProposalContext.itemProposals || []).map((proposal) => (
       proposal.id === proposalId ? payload.proposal : proposal
     ));
-    showToast("Идея отозвана");
+    showToast(window.t("share.proposal.item.withdrawn"));
     renderMyItemProposals();
   } catch {
-    showToast("Не удалось отозвать идею");
+    showToast(window.t("share.proposal.item.withdraw.error"));
   }
 }
 
@@ -3978,12 +4186,12 @@ function renderMyItemProposals() {
   list.innerHTML = proposals.map((proposal) => `
     <article class="proposal-card proposal-${escapeAttr(proposal.status)}">
       <div>
-        <strong>${escapeHtml(proposal.title || "Идея")}</strong>
-        <p>${escapeHtml(getTypeLabel(proposal.itemType || "idea"))} · ${formatProposalStatus(proposal.status)}</p>
+        <strong>${escapeHtml(proposal.title || window.t("share.proposal.item.fallback"))}</strong>
+        <p>${escapeHtml(getPlanTypeLabel(proposal.itemType || "idea"))} · ${escapeHtml(formatProposalStatus(proposal.status))}</p>
       </div>
       ${proposal.status === "pending" ? `
         <div class="proposal-actions">
-          <button class="ghost-button compact" type="button" data-withdraw-item-proposal="${escapeAttr(proposal.id)}">Отозвать идею</button>
+          <button class="ghost-button compact" type="button" data-withdraw-item-proposal="${escapeAttr(proposal.id)}">${escapeHtml(window.t("share.proposal.item.withdraw"))}</button>
         </div>
       ` : ""}
     </article>
@@ -3999,40 +4207,40 @@ function renderProposalInbox() {
   ].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   const pendingCount = proposals.filter((proposal) => proposal.status === "pending").length;
   section.classList.toggle("hidden", isReadOnlyMode() || !proposals.length);
-  $("#proposalInboxTitle").textContent = `Предложения · ${pendingCount}`;
+  $("#proposalInboxTitle").textContent = window.t("share.proposal.inbox.title", { count: pendingCount });
   $("#proposalInboxList").innerHTML = proposals.map((proposal) => proposal.proposalType === "item" ? `
     <article class="proposal-card proposal-${escapeAttr(proposal.status)}">
       <div>
-        <strong>${escapeHtml(proposal.requesterDisplayName || proposal.requesterName || "Пользователь Backpacker")}</strong>
-        <p>предлагает добавить «${escapeHtml(proposal.title || "Идея")}».</p>
-        <p class="proposal-account-link">Новая идея · ${escapeHtml(getTypeLabel(proposal.itemType || "idea"))}${proposal.price ? ` · ${formatMoney(proposal.price)}` : ""}</p>
-        ${proposal.link ? `<a class="item-link" href="${escapeAttr(proposal.link)}" target="_blank" rel="noreferrer" onclick="event.stopPropagation()">открыть ссылку</a>` : ""}
+        <strong>${escapeHtml(proposal.requesterDisplayName || proposal.requesterName || window.t("share.proposal.user.fallback"))}</strong>
+        <p>${escapeHtml(window.t("share.proposal.item.suggests", { title: proposal.title || window.t("share.proposal.item.fallback") }))}</p>
+        <p class="proposal-account-link">${escapeHtml(window.t("share.proposal.item.new", { type: getPlanTypeLabel(proposal.itemType || "idea") }))}${proposal.price ? ` · ${escapeHtml(formatBudgetMoney(proposal.price))}` : ""}</p>
+        ${proposal.link ? `<a class="item-link" href="${escapeAttr(proposal.link)}" target="_blank" rel="noreferrer" onclick="event.stopPropagation()">${escapeHtml(window.t("share.proposal.item.open.link"))}</a>` : ""}
         ${proposal.notes ? `<p class="item-note">${escapeHtml(proposal.notes)}</p>` : ""}
         <span>${formatProposalStatus(proposal.status)}</span>
       </div>
       ${proposal.status === "pending" ? `
         <div class="proposal-actions">
-          <button class="ghost-button compact" type="button" data-reject-item-proposal="${escapeAttr(proposal.id)}" ${resolvingItemProposalIds.has(proposal.id) ? "disabled" : ""}>Отклонить</button>
-          <button class="primary-button compact" type="button" data-accept-item-proposal="${escapeAttr(proposal.id)}" ${resolvingItemProposalIds.has(proposal.id) ? "disabled" : ""}>${resolvingItemProposalIds.has(proposal.id) ? "Добавляем..." : "Принять идею"}</button>
+          <button class="ghost-button compact" type="button" data-reject-item-proposal="${escapeAttr(proposal.id)}" ${resolvingItemProposalIds.has(proposal.id) ? "disabled" : ""}>${escapeHtml(window.t("share.proposal.reject"))}</button>
+          <button class="primary-button compact" type="button" data-accept-item-proposal="${escapeAttr(proposal.id)}" ${resolvingItemProposalIds.has(proposal.id) ? "disabled" : ""}>${escapeHtml(window.t(resolvingItemProposalIds.has(proposal.id) ? "share.proposal.accept.adding" : "share.proposal.accept.item"))}</button>
         </div>
       ` : ""}
     </article>
   ` : `
     <article class="proposal-card proposal-${escapeAttr(proposal.status)}">
       <div>
-        <strong>${escapeHtml(proposal.requesterDisplayName || proposal.requesterName || "Пользователь Backpacker")}</strong>
-        <p>${proposal.participantMode === "new" ? "хочет присоединиться и взять" : "предлагает взять"} ${formatMoney(proposal.amount)} в расходе «${escapeHtml(proposal.itemTitle)}».</p>
-        ${proposal.participantName ? `<p class="proposal-account-link">Участник поездки: ${escapeHtml(proposal.participantName)} · аккаунт ${escapeHtml(proposal.requesterDisplayName || proposal.requesterName || "Пользователь Backpacker")}</p>` : ""}
+        <strong>${escapeHtml(proposal.requesterDisplayName || proposal.requesterName || window.t("share.proposal.user.fallback"))}</strong>
+        <p>${escapeHtml(window.t(proposal.participantMode === "new" ? "share.proposal.expense.joins" : "share.proposal.expense.suggests", { amount: formatBudgetMoney(proposal.amount), title: proposal.itemTitle }))}</p>
+        ${proposal.participantName ? `<p class="proposal-account-link">${escapeHtml(window.t("share.proposal.expense.account", { participant: proposal.participantName, account: proposal.requesterDisplayName || proposal.requesterName || window.t("share.proposal.user.fallback") }))}</p>` : ""}
         <span>${formatProposalStatus(proposal.status)}</span>
       </div>
       ${proposal.status === "pending" ? `
         <div class="proposal-actions">
-          <button class="ghost-button compact" type="button" data-reject-expense-proposal="${escapeAttr(proposal.id)}" ${resolvingExpenseProposalIds.has(proposal.id) ? "disabled" : ""}>Отклонить</button>
-          <button class="primary-button compact" type="button" data-accept-expense-proposal="${escapeAttr(proposal.id)}" ${resolvingExpenseProposalIds.has(proposal.id) ? "disabled" : ""}>${resolvingExpenseProposalIds.has(proposal.id) ? "Применяем..." : (proposal.participantMode === "new" ? "Добавить и принять" : "Принять")}</button>
+          <button class="ghost-button compact" type="button" data-reject-expense-proposal="${escapeAttr(proposal.id)}" ${resolvingExpenseProposalIds.has(proposal.id) ? "disabled" : ""}>${escapeHtml(window.t("share.proposal.reject"))}</button>
+          <button class="primary-button compact" type="button" data-accept-expense-proposal="${escapeAttr(proposal.id)}" ${resolvingExpenseProposalIds.has(proposal.id) ? "disabled" : ""}>${escapeHtml(window.t(resolvingExpenseProposalIds.has(proposal.id) ? "share.proposal.expense.applying" : (proposal.participantMode === "new" ? "share.proposal.expense.add.accept" : "share.proposal.accept")))}</button>
         </div>
       ` : proposal.status === "accepted" ? `
         <div class="proposal-actions">
-          <button class="ghost-button compact" type="button" data-reject-accepted-expense-proposal="${escapeAttr(proposal.id)}" ${resolvingExpenseProposalIds.has(proposal.id) ? "disabled" : ""}>Отменить долю</button>
+          <button class="ghost-button compact" type="button" data-reject-accepted-expense-proposal="${escapeAttr(proposal.id)}" ${resolvingExpenseProposalIds.has(proposal.id) ? "disabled" : ""}>${escapeHtml(window.t("share.proposal.expense.cancel.share"))}</button>
         </div>
       ` : ""}
     </article>
@@ -4047,9 +4255,9 @@ function renderShareRoleBanner() {
     banner.textContent = "";
     return;
   }
-  const authorName = readOnlyShare.authorDisplayName || "Автор поездки";
+  const authorName = readOnlyShare.authorDisplayName || window.t("share.role.author.fallback");
   banner.classList.remove("hidden");
-  banner.textContent = `Автор — ${authorName}`;
+  banner.textContent = window.t("share.role.author", { name: authorName });
 }
 
 async function refreshAuthorExpenseProposals() {
@@ -4093,9 +4301,9 @@ async function acceptExpenseProposal(proposalId) {
     }
     await refreshAuthorExpenseProposals();
     render();
-    showToast(payload.status === "stale" ? "Предложение стало неактуальным" : "Предложение принято");
+    showToast(window.t(payload.status === "stale" ? "share.proposal.stale" : "share.proposal.accepted"));
   } catch {
-    showToast("Не удалось принять предложение");
+    showToast(window.t("share.proposal.accept.error"));
   } finally {
     resolvingExpenseProposalIds.delete(proposalId);
     renderProposalInbox();
@@ -4110,9 +4318,9 @@ async function rejectExpenseProposal(proposalId) {
     await callTripShareFunction("reject_expense_proposal", { proposalId }, { requireOwner: true });
     await refreshAuthorExpenseProposals();
     render();
-    showToast("Предложение отклонено");
+    showToast(window.t("share.proposal.rejected"));
   } catch {
-    showToast("Не удалось отклонить предложение");
+    showToast(window.t("share.proposal.reject.error"));
   } finally {
     resolvingExpenseProposalIds.delete(proposalId);
     renderProposalInbox();
@@ -4132,9 +4340,9 @@ async function acceptItemProposal(proposalId) {
     }
     await refreshAuthorExpenseProposals();
     render();
-    showToast(payload.status === "stale" ? "Идея стала неактуальной" : "Идея добавлена в «Без даты»");
+    showToast(window.t(payload.status === "stale" ? "share.proposal.item.stale" : "share.proposal.item.accepted"));
   } catch {
-    showToast("Не удалось принять идею");
+    showToast(window.t("share.proposal.item.accept.error"));
   } finally {
     resolvingItemProposalIds.delete(proposalId);
     renderProposalInbox();
@@ -4149,9 +4357,9 @@ async function rejectItemProposal(proposalId) {
     await callTripShareFunction("reject_item_proposal", { proposalId }, { requireOwner: true });
     await refreshAuthorExpenseProposals();
     render();
-    showToast("Идея отклонена");
+    showToast(window.t("share.proposal.item.rejected"));
   } catch {
-    showToast("Не удалось отклонить идею");
+    showToast(window.t("share.proposal.item.reject.error"));
   } finally {
     resolvingItemProposalIds.delete(proposalId);
     renderProposalInbox();
@@ -4161,12 +4369,14 @@ async function rejectItemProposal(proposalId) {
 function renderHeader() {
   const dates = getTripDates();
   const totals = getTotals();
-  $("#tripTitle").textContent = state.trip.title || "Новая поездка";
-  $("#tripMeta").textContent = `${state.trip.destination || "Направление"} · ${formatTripCardDateRange(state.trip.startDate, state.trip.endDate)} · ${formatDayCountText(dates.length || 1)}`;
-  $("#tripBudgetMeta").textContent = canShowBudget() ? `Бюджет ${formatMoney(totals.budgetLimit)}` : "Смета скрыта";
-  $("#paidTotal").textContent = formatBudgetMoney(totals.paidTotal);
-  $("#plannedTotal").textContent = formatBudgetMoney(totals.confirmedOutstanding);
-  $("#remainingTotal").textContent = formatBudgetMoney(totals.remainingConfirmed);
+  $("#tripTitle").textContent = state.trip.title || window.t("plan.trip.untitled");
+  $("#tripMeta").textContent = `${state.trip.destination || window.t("plan.trip.destination.missing")} · ${formatPlanTripDateRange(state.trip.startDate, state.trip.endDate)} · ${formatPlanDayCount(dates.length || 1)}`;
+  $("#tripBudgetMeta").textContent = canShowBudget()
+    ? window.t("plan.trip.budget", { amount: formatPlanMoney(totals.budgetLimit) })
+    : window.t("plan.trip.budget.hidden");
+  $("#paidTotal").textContent = canShowBudget() ? formatPlanMoney(totals.paidTotal) : window.t("plan.trip.budget.hidden");
+  $("#plannedTotal").textContent = canShowBudget() ? formatPlanMoney(totals.confirmedOutstanding) : window.t("plan.trip.budget.hidden");
+  $("#remainingTotal").textContent = canShowBudget() ? formatPlanMoney(totals.remainingConfirmed) : window.t("plan.trip.budget.hidden");
   $("#remainingTotal").style.color = totals.remainingConfirmed < 0 ? "var(--danger)" : "";
 }
 
@@ -4182,13 +4392,13 @@ function renderPlan() {
     card.innerHTML = `
       <header class="day-header">
         <div class="card-title-row">
-          <h3>День ${index + 1}</h3>
-          <span class="day-date">${formatDate(date, { weekday: "short" })}</span>
-          <span class="day-total">${formatMoney(total)}</span>
+          <h3>${escapeHtml(window.t("plan.day.label", { number: index + 1 }))}</h3>
+          <span class="day-date">${escapeHtml(formatPlanDate(date, { weekday: "short" }))}</span>
+          <span class="day-total">${escapeHtml(formatPlanMoney(total))}</span>
         </div>
       </header>
       <div class="day-items" data-drop-date="${date}">
-        ${items.length ? items.map(renderItemCard).join("") : `<p class="empty-state">Пока пусто. Можно добавить идею или перетащить сюда карточку из раздела хотелок "Без даты".</p>`}
+        ${items.length ? items.map(renderItemCard).join("") : `<p class="empty-state">${escapeHtml(window.t("plan.day.empty"))}</p>`}
       </div>
     `;
     daysList.appendChild(card);
@@ -4200,7 +4410,7 @@ function renderPlan() {
   unscheduledPreview.dataset.dropDate = "";
   unscheduledPreview.innerHTML = unscheduled.length
     ? unscheduled.slice(0, 8).map(renderItemCard).join("")
-    : `<p class="empty-state">Все идеи уже пристроены по дням.</p>`;
+    : `<p class="empty-state">${escapeHtml(window.t("plan.unscheduled.empty"))}</p>`;
   resetDayScrollPositions();
 }
 
@@ -4214,13 +4424,10 @@ function resetDayScrollPositions() {
 
 function renderBasket() {
   const filters = [
-    ["all", "Все"],
-    ["nodate", "Без даты"],
-    ["paid", "Оплачено"],
-    ["fixed", "Бронь"],
-    ["want", "Хочу"],
-    ["maybe", "Думаю"],
-    ["backup", "Запас"],
+    ["all", window.t("plan.filter.all")],
+    ["nodate", window.t("plan.filter.unscheduled")],
+    ...["paid", "fixed", "want", "maybe", "backup"]
+      .map((status) => [status, getPlanStatusLabel(status)]),
   ];
   $("#filterRow").innerHTML = filters
     .map(([key, label]) => {
@@ -4236,13 +4443,13 @@ function renderBasket() {
   if (!["all", "nodate"].includes(currentFilter)) items = items.filter((item) => item.status === currentFilter);
 
   const groups = statuses
-    .map(([status, label]) => {
+    .map(([status]) => {
       const groupItems = items.filter((item) => item.status === status).sort(sortItems);
       if (!groupItems.length) return "";
       return `
         <section class="basket-group">
           <div class="card-title-row">
-            <h3>${label}</h3>
+            <h3>${escapeHtml(getPlanStatusLabel(status))}</h3>
             <span class="muted">${groupItems.length}</span>
           </div>
           <div class="basket-grid-list">
@@ -4252,59 +4459,63 @@ function renderBasket() {
       `;
     })
     .join("");
-  $("#basketList").innerHTML = groups || `<p class="empty-state card">Ничего не найдено по фильтру.</p>`;
+  $("#basketList").innerHTML = groups || `<p class="empty-state card">${escapeHtml(window.t("plan.filter.empty"))}</p>`;
 }
 
 function renderBudget() {
   const totals = getTotals();
   const dates = getTripDates();
   const participantTotals = getParticipantTotals()
-    .map(({ participant, total }) => `
-      <div class="participant-total-row">
-        <span>${renderParticipantAvatar(participant)}<span>${escapeHtml(participant.name)}</span>${participant.isSelf ? `<em>Это я</em>` : ""}</span>
-        <strong>${formatBudgetMoney(total)}</strong>
-      </div>
-    `)
+    .map(({ participant, total }) => {
+      const displayName = getItemEditorParticipantDisplayName(participant);
+      const displayParticipant = { ...participant, initials: displayName.slice(0, 1).toUpperCase() };
+      return `
+        <div class="participant-total-row">
+          <span>${renderParticipantAvatar(displayParticipant)}<span>${escapeHtml(displayName)}</span>${participant.isSelf ? `<em>${escapeHtml(window.t("budget.participant.self"))}</em>` : ""}</span>
+          <strong>${escapeHtml(formatBudgetMoney(total))}</strong>
+        </div>
+      `;
+    })
     .join("");
   const byDay = dates
     .map((date, index) => {
       const total = state.items
         .filter((item) => item.date === date && isActiveCost(item))
         .reduce((sum, item) => sum + parseMoney(item.price), 0);
-      return `<div class="budget-row"><span>День ${index + 1} · ${formatDate(date)}</span><strong>${formatBudgetMoney(total)}</strong></div>`;
+      return `<div class="budget-row"><span>${escapeHtml(window.t("budget.day.label", { number: index + 1 }))} · ${escapeHtml(formatBudgetDate(date))}</span><strong>${escapeHtml(formatBudgetMoney(total))}</strong></div>`;
     })
     .join("");
   $("#budgetPage").innerHTML = `
     <section class="budget-metric-group">
-      <h3>Основной план</h3>
+      <h3>${escapeHtml(window.t("budget.section.core"))}</h3>
       <div class="budget-grid">
-        <div class="metric-card service-total budget-limit-total"><span>Бюджет поездки</span><strong>${formatBudgetMoney(totals.budgetLimit)}</strong></div>
-        <div class="metric-card"><span>Оплачено</span><strong>${formatBudgetMoney(totals.paidTotal)}</strong></div>
-        <div class="metric-card"><span>Бронь</span><strong>${formatBudgetMoney(totals.confirmedOutstanding)}</strong></div>
-        <div class="metric-card"><span>Свободно</span><strong style="color:${canShowBudget() && totals.remainingConfirmed < 0 ? "var(--danger)" : "var(--green)"}">${formatBudgetMoney(totals.remainingConfirmed)}</strong></div>
+        <div class="metric-card service-total budget-limit-total"><span>${escapeHtml(window.t("budget.metric.limit"))}</span><strong>${escapeHtml(formatBudgetMoney(totals.budgetLimit))}</strong></div>
+        <div class="metric-card"><span>${escapeHtml(window.t("budget.metric.paid"))}</span><strong>${escapeHtml(formatBudgetMoney(totals.paidTotal))}</strong></div>
+        <div class="metric-card"><span>${escapeHtml(window.t("budget.metric.booked"))}</span><strong>${escapeHtml(formatBudgetMoney(totals.confirmedOutstanding))}</strong></div>
+        <div class="metric-card"><span>${escapeHtml(window.t("budget.metric.available"))}</span><strong style="color:${canShowBudget() && totals.remainingConfirmed < 0 ? "var(--danger)" : "var(--green)"}">${escapeHtml(formatBudgetMoney(totals.remainingConfirmed))}</strong></div>
       </div>
     </section>
     <section class="budget-metric-group">
-      <h3>Идеи, хотелки, запас</h3>
+      <h3>${escapeHtml(window.t("budget.section.flexible"))}</h3>
       <div class="budget-grid additional-budget-grid">
-        <div class="metric-card"><span>Запас</span><strong>${formatBudgetMoney(totals.additionalTotal)}</strong></div>
-        <div class="metric-card service-total"><span>Всего с запасом</span><strong>${formatBudgetMoney(totals.possibleTotal)}</strong></div>
-        <div class="metric-card"><span>Остаток с запасом</span><strong style="color:${canShowBudget() && totals.remainingAll < 0 ? "var(--danger)" : "var(--green)"}">${formatBudgetMoney(totals.remainingAll)}</strong></div>
+        <div class="metric-card"><span>${escapeHtml(window.t("budget.metric.backup"))}</span><strong>${escapeHtml(formatBudgetMoney(totals.additionalTotal))}</strong></div>
+        <div class="metric-card service-total"><span>${escapeHtml(window.t("budget.metric.possible"))}</span><strong>${escapeHtml(formatBudgetMoney(totals.possibleTotal))}</strong></div>
+        <div class="metric-card"><span>${escapeHtml(window.t("budget.metric.remaining.all"))}</span><strong style="color:${canShowBudget() && totals.remainingAll < 0 ? "var(--danger)" : "var(--green)"}">${escapeHtml(formatBudgetMoney(totals.remainingAll))}</strong></div>
       </div>
     </section>
     <section class="card budget-days-card">
       <div class="card-title-row">
-        <h3>По дням</h3>
+        <h3>${escapeHtml(window.t("budget.days.title"))}</h3>
         <div class="title-actions">
           <span class="muted">${dates.length}</span>
-          <button class="ghost-button compact" id="copyDaysButton" type="button">Скачать</button>
+          <button class="ghost-button compact" id="copyDaysButton" type="button">${escapeHtml(window.t("budget.export.download"))}</button>
         </div>
       </div>
       ${byDay}
     </section>
     <section class="card participant-totals-card">
       <div class="card-title-row">
-        <h3>По участникам</h3>
+        <h3>${escapeHtml(window.t("budget.participants.title"))}</h3>
         <span class="muted">${state.trip.participants.length}</span>
       </div>
       ${participantTotals}
@@ -4319,20 +4530,30 @@ function renderEstimateTable() {
   if (!canShowBudget()) {
     table.innerHTML = `
       <tbody>
-        <tr><td>Автор скрыл смету для этой ссылки.</td></tr>
+        <tr><td>${escapeHtml(window.t("budget.estimate.hidden"))}</td></tr>
       </tbody>
     `;
     renderEstimateProposalControls();
     return;
   }
-  const { header, rows } = buildEstimateRows();
+  const { header, rows } = buildEstimateRows({
+    dayLabel: window.t("budget.estimate.column.day"),
+    itemLabel: window.t("budget.estimate.column.item"),
+    categoryLabel: window.t("budget.estimate.column.category"),
+    totalColumnLabel: window.t("budget.estimate.column.total"),
+    undatedLabel: window.t("budget.estimate.undated"),
+    totalRowLabel: window.t("budget.estimate.total"),
+    dateFormatter: formatBudgetDate,
+    typeFormatter: getPlanTypeLabel,
+    participantFormatter: getItemEditorParticipantDisplayName,
+  });
   table.innerHTML = `
     <thead>
       <tr>${header.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("")}</tr>
     </thead>
     <tbody>
       ${rows.map((row) => `
-        <tr>${row.map((cell, index) => `<td>${index >= 3 ? formatMoney(cell) : escapeHtml(cell)}</td>`).join("")}</tr>
+        <tr>${row.map((cell, index) => `<td>${index >= 3 ? escapeHtml(formatBudgetMoney(cell)) : escapeHtml(cell)}</td>`).join("")}</tr>
       `).join("")}
     </tbody>
   `;
@@ -4340,20 +4561,20 @@ function renderEstimateTable() {
 }
 
 function renderItemCard(item) {
-  const price = canShowBudget() && parseMoney(item.price) ? formatMoney(item.price) : "--";
+  const price = canShowBudget() && parseMoney(item.price) ? formatPlanMoney(item.price) : "--";
   const participantBadges = renderItemParticipantBadges(item);
   const note = item.notes ? `<p class="item-note">${escapeHtml(item.notes)}</p>` : "";
   const link = item.link
-    ? `<a class="item-link" href="${escapeAttr(item.link)}" target="_blank" rel="noreferrer" onclick="event.stopPropagation()">открыть ссылку</a>`
+    ? `<a class="item-link" href="${escapeAttr(item.link)}" target="_blank" rel="noreferrer" onclick="event.stopPropagation()">${escapeHtml(window.t("plan.item.link.open"))}</a>`
     : "";
   const sourceMarker = item.creationSource === "accepted_proposal" && item.proposedByDisplayName
-    ? `<p class="item-source-marker" title="${escapeAttr(`Предложено: ${item.proposedByDisplayName}`)}">Предложено: ${escapeHtml(item.proposedByDisplayName)}</p>`
+    ? `<p class="item-source-marker" title="${escapeAttr(window.t("plan.item.source.suggested", { name: item.proposedByDisplayName }))}">${escapeHtml(window.t("plan.item.source.suggested", { name: item.proposedByDisplayName }))}</p>`
     : "";
   return `
     <button class="item-card type-${item.type}" data-edit="${item.id}" data-drag-id="${item.id}" draggable="false" type="button">
       <span class="tile-icon" aria-hidden="true">
         <span>${typeIcons[item.type] || typeIcons.other}</span>
-        <small>${getTypeLabel(item.type)}</small>
+        <small>${escapeHtml(getPlanTypeLabel(item.type))}</small>
       </span>
       <div class="item-body">
         <div class="item-top">
@@ -4363,13 +4584,13 @@ function renderItemCard(item) {
         ${sourceMarker}
         <div class="item-content-grid">
           <div class="item-main-flow">
-            <p class="item-duration">${formatDurationText(item.durationMinutes)}</p>
-            <div class="item-time-slots" aria-label="Время события">${renderItemTimeSlots(item)}</div>
-            <p class="item-date-label">Дата</p>
-            <div class="item-date-slots" aria-label="Дата события">${renderItemDateSlots(item)}</div>
+            <p class="item-duration">${escapeHtml(formatPlanDurationText(item.durationMinutes))}</p>
+            <div class="item-time-slots" aria-label="${escapeAttr(window.t("plan.item.time.aria"))}">${renderItemTimeSlots(item)}</div>
+            <p class="item-date-label">${escapeHtml(window.t("plan.item.date.label"))}</p>
+            <div class="item-date-slots" aria-label="${escapeAttr(window.t("plan.item.date.aria"))}">${renderItemDateSlots(item)}</div>
           </div>
           <div class="item-side-badges">
-            <span class="item-side-badge status-icon status-${item.status}" title="${escapeAttr(getStatusLabel(item.status))}" aria-label="${escapeAttr(getStatusLabel(item.status))}">${getStatusIcon(item.status)}</span>
+            <span class="item-side-badge status-icon status-${item.status}" title="${escapeAttr(getPlanStatusLabel(item.status))}" aria-label="${escapeAttr(getPlanStatusLabel(item.status))}">${getStatusIcon(item.status)}</span>
             ${participantBadges}
           </div>
         </div>
@@ -4431,21 +4652,25 @@ function getLinkIntakePriceLabel(draft) {
   const currency = draft.currency || state.trip.currency || "";
   const amount = draft.currency && draft.currency !== state.trip.currency
     ? `${draft.price} ${draft.currency}`
-    : formatMoney(draft.price);
-  if (draft.priceKind === "from") return `Цена на странице: от ${amount}`;
-  if (draft.priceKind === "range") return `Цена на странице: диапазон от ${amount}`;
-  if (draft.priceKind === "exact") return `Цена на странице: ${amount}`;
-  return currency ? `Цена на странице: ${draft.price} ${currency}` : `Цена на странице: ${draft.price}`;
+    : formatItemEditorMoney(draft.price);
+  if (draft.priceKind === "from") return window.t("item.editor.link.price.from", { amount });
+  if (draft.priceKind === "range") return window.t("item.editor.link.price.range", { amount });
+  if (draft.priceKind === "exact") return window.t("item.editor.link.price.exact", { amount });
+  const genericAmount = currency ? `${draft.price} ${currency}` : String(draft.price);
+  return window.t("item.editor.link.price.generic", { amount: genericAmount });
 }
 
 function getLinkIntakeDraftWarnings(draft) {
   if (!draft) return [];
   const warnings = [];
   if (draft.price && draft.priceKind !== "exact") {
-    warnings.push("Цена выглядит примерной, поэтому не записана в поле цены. Уточните сумму вручную.");
+    warnings.push(window.t("item.editor.link.warning.estimate"));
   }
   if (draft.price && draft.currency && draft.currency !== state.trip.currency) {
-    warnings.push(`Валюта источника ${draft.currency} отличается от валюты поездки ${state.trip.currency}. Введите сумму в валюте поездки.`);
+    warnings.push(window.t("item.editor.link.warning.currency", {
+      sourceCurrency: draft.currency,
+      tripCurrency: state.trip.currency,
+    }));
   }
   return [...warnings, ...(Array.isArray(draft.warnings) ? draft.warnings : [])].slice(0, 6);
 }
@@ -4464,14 +4689,16 @@ function renderLinkIntakePanel({ visible = true } = {}) {
   const buttonState = window.BackpackerLinkIntakeUiCore.createLinkIntakeButtonState(linkIntakeState);
   if (button) {
     button.disabled = buttonState.disabled;
-    button.textContent = buttonState.text;
+    button.textContent = window.t(linkIntakeState.isLoading
+      ? "item.editor.link.preview.loading"
+      : "item.editor.link.preview");
   }
   if (status) {
     status.textContent = linkIntakeState.error || linkIntakeState.status || "";
     status.classList.toggle("is-error", Boolean(linkIntakeState.error));
   }
   if (hint) {
-    hint.textContent = window.BackpackerLinkIntakeUiCore.LINK_INTAKE_HINT;
+    hint.textContent = window.t("item.editor.link.hint");
   }
   if (!preview) return;
 
@@ -4497,11 +4724,11 @@ function renderLinkIntakePanel({ visible = true } = {}) {
   preview.innerHTML = `
     <article class="link-intake-preview-card">
       ${image}
-      <p class="link-intake-preview-title">Черновик по ссылке заполнен в форме ниже</p>
+      <p class="link-intake-preview-title">${escapeHtml(window.t("item.editor.link.preview.title"))}</p>
       ${description}
       ${price}
       ${warnings}
-      <p class="link-intake-preview-copy">Изображение показано только для проверки и не сохранится в карточку.</p>
+      <p class="link-intake-preview-copy">${escapeHtml(window.t("item.editor.link.preview.image.note"))}</p>
     </article>
   `;
   preview.querySelector("[data-link-intake-image]")?.addEventListener("error", (event) => {
@@ -4608,11 +4835,11 @@ async function previewLinkIntakeFromForm() {
   const request = window.BackpackerLinkIntakeUiCore.createLinkIntakePreviewRequest(url);
   if (!request.shouldCallBackend) {
     clearStaleLinkIntakeDraftFields();
-    linkIntakeState = { ...linkIntakeState, isLoading: false, draft: null, error: request.error, status: "", previewOnlyImageUrl: "", appliedSnapshot: null };
+    linkIntakeState = { ...linkIntakeState, isLoading: false, draft: null, error: window.t("item.editor.link.validation.url"), status: "", previewOnlyImageUrl: "", appliedSnapshot: null };
     renderLinkIntakePanel();
     return;
   }
-  linkIntakeState = { ...linkIntakeState, isLoading: true, draft: null, status: "Ищу данные по ссылке...", error: "", previewOnlyImageUrl: "" };
+  linkIntakeState = { ...linkIntakeState, isLoading: true, draft: null, status: window.t("item.editor.link.status.searching"), error: "", previewOnlyImageUrl: "" };
   renderLinkIntakePanel();
   try {
     const payload = await callLinkIntakeFunction("preview", { url: request.url });
@@ -4625,7 +4852,7 @@ async function previewLinkIntakeFromForm() {
     linkIntakeState = {
       isLoading: false,
       draft,
-      status: "Черновик заполнен. Проверьте поля и нажмите «Сохранить».",
+      status: window.t("item.editor.link.status.filled"),
       error: "",
       previewOnlyImageUrl: draft.imageUrl || "",
       appliedSnapshot,
@@ -4633,12 +4860,12 @@ async function previewLinkIntakeFromForm() {
     renderLinkIntakePanel();
   } catch (error) {
     const reason = error.message === "supabase_not_configured"
-      ? "AI-сбор по ссылке пока не настроен."
+      ? window.t("item.editor.link.error.unavailable")
       : error.message === "invalid_url"
-        ? "Ссылка выглядит некорректной."
+        ? window.t("item.editor.link.error.invalid")
         : error.message === "empty_draft"
-          ? "Не получилось найти полезные данные на странице."
-          : "Не удалось собрать черновик по ссылке. Можно заполнить карточку вручную.";
+          ? window.t("item.editor.link.error.empty")
+          : window.t("item.editor.link.error.generic");
     clearStaleLinkIntakeDraftFields();
     linkIntakeState = { isLoading: false, draft: null, status: "", error: reason, previewOnlyImageUrl: "", appliedSnapshot: null };
     renderLinkIntakePanel();
@@ -4728,26 +4955,28 @@ function renderTripItemAttachments() {
 
   const core = getTripItemAttachmentsCore();
   status.textContent = tripItemAttachmentsState.loading
-    ? "Загружаем вложения…"
+    ? window.t("item.editor.attachments.loading")
     : tripItemAttachmentsState.uploading
-      ? `Загружаем ${tripItemAttachmentsState.uploadingName}…`
+      ? window.t("item.editor.attachments.uploading", { fileName: tripItemAttachmentsState.uploadingName })
       : tripItemAttachmentsState.error
         || (tripItemAttachmentsState.pendingFiles.length
-          ? "Будут загружены после сохранения карточки"
+          ? window.t("item.editor.attachments.pending")
           : "");
   status.classList.toggle("is-error", Boolean(tripItemAttachmentsState.error));
   addButton.disabled = busy || tripItemAttachmentsState.loading;
-  addButton.textContent = tripItemAttachmentsState.uploading ? "Загрузка…" : "+ Добавить вложение";
+  addButton.textContent = window.t(tripItemAttachmentsState.uploading
+    ? "item.editor.attachments.add.loading"
+    : "item.editor.attachments.add");
 
   const rows = tripItemAttachmentsState.attachments.map((attachment) => {
     const deleting = tripItemAttachmentsState.deletingId === attachment.id;
-    const type = core?.getAttachmentTypeLabel?.(attachment.mimeType) || "Файл";
-    const size = core?.formatAttachmentSize?.(attachment.fileSizeBytes) || "";
+    const type = core?.getAttachmentTypeLabel?.(attachment.mimeType) || window.t("item.editor.attachments.file");
+    const size = formatItemAttachmentSize(attachment.fileSizeBytes);
     const previewable = Boolean(core?.isPreviewableAttachment?.(attachment.mimeType));
     const preview = previewable ? getFreshTripItemAttachmentPreview(attachment.id) : null;
     // A photo says what it is; a file name like IMG_20260804_102714 does not.
     const thumb = previewable
-      ? `<button class="item-attachment-thumb${preview ? "" : " is-loading"}" type="button" data-attachment-open="${escapeAttr(attachment.id)}" ${deleting ? "disabled" : ""} aria-label="Открыть ${escapeAttr(attachment.fileName)}">${
+      ? `<button class="item-attachment-thumb${preview ? "" : " is-loading"}" type="button" data-attachment-open="${escapeAttr(attachment.id)}" ${deleting ? "disabled" : ""} aria-label="${escapeAttr(window.t("item.editor.attachments.open.file", { fileName: attachment.fileName }))}">${
         preview ? `<img src="${escapeAttr(preview.url)}" alt="" loading="lazy" decoding="async" />` : ""
       }</button>`
       : "";
@@ -4759,34 +4988,34 @@ function renderTripItemAttachments() {
           <span class="item-attachment-meta">${escapeHtml([type, size].filter(Boolean).join(" · "))}</span>
         </div>
         <div class="item-attachment-actions">
-          <button class="icon-button item-attachment-action" type="button" data-attachment-open="${escapeAttr(attachment.id)}" ${deleting ? "disabled" : ""} title="Открыть" aria-label="Открыть ${escapeAttr(attachment.fileName)}">${ATTACHMENT_OPEN_ICON}</button>
-          <button class="icon-button item-attachment-action item-attachment-delete" type="button" data-attachment-delete="${escapeAttr(attachment.id)}" ${deleting ? "disabled" : ""} title="${deleting ? "Удаляем…" : "Удалить"}" aria-label="${deleting ? "Удаляем" : "Удалить"} ${escapeAttr(attachment.fileName)}">${ATTACHMENT_DELETE_ICON}</button>
+          <button class="icon-button item-attachment-action" type="button" data-attachment-open="${escapeAttr(attachment.id)}" ${deleting ? "disabled" : ""} title="${escapeAttr(window.t("item.editor.attachments.open"))}" aria-label="${escapeAttr(window.t("item.editor.attachments.open.file", { fileName: attachment.fileName }))}">${ATTACHMENT_OPEN_ICON}</button>
+          <button class="icon-button item-attachment-action item-attachment-delete" type="button" data-attachment-delete="${escapeAttr(attachment.id)}" ${deleting ? "disabled" : ""} title="${escapeAttr(window.t(deleting ? "item.editor.attachments.deleting" : "item.editor.attachments.delete"))}" aria-label="${escapeAttr(window.t(deleting ? "item.editor.attachments.deleting.file" : "item.editor.attachments.delete.file", { fileName: attachment.fileName }))}">${ATTACHMENT_DELETE_ICON}</button>
         </div>
       </article>
     `;
   }).join("");
 
   const pendingRows = tripItemAttachmentsState.pendingFiles.map((pending) => {
-    const type = core?.getAttachmentTypeLabel?.(pending.mimeType) || "Файл";
-    const size = core?.formatAttachmentSize?.(pending.fileSizeBytes) || "";
+    const type = core?.getAttachmentTypeLabel?.(pending.mimeType) || window.t("item.editor.attachments.file");
+    const size = formatItemAttachmentSize(pending.fileSizeBytes);
     return `
       <article class="item-attachment-row is-pending">
         <div class="item-attachment-copy">
           <span class="item-attachment-name" title="${escapeAttr(pending.fileName)}">📎 ${escapeHtml(pending.fileName)}</span>
-          <span class="item-attachment-meta">${escapeHtml([type, size, "После сохранения"].filter(Boolean).join(" · "))}</span>
+          <span class="item-attachment-meta">${escapeHtml([type, size, window.t("item.editor.attachments.after.save")].filter(Boolean).join(" · "))}</span>
         </div>
         <div class="item-attachment-actions">
-          <button class="icon-button item-attachment-action item-attachment-delete" type="button" data-attachment-pending-remove="${escapeAttr(pending.id)}" ${busy ? "disabled" : ""} title="Убрать" aria-label="Убрать ${escapeAttr(pending.fileName)}">${ATTACHMENT_DELETE_ICON}</button>
+          <button class="icon-button item-attachment-action item-attachment-delete" type="button" data-attachment-pending-remove="${escapeAttr(pending.id)}" ${busy ? "disabled" : ""} title="${escapeAttr(window.t("item.editor.attachments.remove"))}" aria-label="${escapeAttr(window.t("item.editor.attachments.remove.file", { fileName: pending.fileName }))}">${ATTACHMENT_DELETE_ICON}</button>
         </div>
       </article>
     `;
   }).join("");
 
   const empty = !tripItemAttachmentsState.loading && !rows && !pendingRows
-    ? `<p class="item-attachment-empty">Нет вложений</p>`
+    ? `<p class="item-attachment-empty">${escapeHtml(window.t("item.editor.attachments.empty"))}</p>`
     : "";
   const retry = tripItemAttachmentsState.error && !tripItemAttachmentsState.uploading
-    ? `<button class="ghost-button compact item-attachment-retry" type="button" data-attachment-retry>Повторить</button>`
+    ? `<button class="ghost-button compact item-attachment-retry" type="button" data-attachment-retry>${escapeHtml(window.t("item.editor.attachments.retry"))}</button>`
     : "";
   list.innerHTML = `${rows}${pendingRows}${empty}${retry}`;
   ensureTripItemAttachmentPreviews();
@@ -4816,7 +5045,7 @@ async function loadTripItemAttachments() {
     if (requestVersion !== tripItemAttachmentsRequestVersion || tripItemAttachmentsState.itemId !== itemId) return;
     tripItemAttachmentsState = {
       ...tripItemAttachmentsState,
-      error: getTripItemAttachmentsClientApi()?.getTripItemAttachmentErrorMessage?.(error) || "Не удалось загрузить вложения.",
+      error: getLocalizedTripItemAttachmentErrorMessage(error, "item.editor.attachments.error.list"),
       loading: false,
     };
   }
@@ -4839,11 +5068,11 @@ async function uploadCurrentTripItemAttachment(file) {
           { ...normalized, file, id: pendingId },
         ],
       };
-      showToast("Вложение добавится после сохранения карточки");
+      showToast(window.t("item.editor.attachments.pending.toast"));
     } catch (error) {
       tripItemAttachmentsState = {
         ...tripItemAttachmentsState,
-        error: getTripItemAttachmentsClientApi()?.getTripItemAttachmentErrorMessage?.(error) || "Не удалось добавить вложение.",
+        error: getLocalizedTripItemAttachmentErrorMessage(error, "item.editor.attachments.error.add"),
       };
     }
     renderTripItemAttachments();
@@ -4853,7 +5082,7 @@ async function uploadCurrentTripItemAttachment(file) {
     ...tripItemAttachmentsState,
     error: "",
     uploading: true,
-    uploadingName: String(file.name || "файл"),
+    uploadingName: String(file.name || window.t("item.editor.attachments.file").toLowerCase()),
   };
   renderTripItemAttachments();
   try {
@@ -4869,13 +5098,13 @@ async function uploadCurrentTripItemAttachment(file) {
         attachments: [...tripItemAttachmentsState.attachments, attachment],
         error: "",
       };
-      showToast("Вложение добавлено");
+      showToast(window.t("item.editor.attachments.added"));
     }
   } catch (error) {
     if (tripItemAttachmentsState.itemId === itemId) {
       tripItemAttachmentsState = {
         ...tripItemAttachmentsState,
-        error: getTripItemAttachmentsClientApi()?.getTripItemAttachmentErrorMessage?.(error) || "Не удалось загрузить вложение.",
+        error: getLocalizedTripItemAttachmentErrorMessage(error),
       };
     }
   } finally {
@@ -4918,7 +5147,9 @@ async function uploadPendingTripItemAttachments(item) {
   } catch (error) {
     tripItemAttachmentsState = {
       ...tripItemAttachmentsState,
-      error: `Карточка сохранена. ${getTripItemAttachmentsClientApi()?.getTripItemAttachmentErrorMessage?.(error) || "Не удалось загрузить вложение."}`,
+      error: window.t("item.editor.attachments.saved.error", {
+        error: getLocalizedTripItemAttachmentErrorMessage(error),
+      }),
     };
     throw error;
   } finally {
@@ -4948,11 +5179,10 @@ async function openTripItemAttachmentThroughPlatform(attachment) {
     const result = await runPlatformFileAction("openRemoteDocument", [signedUrl]);
     // Cancelling is the user closing the viewer, not a problem to report.
     if (result.status === "success" || result.status === "cancelled") return;
-    failWith("Не удалось открыть вложение.");
+    failWith(window.t("item.editor.attachments.error.open"));
   } catch (error) {
     failWith(
-      getTripItemAttachmentsClientApi()?.getTripItemAttachmentErrorMessage?.(error)
-        || "Не удалось открыть вложение.",
+      getLocalizedTripItemAttachmentErrorMessage(error, "item.editor.attachments.error.open"),
     );
   }
 }
@@ -4978,8 +5208,8 @@ async function openTripItemAttachment(attachmentId) {
   } catch (error) {
     previewWindow?.close();
     const message = error?.message === "attachment_window_blocked"
-      ? "Браузер заблокировал открытие файла. Разрешите всплывающие окна и попробуйте ещё раз."
-      : getTripItemAttachmentsClientApi()?.getTripItemAttachmentErrorMessage?.(error) || "Не удалось открыть вложение.";
+      ? window.t("item.editor.attachments.error.popup")
+      : getLocalizedTripItemAttachmentErrorMessage(error, "item.editor.attachments.error.open");
     tripItemAttachmentsState = { ...tripItemAttachmentsState, error: message };
     renderTripItemAttachments();
   }
@@ -4988,7 +5218,7 @@ async function openTripItemAttachment(attachmentId) {
 async function deleteCurrentTripItemAttachment(attachmentId) {
   const attachment = getTripItemAttachmentById(attachmentId);
   if (!attachment || tripItemAttachmentsState.deletingId) return;
-  if (!window.confirm(`Удалить вложение «${attachment.fileName}»?`)) return;
+  if (!window.confirm(window.t("item.editor.attachments.delete.confirm", { fileName: attachment.fileName }))) return;
   tripItemAttachmentsState = { ...tripItemAttachmentsState, deletingId: attachmentId, error: "" };
   renderTripItemAttachments();
   try {
@@ -4999,11 +5229,11 @@ async function deleteCurrentTripItemAttachment(attachmentId) {
       attachments: tripItemAttachmentsState.attachments.filter((entry) => entry.id !== attachmentId),
       error: "",
     };
-    showToast("Вложение удалено");
+    showToast(window.t("item.editor.attachments.deleted"));
   } catch (error) {
     tripItemAttachmentsState = {
       ...tripItemAttachmentsState,
-      error: getTripItemAttachmentsClientApi()?.getTripItemAttachmentErrorMessage?.(error) || "Не удалось удалить вложение.",
+      error: getLocalizedTripItemAttachmentErrorMessage(error, "item.editor.attachments.error.delete"),
     };
   } finally {
     tripItemAttachmentsState = { ...tripItemAttachmentsState, deletingId: "" };
@@ -5016,7 +5246,7 @@ function handleTripItemAttachmentsClick(event) {
   if (retry) {
     if (tripItemAttachmentsState.pendingFiles.length && tripItemAttachmentsState.itemId) {
       uploadPendingTripItemAttachments({ id: tripItemAttachmentsState.itemId })
-        .then(() => showToast("Вложения добавлены"))
+        .then(() => showToast(window.t("item.editor.attachments.added.multiple")))
         .catch(() => {});
       return;
     }
@@ -5044,16 +5274,102 @@ function handleTripItemAttachmentsClick(event) {
   if (deleteButton) deleteCurrentTripItemAttachment(deleteButton.dataset.attachmentDelete);
 }
 
+function localizeItemDraftWarning(message = "") {
+  const warnings = {
+    "Валюта цены не указана. Цена не перенесена в карточку поездки.": "item.editor.draft.warning.currency.missing",
+    "В идее цена указана в другой валюте. Цена не перенесена в карточку поездки.": "item.editor.draft.warning.currency.mismatch",
+  };
+  return warnings[message] ? window.t(warnings[message]) : message;
+}
+
+function getLocalizedTripItemAttachmentErrorMessage(error, fallbackKey = "item.editor.attachments.error.upload") {
+  const code = String(error?.code || error?.message || "").toLowerCase();
+  if (code.includes("file_type_unsupported")) return window.t("item.editor.attachments.error.type");
+  if (code.includes("file_too_large")) return window.t("item.editor.attachments.error.large");
+  if (code.includes("file_empty") || code.includes("file_name_invalid")) return window.t("item.editor.attachments.error.read");
+  if (code.includes("auth") || Number(error?.status) === 401 || Number(error?.status) === 403) {
+    return window.t("item.editor.attachments.error.access");
+  }
+  if (code.includes("list")) return window.t("item.editor.attachments.error.list");
+  if (code.includes("delete")) return window.t("item.editor.attachments.error.delete");
+  if (code.includes("signed_url")) return window.t("item.editor.attachments.error.open");
+  return window.t(fallbackKey);
+}
+
+function formatItemAttachmentSize(value) {
+  const bytes = Number(value) || 0;
+  if (bytes < 1024) {
+    return `${window.BackpackerI18n.formatNumber(bytes, { maximumFractionDigits: 0 })} ${window.t("item.editor.attachments.unit.bytes")}`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${window.BackpackerI18n.formatNumber(Math.ceil(bytes / 1024), { maximumFractionDigits: 0 })} ${window.t("item.editor.attachments.unit.kilobytes")}`;
+  }
+  const megabytes = bytes / (1024 * 1024);
+  return `${window.BackpackerI18n.formatNumber(megabytes, {
+    minimumFractionDigits: megabytes >= 10 ? 0 : 1,
+    maximumFractionDigits: megabytes >= 10 ? 0 : 1,
+  })} ${window.t("item.editor.attachments.unit.megabytes")}`;
+}
+
+function getItemEditorOptionLabel(group, key, fallback) {
+  const translationKey = `item.editor.${group}.${key}`;
+  const translated = window.t(translationKey);
+  return translated === translationKey ? fallback : translated;
+}
+
+function getItemEditorParticipantDisplayName(participant) {
+  if (participant?.isSelf && participant.name === "Я") return window.t("item.editor.participant.self");
+  return String(participant?.name || window.t("item.editor.expense.participant.fallback"));
+}
+
+function formatItemEditorMoney(value = 0) {
+  const amount = Math.round(Number(value) || 0);
+  const currency = state.trip.currency || "";
+  const symbol = window.BackpackerI18n.getLocale() === "en" && currency === "RSD"
+    ? "RSD"
+    : currencySymbol(currency);
+  return `${window.BackpackerI18n.formatNumber(amount, { maximumFractionDigits: 0 })} ${symbol}`.trim();
+}
+
+function updateItemEditorContextLabels() {
+  const currency = state.trip.currency || "";
+  const priceLabel = document.querySelector("[data-item-price-label]");
+  const paidLabel = document.querySelector("[data-item-paid-label]");
+  if (priceLabel) priceLabel.textContent = window.t("item.editor.field.price.label", { currency });
+  if (paidLabel) paidLabel.textContent = window.t("item.editor.field.paid.label", { currency });
+}
+
+function validateItemTitleInput(input = $("#itemForm")?.elements?.title) {
+  if (!input) return true;
+  const missing = !String(input.value || "").trim();
+  input.setCustomValidity(missing ? window.t("item.editor.validation.title.required") : "");
+  return !missing;
+}
+
+function validateItemDateInput(input = $("#itemForm")?.elements?.date) {
+  if (!input) return true;
+  input.setCustomValidity("");
+  if (input.value && input.min && input.value < input.min) {
+    input.setCustomValidity(window.t("item.editor.validation.date.after", { start: input.min }));
+  } else if (input.value && input.max && input.value > input.max) {
+    input.setCustomValidity(window.t("item.editor.validation.date.before", { end: input.max }));
+  }
+  return !input.validationMessage;
+}
+
 function openItemSheet(itemId = null, options = {}) {
   fillSelects();
+  updateItemEditorContextLabels();
   renderParticipantOwnerField();
   $("#deleteItemButton").style.display = itemId ? "inline-flex" : "none";
   $("#resetItemButton").style.display = itemId ? "inline-flex" : "none";
   $("#copyItemButton").hidden = !itemId;
-  $("#itemSheetTitle").textContent = itemId ? "Редактировать элемент" : "Добавить в поездку";
+  $("#itemSheetTitle").textContent = window.t(itemId ? "item.editor.title.edit" : "item.editor.title.create");
   const trackedItem = itemId ? state.items.find((entry) => entry.id === itemId) : null;
   resetItemCreateContext();
   fillItemForm(trackedItem);
+  validateItemTitleInput();
+  validateItemDateInput();
   resetTripItemAttachmentsState(trackedItem);
   if (!trackedItem && options.initialDraft) {
     applyInitialDraftToItemForm(options.initialDraft);
@@ -5095,11 +5411,26 @@ function openItemSheet(itemId = null, options = {}) {
 
 function fillSelects() {
   const form = $("#itemForm");
-  form.elements.type.innerHTML = itemTypes.map(([key, label]) => `<option value="${key}">${label}</option>`).join("");
-  form.elements.status.innerHTML = statuses.map(([key, label]) => `<option value="${key}">${label}</option>`).join("");
-  form.elements.priority.innerHTML = priorities.map(([key, label]) => `<option value="${key}">${label}</option>`).join("");
+  form.elements.type.innerHTML = itemTypes
+    .map(([key, label]) => `<option value="${key}">${escapeHtml(getItemEditorOptionLabel("type", key, label))}</option>`)
+    .join("");
+  form.elements.status.innerHTML = statuses
+    .map(([key, label]) => `<option value="${key}">${escapeHtml(getItemEditorOptionLabel("status", key, label))}</option>`)
+    .join("");
+  form.elements.priority.innerHTML = priorities
+    .map(([key, label]) => `<option value="${key}">${escapeHtml(getItemEditorOptionLabel("priority", key, label))}</option>`)
+    .join("");
   form.elements.participantId.innerHTML = state.trip.participants
-    .map((participant) => `<option value="${escapeAttr(participant.id)}">${escapeHtml(participant.name)}${participant.isSelf ? " · Это я" : ""}</option>`)
+    .map((participant) => {
+      const displayName = getItemEditorParticipantDisplayName(participant);
+      const label = participant.isSelf
+        ? window.t("item.editor.participant.option.self", {
+          name: displayName,
+          badge: window.t("item.editor.participant.self.badge"),
+        })
+        : displayName;
+      return `<option value="${escapeAttr(participant.id)}">${escapeHtml(label)}</option>`;
+    })
     .join("");
 }
 
@@ -5117,10 +5448,11 @@ function renderItemAllocationSummary(item) {
     return;
   }
   summary.classList.remove("hidden");
-  summary.textContent = `Распределено: ${allocations.map((allocation) => {
+  const allocationText = allocations.map((allocation) => {
     const participant = getParticipantById(allocation.participantId);
-    return `${participant.name} ${formatMoney(allocation.amount)}`;
-  }).join(" · ")}`;
+    return `${getItemEditorParticipantDisplayName(participant)} ${formatItemEditorMoney(allocation.amount)}`;
+  }).join(" · ");
+  summary.textContent = window.t("item.editor.allocation.summary", { allocations: allocationText });
 }
 
 function getSavedItemAllocations(existing, price, participantId) {
@@ -5175,7 +5507,7 @@ function closeItemSheetAfterSave() {
 
 function dismissItemSheet(method = "close", { fromPopState = false } = {}) {
   if (tripItemAttachmentsState.uploading) {
-    showToast("Дождитесь загрузки вложения");
+    showToast(window.t("item.editor.attachments.wait"));
     return;
   }
   const returnScreen = itemCreateContext.returnScreenOnCancel;
@@ -5190,13 +5522,19 @@ async function saveItem(event) {
   event.preventDefault();
   if (isReadOnlyMode()) return;
   if (tripItemAttachmentsState.uploading) {
-    showToast("Дождитесь загрузки вложения");
+    showToast(window.t("item.editor.attachments.wait"));
     return;
   }
   const form = event.currentTarget;
-  if (!validateMoneyFields(form, ["price", "paidAmount"])) {
+  const formIsValid = validateItemTitleInput(form.elements.title)
+    && validateItemDateInput(form.elements.date)
+    && validateMoneyFields(form, ["price", "paidAmount"]);
+  if (!formIsValid) {
     form.reportValidity();
-    showToast(MONEY_INPUT_ERROR);
+    showToast(form.elements.title.validationMessage
+      || form.elements.date.validationMessage
+      || form.elements.price.validationMessage
+      || form.elements.paidAmount.validationMessage);
     return;
   }
   const data = Object.fromEntries(new FormData(form).entries());
@@ -5262,15 +5600,15 @@ async function saveItem(event) {
       $("#deleteItemButton").style.display = "inline-flex";
       $("#resetItemButton").style.display = "inline-flex";
       $("#copyItemButton").hidden = false;
-      $("#itemSheetTitle").textContent = "Редактировать элемент";
+      $("#itemSheetTitle").textContent = window.t("item.editor.title.edit");
       render();
-      showToast("Карточка сохранена, но не все вложения загрузились");
+      showToast(window.t("item.editor.attachments.saved.partial"));
       return;
     }
   }
   closeItemSheetAfterSave();
   render();
-  showToast(isNew && createContext.toastOnSave ? createContext.toastOnSave : "Сохранено");
+  showToast(isNew && createContext.toastOnSave ? createContext.toastOnSave : window.t("item.editor.saved"));
 }
 
 function getItemFormChangedFields(item) {
@@ -5309,8 +5647,10 @@ function resetCurrentItemForm() {
   if (!item) return;
   const changedFields = getItemFormChangedFields(item);
   fillItemForm(item);
+  validateItemTitleInput();
+  validateItemDateInput();
   updateOpenLinkButton();
-  showToast("Изменения сброшены");
+  showToast(window.t("item.editor.reset.done"));
   if (changedFields.length === 0) return;
   trackEvent("item_form_reset", {
     ...getTripAnalyticsContext(),
@@ -5400,12 +5740,16 @@ function getCardCopyDateOptions(targetState, { omitSourceBucket = false } = {}) 
   const sourceItem = getCardCopySourceItem();
   const dates = getTripDatesForTrip(targetState.trip).map((date, index) => ({
     value: date,
-    title: `День ${index + 1}`,
-    meta: formatDate(date),
+    title: window.t("plan.day.label", { number: index + 1 }),
+    meta: formatPlanDate(date),
   }));
   const options = [
     ...dates,
-    { value: "", title: "Без даты", meta: "В конец списка идей без даты" },
+    {
+      value: "",
+      title: window.t("plan.unscheduled.title"),
+      meta: window.t("plan.copy.day.unscheduled.meta"),
+    },
   ];
   if (!omitSourceBucket || !sourceItem) return options;
   return options.filter((option) => (option.value || "") !== (sourceItem.date || ""));
@@ -5445,7 +5789,7 @@ function openTravelIdeaDestinationPicker() {
   const sourceIdea = ideasState.ideas.find((idea) => idea.id === ideaId);
   if (!sourceIdea) return;
   if (!getTravelIdeaDestinationTrips().length) {
-    showToast("Сначала создайте поездку, чтобы добавить в неё идею.");
+    showToast(window.t("ideas.add.to.trip.no.trips"));
     return;
   }
   cardCopyState = {
@@ -5485,11 +5829,11 @@ function dismissCardCopySheet(method = "close") {
 
 function renderCardCopySheet() {
   $("#cardCopySheetTitle").textContent = cardCopyState.sourceKind === "travel_idea"
-    ? "Куда добавить идею?"
-    : "Куда скопировать карточку?";
+    ? window.t("plan.copy.title.idea")
+    : window.t("plan.copy.title.card");
   $("#cardCopyConfirmButton").textContent = cardCopyState.sourceKind === "travel_idea"
-    ? "Добавить"
-    : "Скопировать";
+    ? window.t("plan.copy.confirm.idea")
+    : window.t("plan.copy.confirm.card");
   renderCardCopyScopeStep();
   renderCardCopyTripStep();
   renderCardCopyDateStep();
@@ -5508,13 +5852,13 @@ function renderCardCopyScopeStep() {
   container.classList.toggle("hidden", Boolean(cardCopyState.scope));
   container.innerHTML = `
     <button class="card-copy-option" type="button" data-card-copy-scope="same" aria-pressed="${cardCopyState.scope === "same"}">
-      <strong>В эту поездку</strong>
-      <span>Выбрать другой день или «Без даты»</span>
+      <strong>${escapeHtml(window.t("plan.copy.scope.same.title"))}</strong>
+      <span>${escapeHtml(window.t("plan.copy.scope.same.meta"))}</span>
     </button>
     ${hasOtherTrips ? `
       <button class="card-copy-option" type="button" data-card-copy-scope="another" aria-pressed="${cardCopyState.scope === "another"}">
-        <strong>В другую поездку</strong>
-        <span>Сначала выбрать поездку, потом день</span>
+        <strong>${escapeHtml(window.t("plan.copy.scope.other.title"))}</strong>
+        <span>${escapeHtml(window.t("plan.copy.scope.other.meta"))}</span>
       </button>
     ` : ""}
   `;
@@ -5535,8 +5879,8 @@ function renderCardCopyTripStep() {
     const trip = entry.state.trip;
     return `
       <button class="card-copy-option" type="button" data-card-copy-trip="${escapeAttr(entry.id)}">
-        <strong>${escapeHtml(trip.title || "Новая поездка")}</strong>
-        <span>${formatDate(trip.startDate)}-${formatDate(trip.endDate)} · ${escapeHtml(trip.destination || "Направление не задано")}</span>
+        <strong>${escapeHtml(trip.title || window.t("plan.trip.untitled"))}</strong>
+        <span>${escapeHtml(formatPlanTripDateRange(trip.startDate, trip.endDate))} · ${escapeHtml(trip.destination || window.t("plan.trip.destination.missing"))}</span>
       </button>
     `;
   }).join("");
@@ -5560,7 +5904,7 @@ function renderCardCopyDateStep() {
         <span>${escapeHtml(option.meta)}</span>
       </button>
     `).join("")
-    : `<p class="card-copy-empty">В этой поездке нет другого дня или блока для копии.</p>`;
+    : `<p class="card-copy-empty">${escapeHtml(window.t("plan.copy.empty"))}</p>`;
 }
 
 function renderCardCopyWarning() {
@@ -5572,14 +5916,14 @@ function renderCardCopyWarning() {
       ? getTravelIdeaCore()?.mapTravelIdeaToTripItemDraft?.(sourceIdea, targetState.trip.currency)
       : null;
     warning.classList.toggle("hidden", !draft?.priceWarning);
-    warning.textContent = draft?.priceWarning || "";
+    warning.textContent = localizeItemDraftWarning(draft?.priceWarning || "");
     return;
   }
   const sourceItem = getCardCopySourceItem();
   const shouldWarn = Boolean(sourceItem && targetState && targetState.trip.id !== state.trip.id && targetState.trip.currency !== state.trip.currency);
   warning.classList.toggle("hidden", !shouldWarn);
   warning.textContent = shouldWarn
-    ? "В выбранной поездке другая валюта. Стоимость карточки не будет скопирована."
+    ? window.t("plan.copy.warning.currency")
     : "";
 }
 
@@ -5667,10 +6011,10 @@ function openTravelIdeaItemDraft({ sourceIdea, targetState, targetDate }) {
       initialDraft,
       creationMethod: "other",
       returnScreenOnCancel: "ideas",
-      inlineWarning: draft.priceWarning || "",
+      inlineWarning: localizeItemDraftWarning(draft.priceWarning),
       source: "travel_idea",
       sourceIdeaId: sourceIdea.id,
-      toastOnSave: "Добавлено в поездку",
+      toastOnSave: window.t("item.editor.saved.from.idea"),
     });
   });
 }
@@ -5732,9 +6076,11 @@ function confirmCardCopy() {
   }
   cardCopySheetHistoryArmed = false;
   const targetText = targetState.trip.id === state.trip.id
-    ? (cardCopyState.targetDate ? formatDate(cardCopyState.targetDate) : "Без даты")
-    : `поездку «${targetState.trip.title || "Новая поездка"}»`;
-  showToast(`Карточка скопирована в ${targetText}`);
+    ? (cardCopyState.targetDate
+      ? window.t("plan.copy.target.same.day", { date: formatPlanDate(cardCopyState.targetDate) })
+      : window.t("plan.copy.target.same.unscheduled"))
+    : window.t("plan.copy.target.other", { title: targetState.trip.title || window.t("plan.trip.untitled") });
+  showToast(window.t("plan.copy.toast", { target: targetText }));
   const sameTrip = targetState.trip.id === state.trip.id;
   const hasTargetDate = Boolean(cardCopyState.targetDate);
   const copyDestinationType = sameTrip
@@ -5791,13 +6137,13 @@ function deleteCurrentItem() {
   const id = $("#itemForm").elements.id.value;
   if (!id) return;
   const item = state.items.find((entry) => entry.id === id);
-  const title = item?.title || "элемент";
-  if (!window.confirm(`Удалить «${title}»? Это действие нельзя отменить.`)) return;
+  const title = item?.title || window.t("item.editor.delete.fallback");
+  if (!window.confirm(window.t("item.editor.delete.confirm", { title }))) return;
   state.items = state.items.filter((item) => item.id !== id);
   saveState();
   closeSheet("itemSheet");
   render();
-  showToast("Удалено");
+  showToast(window.t("item.editor.deleted"));
   trackEvent("item_deleted", {
     ...getTripAnalyticsContext(),
     item_id: id,
@@ -5809,10 +6155,8 @@ function deleteCurrentItem() {
 function ensureTripContextLabels() {
   const form = $("#tripForm");
   if (!form) return;
-  const preferencesField = form.elements.preferencesText?.closest(".field");
-  if (!preferencesField) return;
-  const labelText = Array.from(preferencesField.childNodes).find((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
-  if (labelText) labelText.textContent = "Пожелания к поездке ";
+  const labelText = form.querySelector("[data-trip-preferences-label]");
+  if (labelText) labelText.textContent = window.t("trip.setup.field.preferences.label");
 }
 
 function renderAiSourceTextField() {
@@ -5832,6 +6176,8 @@ function openTripSheet() {
   Object.entries(state.trip).forEach(([key, value]) => {
     if (form.elements[key]) form.elements[key].value = value ?? "";
   });
+  validateTripRequiredInputs();
+  validateTripBudgetInput(form.elements.budgetLimit);
   syncTripDateInputs();
   renderParticipantsList();
   renderAiSourceTextField();
@@ -5842,31 +6188,39 @@ function openTripSheet() {
 function renderParticipantsList() {
   const list = $("#participantsList");
   if (!list) return;
-  list.innerHTML = state.trip.participants.map((participant) => `
-    <div class="participant-row">
-      ${renderParticipantAvatar(participant)}
-      <div class="participant-row-text">
-        <strong>${escapeHtml(participant.name)}${participant.isSelf ? ` <span>(это я)</span>` : ""}</strong>
+  list.innerHTML = state.trip.participants.map((participant) => {
+    const displayName = participant.isSelf && participant.name === "Я"
+      ? window.t("trip.setup.participant.self.name")
+      : participant.name;
+    const displayParticipant = { ...participant, initials: displayName.slice(0, 1).toUpperCase() };
+    return `
+      <div class="participant-row">
+        ${renderParticipantAvatar(displayParticipant)}
+        <div class="participant-row-text">
+          <strong>${escapeHtml(displayName)}${participant.isSelf ? ` <span>(${escapeHtml(window.t("trip.setup.participant.self.badge"))})</span>` : ""}</strong>
+        </div>
+        <div class="participant-row-actions">
+          <button class="ghost-button compact" type="button" data-rename-participant="${escapeAttr(participant.id)}">${escapeHtml(window.t("trip.setup.participant.rename"))}</button>
+          ${participant.isSelf ? "" : `<button class="danger-button compact participant-delete-button" type="button" data-delete-participant="${escapeAttr(participant.id)}">${escapeHtml(window.t("trip.setup.participant.delete"))}</button>`}
+        </div>
       </div>
-      <div class="participant-row-actions">
-        <button class="ghost-button compact" type="button" data-rename-participant="${escapeAttr(participant.id)}">Переименовать</button>
-        ${participant.isSelf ? "" : `<button class="danger-button compact participant-delete-button" type="button" data-delete-participant="${escapeAttr(participant.id)}">Удалить</button>`}
-      </div>
-    </div>
-    ${participantEditorState.mode === "rename" && participantEditorState.participantId === participant.id ? renderParticipantEditor() : ""}
-  `).join("") + (participantEditorState.mode === "add" ? renderParticipantEditor() : "");
+      ${participantEditorState.mode === "rename" && participantEditorState.participantId === participant.id ? renderParticipantEditor() : ""}
+    `;
+  }).join("") + (participantEditorState.mode === "add" ? renderParticipantEditor() : "");
 }
 
 function renderParticipantEditor() {
-  const label = participantEditorState.mode === "add" ? "Имя участника" : "Новое имя";
+  const label = window.t(participantEditorState.mode === "add"
+    ? "trip.setup.participant.editor.name"
+    : "trip.setup.participant.editor.new.name");
   return `
     <div class="participant-editor-row">
       <label class="field participant-editor-field">
-        ${label}
+        ${escapeHtml(label)}
         <input id="participantEditorInput" value="${escapeAttr(participantEditorState.value)}" maxlength="40" />
       </label>
-      <button class="ghost-button compact" type="button" data-save-participant>Сохранить</button>
-      <button class="ghost-button compact" type="button" data-cancel-participant>Отмена</button>
+      <button class="ghost-button compact" type="button" data-save-participant>${escapeHtml(window.t("trip.setup.participant.editor.save"))}</button>
+      <button class="ghost-button compact" type="button" data-cancel-participant>${escapeHtml(window.t("trip.setup.participant.editor.cancel"))}</button>
     </div>
   `;
 }
@@ -5904,15 +6258,15 @@ function readAddParticipantName(dialog) {
   const input = dialog.querySelector("[data-add-participant-name]");
   const name = normalizeParticipantName(input ? input.value : "");
   if (!name) {
-    showToast("Введите имя участника");
+    showToast(window.t("trip.setup.participant.validation.required"));
     return "";
   }
   if (name.length > 40) {
-    showToast("Имя слишком длинное");
+    showToast(window.t("trip.setup.participant.validation.long"));
     return "";
   }
   if (isParticipantNameDuplicate(name)) {
-    showToast("Участник с таким именем уже добавлен");
+    showToast(window.t("trip.setup.participant.validation.duplicate"));
     return "";
   }
   return name;
@@ -5930,7 +6284,7 @@ function saveAddParticipant(dialog) {
   closeAddParticipantDialog(dialog);
   renderParticipantsList();
   render();
-  showToast("Участник добавлен");
+  showToast(window.t("trip.setup.participant.added"));
 }
 
 function openAddParticipantDialog() {
@@ -5940,14 +6294,14 @@ function openAddParticipantDialog() {
   dialog.innerHTML = `
     <div class="add-participant-backdrop" data-add-participant-cancel></div>
     <section class="add-participant-panel" role="dialog" aria-modal="true" aria-labelledby="addParticipantTitle">
-      <h2 id="addParticipantTitle">Добавить участника</h2>
+      <h2 id="addParticipantTitle">${escapeHtml(window.t("trip.setup.participants.add"))}</h2>
       <label class="field">
-        Имя участника
+        <span>${escapeHtml(window.t("trip.setup.participant.editor.name"))}</span>
         <input data-add-participant-name maxlength="40" />
       </label>
       <div class="add-participant-actions">
-        <button class="primary-button" type="button" data-add-participant-save>Сохранить</button>
-        <button class="ghost-button" type="button" data-add-participant-cancel>Отмена</button>
+        <button class="primary-button" type="button" data-add-participant-save>${escapeHtml(window.t("trip.setup.participant.editor.save"))}</button>
+        <button class="ghost-button" type="button" data-add-participant-cancel>${escapeHtml(window.t("trip.setup.participant.editor.cancel"))}</button>
       </div>
     </section>
   `;
@@ -5977,11 +6331,11 @@ function readParticipantEditorName() {
   const input = $("#participantEditorInput");
   const name = normalizeParticipantName(input ? input.value : "");
   if (!name) {
-    showToast("Введите имя участника");
+    showToast(window.t("trip.setup.participant.validation.required"));
     return "";
   }
   if (name.length > 40) {
-    showToast("Имя слишком длинное");
+    showToast(window.t("trip.setup.participant.validation.long"));
     return "";
   }
   return name;
@@ -5993,13 +6347,13 @@ function isParticipantNameDuplicate(name, participantId = "") {
 }
 
 function requestParticipantName(initialName = "") {
-  const name = normalizeParticipantName(window.prompt("Имя участника", initialName) || "");
+  const name = normalizeParticipantName(window.prompt(window.t("trip.setup.participant.editor.name"), initialName) || "");
   if (!name) {
-    showToast("Введите имя участника");
+    showToast(window.t("trip.setup.participant.validation.required"));
     return "";
   }
   if (name.length > 40) {
-    showToast("Имя слишком длинное");
+    showToast(window.t("trip.setup.participant.validation.long"));
     return "";
   }
   return name;
@@ -6018,7 +6372,7 @@ function saveParticipantEditor() {
     : null;
   const duplicateId = participant ? participant.id : "";
   if (isParticipantNameDuplicate(name, duplicateId)) {
-    showToast("Участник с таким именем уже добавлен");
+    showToast(window.t("trip.setup.participant.validation.duplicate"));
     return;
   }
 
@@ -6028,7 +6382,7 @@ function saveParticipantEditor() {
       name,
       index: state.trip.participants.length,
     }));
-    showToast("Участник добавлен");
+    showToast(window.t("trip.setup.participant.added"));
   } else if (participant) {
     participant.name = name;
     participant.initials = generateParticipantInitials(name);
@@ -6052,8 +6406,12 @@ function deleteParticipant(participantId) {
   const assignedItems = state.items.filter((item) => item.participantId === participant.id);
   const total = assignedItems.filter(isActiveCost).reduce((sum, item) => sum + parseMoney(item.price), 0);
   const message = assignedItems.length
-    ? `На ${participant.name} находится ${assignedItems.length} расход(ов) на сумму ${formatMoney(total)}. Перенести их на вас и удалить участника?`
-    : `Участник "${participant.name}" будет удален из этой поездки.`;
+    ? window.t("trip.setup.participant.delete.assigned", {
+      name: participant.name,
+      count: assignedItems.length,
+      amount: `${window.BackpackerI18n.formatNumber(total, { maximumFractionDigits: 2 })} ${currencySymbol(state.trip.currency)}`,
+    })
+    : window.t("trip.setup.participant.delete.empty", { name: participant.name });
   if (!window.confirm(message)) return;
   state.items = state.items.map((item) => {
     const allocations = getItemAllocations(item).map((allocation) => (
@@ -6067,7 +6425,36 @@ function deleteParticipant(participantId) {
   saveState();
   renderParticipantsList();
   render();
-  showToast(assignedItems.length ? "Расходы перенесены на вас" : "Участник удален");
+  showToast(window.t(assignedItems.length
+    ? "trip.setup.participant.expenses.moved"
+    : "trip.setup.participant.removed"));
+}
+
+function validateTripRequiredInputs() {
+  const form = $("#tripForm");
+  const titleInput = form?.elements.title;
+  const destinationInput = form?.elements.destination;
+  if (!titleInput || !destinationInput) return { valid: true, message: "" };
+
+  const titleMissing = !String(titleInput.value || "").trim();
+  const destinationMissing = !String(destinationInput.value || "").trim();
+  titleInput.setCustomValidity(titleMissing ? window.t("trip.setup.validation.title.required") : "");
+  destinationInput.setCustomValidity(destinationMissing ? window.t("trip.setup.validation.destination.required") : "");
+  return {
+    valid: !titleMissing && !destinationMissing,
+    message: titleMissing
+      ? window.t("trip.setup.validation.title.required")
+      : (destinationMissing ? window.t("trip.setup.validation.destination.required") : ""),
+  };
+}
+
+function validateTripBudgetInput(input) {
+  if (!input) return true;
+  input.setCustomValidity("");
+  if (!window.BackpackerFinancial?.isValidMoney(input.value)) {
+    input.setCustomValidity(window.t("trip.setup.validation.budget"));
+  }
+  return !input.validationMessage;
 }
 
 function getTripDateInputs() {
@@ -6096,7 +6483,7 @@ function validateTripDateInputs() {
   const { startInput, endInput } = getTripDateInputs();
   endInput.setCustomValidity("");
   if (startInput.value && endInput.value && endInput.value < startInput.value) {
-    endInput.setCustomValidity(TRIP_DATE_RANGE_ERROR);
+    endInput.setCustomValidity(window.t("trip.setup.validation.date.range"));
   }
   return !endInput.validationMessage;
 }
@@ -6114,12 +6501,14 @@ function saveTrip(event) {
   if (isReadOnlyMode()) return;
   const form = event.currentTarget;
   const data = Object.fromEntries(new FormData(form).entries());
+  const requiredResult = validateTripRequiredInputs();
   syncTripDateInputs();
   const validDates = validateTripDateInputs();
-  const validBudget = validateMoneyFields(form, ["budgetLimit"]);
-  if (!validDates || !validBudget) {
+  const validBudget = validateTripBudgetInput(form.elements.budgetLimit);
+  if (!requiredResult.valid || !validDates || !validBudget) {
     form.reportValidity();
-    showToast(validDates ? MONEY_INPUT_ERROR : TRIP_DATE_RANGE_ERROR);
+    showToast(requiredResult.message
+      || (!validDates ? window.t("trip.setup.validation.date.range") : window.t("trip.setup.validation.budget")));
     return;
   }
   const previousTrip = { ...state.trip };
@@ -6150,8 +6539,8 @@ function saveTrip(event) {
   closeSheet("tripSheet");
   render();
   showToast(outOfRangeMovedCount
-    ? `${formatEventMoveCountText(outOfRangeMovedCount)} в «Без даты»`
-    : "Поездка сохранена");
+    ? window.t("trip.setup.saved.moved", { count: outOfRangeMovedCount })
+    : window.t("trip.setup.saved"));
   const changedFields = ["title", "destination", "startDate", "endDate", "currency", "budgetLimit", "preferencesText"]
     .filter((field) => String(previousTrip[field] ?? "") !== String(state.trip[field] ?? ""));
   trackEvent("trip_settings_updated", {
@@ -6173,7 +6562,7 @@ function resetDemo() {
   saveState();
   closeSheet("tripSheet");
   render();
-  showToast("Демо сброшено");
+  showToast(window.t("trip.setup.reset.done"));
 }
 
 function openHomeShareSheet() {
@@ -6335,8 +6724,8 @@ function reportTripShareSyncFailure(kind, error) {
   tripShareSyncReported = kind;
   showToast(
     kind === "orphaned"
-      ? "Ссылку на поездку нужно создать заново"
-      : "Не удалось обновить опубликованную поездку",
+      ? window.t("share.link.sync.orphaned")
+      : window.t("share.link.sync.error"),
   );
 }
 
@@ -6390,12 +6779,12 @@ function renderTripLinkOptions(record = getTripShareRecord()) {
     const orphaned = Boolean(record?.orphaned);
     status.classList.toggle("error", !isSupabaseConfigured() || orphaned);
     status.textContent = !isSupabaseConfigured()
-      ? "Supabase не настроен: ссылка не создана."
+      ? window.t("share.link.status.not.configured")
       : orphaned
-        ? "Прежняя ссылка создана в другой сессии браузера и больше не обновляется. Создайте ссылку заново — адрес изменится."
+        ? window.t("share.link.status.orphaned")
         : hasActiveLink
-          ? "Изменения поездки будут обновляться автоматически."
-          : "Ссылка ещё не создана.";
+          ? window.t("share.link.status.active")
+          : window.t("share.link.status.empty");
   }
 }
 
@@ -6416,11 +6805,11 @@ async function showTripLinkOptions(profileReady = false) {
   try {
     const record = await ensureTripSharePublished({ includeBudget: $("#tripLinkIncludeBudget")?.checked ?? true });
     renderTripLinkOptions(record);
-    showToast("Доступ по ссылке открыт");
+    showToast(window.t("share.link.opened"));
     trackEvent("share_method_selected", { ...getTripAnalyticsContext(), share_context: "trip", share_format: "link", method: "link_access" });
   } catch {
     renderTripLinkOptions();
-    showToast(isSupabaseConfigured() ? "Не удалось открыть доступ" : "Supabase не настроен");
+    showToast(window.t(isSupabaseConfigured() ? "share.link.open.error" : "share.link.supabase.missing"));
   }
 }
 
@@ -6435,11 +6824,11 @@ async function copyTripShareLink(profileReady = false) {
     const url = buildTripShareUrl(record.token);
     renderTripLinkOptions(record);
     await copyText(url);
-    showToast("Ссылка скопирована");
+    showToast(window.t("share.link.copy.done"));
     trackEvent("share_completed", { ...getTripAnalyticsContext(), share_context: "trip", share_format: "link", method: "clipboard" });
   } catch {
     renderTripLinkOptions();
-    showToast(isSupabaseConfigured() ? "Не удалось скопировать ссылку" : "Supabase не настроен");
+    showToast(window.t(isSupabaseConfigured() ? "share.link.copy.error" : "share.link.supabase.missing"));
   }
 }
 
@@ -6453,9 +6842,9 @@ async function updateTripShareBudgetVisibility(profileReady = false) {
   try {
     const updated = await updatePublishedTripShare({ includeBudget: $("#tripLinkIncludeBudget")?.checked ?? true });
     renderTripLinkOptions(updated);
-    showToast("Настройка ссылки обновлена");
+    showToast(window.t("share.link.updated"));
   } catch {
-    showToast("Не удалось обновить ссылку");
+    showToast(window.t("share.link.update.error"));
   }
 }
 
@@ -6469,7 +6858,7 @@ async function revokeTripShareLink(profileReady = false) {
   try {
     await callTripShareFunction("revoke", { tripId: state.trip.id }, { requireOwner: true });
   } catch {
-    showToast("Не удалось отозвать доступ");
+    showToast(window.t("share.link.revoke.error"));
     return;
   }
   saveTripShareRecord({
@@ -6478,48 +6867,117 @@ async function revokeTripShareLink(profileReady = false) {
   });
   const input = $("#tripShareLinkInput");
   if (input) input.value = "";
-  showToast("Доступ отозван");
+  showToast(window.t("share.link.revoked"));
 }
 
 function buildShareText(compact = false) {
   const totals = getTotals();
   const lines = [
     `Backpacker: ${state.trip.title}`,
-    `${formatDate(state.trip.startDate)}-${formatDate(state.trip.endDate)} · ${state.trip.destination}`,
+    `${formatPlanDate(state.trip.startDate)}–${formatPlanDate(state.trip.endDate)} · ${state.trip.destination}`,
     "",
   ];
   if (canShowBudget()) {
     lines.push(
-      "Бюджет:",
-      `Бюджет поездки: ${formatMoney(totals.budgetLimit)}`,
-      `Оплачено: ${formatMoney(totals.paidTotal)}`,
-      `Бронь: ${formatMoney(totals.confirmedOutstanding)}`,
-      `Свободно: ${formatMoney(totals.remainingConfirmed)}`,
-      `Запас: ${formatMoney(totals.additionalTotal)}`,
-      `Всего с запасом: ${formatMoney(totals.possibleTotal)}`,
-      `Остаток с запасом: ${formatMoney(totals.remainingAll)}`,
+      window.t("share.text.budget.title"),
+      window.t("share.text.budget.limit", { amount: formatBudgetMoney(totals.budgetLimit) }),
+      window.t("share.text.budget.paid", { amount: formatBudgetMoney(totals.paidTotal) }),
+      window.t("share.text.budget.booked", { amount: formatBudgetMoney(totals.confirmedOutstanding) }),
+      window.t("share.text.budget.available", { amount: formatBudgetMoney(totals.remainingConfirmed) }),
+      window.t("share.text.budget.backup", { amount: formatBudgetMoney(totals.additionalTotal) }),
+      window.t("share.text.budget.total", { amount: formatBudgetMoney(totals.possibleTotal) }),
+      window.t("share.text.budget.remaining", { amount: formatBudgetMoney(totals.remainingAll) }),
       "",
     );
   }
   getTripDates().forEach((date, index) => {
     const items = state.items.filter((item) => item.date === date && item.status !== "skipped").sort(sortItems);
-    lines.push(`День ${index + 1} · ${formatDate(date)}`);
-    if (!items.length) lines.push("- пока пусто");
+    lines.push(window.t("share.text.day", { day: index + 1, date: formatPlanDate(date) }));
+    if (!items.length) lines.push(window.t("share.text.day.empty"));
     items.forEach((item) => {
-      const priceText = canShowBudget() ? ` · ${formatMoney(item.price)}` : "";
-      lines.push(`- ${item.startTime ? `${item.startTime} ` : ""}${item.title} · ${getStatusLabel(item.status)}${priceText}`);
+      const priceText = canShowBudget() ? ` · ${formatBudgetMoney(item.price)}` : "";
+      lines.push(`- ${item.startTime ? `${item.startTime} ` : ""}${item.title} · ${getPlanStatusLabel(item.status)}${priceText}`);
     });
     lines.push("");
   });
   const unscheduled = state.items.filter((item) => !item.date && item.status !== "skipped");
   if (unscheduled.length) {
-    lines.push("Без даты:");
+    lines.push(window.t("share.text.unscheduled"));
     unscheduled.forEach((item) => {
-      const priceText = canShowBudget() ? ` · ${formatMoney(item.price)}` : "";
-      lines.push(`- ${item.title} · ${getStatusLabel(item.status)}${priceText}`);
+      const priceText = canShowBudget() ? ` · ${formatBudgetMoney(item.price)}` : "";
+      lines.push(`- ${item.title} · ${getPlanStatusLabel(item.status)}${priceText}`);
     });
   }
   return compact ? lines.filter(Boolean).join("\n") : lines.join("\n");
+}
+
+function getExportLocale() {
+  return window.BackpackerI18n?.getLocale?.() === "en" ? "en" : "ru";
+}
+
+function exportT(key, params = {}) {
+  return window.t(`export.${key}`, params);
+}
+
+function formatExportDate(dateString, options = {}) {
+  const virtualIndex = getVirtualDayIndex(dateString);
+  if (virtualIndex) return exportT("day.label", { number: virtualIndex });
+  if (!dateString) return exportT("unscheduled");
+  const date = new Date(`${dateString}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return exportT("unscheduled");
+  return window.BackpackerI18n.formatDate(date, {
+    day: "numeric",
+    month: "long",
+    ...options,
+  });
+}
+
+function formatExportMoney(value = 0) {
+  const amount = Math.round(Number(value) || 0);
+  const currency = state.trip.currency || "";
+  const symbol = getExportLocale() === "en" && currency === "RSD"
+    ? "RSD"
+    : currencySymbol(currency);
+  return `${window.BackpackerI18n.formatNumber(amount, { maximumFractionDigits: 0 })} ${symbol}`.trim();
+}
+
+function formatExportTableCell(value) {
+  if (typeof value !== "number") return value;
+  return window.BackpackerI18n.formatNumber(value, { maximumFractionDigits: 2 });
+}
+
+function formatExportDuration(minutes) {
+  return formatPlanDurationText(minutes);
+}
+
+function formatExportTripDateRange(startDate, endDate) {
+  if (startDate && endDate) {
+    return exportT("trip.date.range", {
+      start: formatExportDate(startDate),
+      end: formatExportDate(endDate),
+    });
+  }
+  if (startDate) return exportT("trip.date.from", { date: formatExportDate(startDate) });
+  if (endDate) return exportT("trip.date.until", { date: formatExportDate(endDate) });
+  return exportT("trip.date.missing");
+}
+
+function formatExportTripDayCount(trip) {
+  return window.t("plan.trip.days", { count: getTripDayCount(trip) });
+}
+
+function getExportTypeLabel(type) {
+  return getPlanTypeLabel(type);
+}
+
+function getExportStatusLabel(status) {
+  return getPlanStatusLabel(status);
+}
+
+function getExportPriorityLabel(priority) {
+  const key = `item.editor.priority.${priority}`;
+  const label = window.t(key);
+  return label === key ? window.t("item.editor.priority.nice") : label;
 }
 
 function buildEstimateText() {
@@ -6532,9 +6990,9 @@ function buildDaysText() {
     const total = state.items
       .filter((item) => item.date === date && isActiveCost(item))
       .reduce((sum, item) => sum + parseMoney(item.price), 0);
-    return `День ${index + 1}\t${formatDate(date)}\t${formatMoney(total)}`;
+    return `${exportT("day.label", { number: index + 1 })}\t${formatExportDate(date)}\t${formatExportMoney(total)}`;
   });
-  return ["День\tДата\tСумма", ...rows].join("\n");
+  return [[exportT("column.day"), exportT("column.date"), exportT("column.amount")].join("\t"), ...rows].join("\n");
 }
 
 function escapeCsvValue(value = "") {
@@ -6542,9 +7000,24 @@ function escapeCsvValue(value = "") {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
-function buildEstimateRows() {
+function buildEstimateRows(presentation = {}) {
   const participants = state.trip.participants;
-  const header = ["День", "Статья", "Категория", "Всего", ...participants.map((participant) => participant.name)];
+  const {
+    dayLabel = exportT("column.day"),
+    itemLabel = exportT("estimate.column.item"),
+    categoryLabel = exportT("estimate.column.category"),
+    totalColumnLabel = exportT("column.total"),
+    undatedLabel = exportT("unscheduled"),
+    totalRowLabel = exportT("total"),
+    dateFormatter = formatExportDate,
+    typeFormatter = getExportTypeLabel,
+    participantFormatter = (participant) => (
+      participant.isSelf && participant.name === "Я"
+        ? window.t("item.editor.participant.self")
+        : participant.name
+    ),
+  } = presentation;
+  const header = [dayLabel, itemLabel, categoryLabel, totalColumnLabel, ...participants.map(participantFormatter)];
   const rows = [...state.items]
     .filter(isActiveCost)
     .sort((a, b) => (a.date || "9999-99-99").localeCompare(b.date || "9999-99-99") || sortItems(a, b))
@@ -6552,16 +7025,20 @@ function buildEstimateRows() {
       const allocations = getItemAllocations(item);
       const allocationByParticipant = new Map(allocations.map((allocation) => [allocation.participantId, parseMoney(allocation.amount)]));
       return [
-        item.date ? formatDate(item.date) : "без даты",
+        item.date ? dateFormatter(item.date) : undatedLabel,
         item.title,
-        getTypeLabel(item.type),
+        typeFormatter(item.type),
         getItemAllocationTotal(item),
         ...participants.map((participant) => allocationByParticipant.get(participant.id) || 0),
       ];
     });
   const totals = participants.map((participant, index) => rows.reduce((sum, row) => sum + parseMoney(row[index + 4]), 0));
-  rows.push(["Итого", "", "", rows.reduce((sum, row) => sum + parseMoney(row[3]), 0), ...totals]);
-  return { header, rows };
+  rows.push([totalRowLabel, "", "", rows.reduce((sum, row) => sum + parseMoney(row[3]), 0), ...totals]);
+  return {
+    header,
+    rows,
+    columnWeights: [1.1, 1.6, 1.5, 1, ...participants.map(() => 1)],
+  };
 }
 
 function buildEstimateCsv() {
@@ -6570,7 +7047,16 @@ function buildEstimateCsv() {
 }
 
 function buildPlanRows() {
-  const header = ["День", "Дата", "Время", "Событие", "Тип", "Статус", "Цена", "Ссылка"];
+  const header = [
+    exportT("column.day"),
+    exportT("column.date"),
+    exportT("itinerary.column.time"),
+    exportT("itinerary.column.item"),
+    exportT("itinerary.column.type"),
+    exportT("itinerary.column.status"),
+    exportT("itinerary.column.price"),
+    exportT("itinerary.column.link"),
+  ];
   const rows = [];
   getTripDates().forEach((date, index) => {
     state.items
@@ -6578,12 +7064,12 @@ function buildPlanRows() {
       .sort(sortItems)
       .forEach((item) => {
         rows.push([
-          `День ${index + 1}`,
-          formatDate(date),
+          exportT("day.label", { number: index + 1 }),
+          formatExportDate(date),
           item.startTime || "",
           item.title,
-          getTypeLabel(item.type),
-          getStatusLabel(item.status),
+          getExportTypeLabel(item.type),
+          getExportStatusLabel(item.status),
           parseMoney(item.price),
           item.link || "",
         ]);
@@ -6594,17 +7080,21 @@ function buildPlanRows() {
     .sort(sortItems)
     .forEach((item) => {
       rows.push([
-        "Без даты",
+        exportT("unscheduled"),
         "",
         item.startTime || "",
         item.title,
-        getTypeLabel(item.type),
-        getStatusLabel(item.status),
+        getExportTypeLabel(item.type),
+        getExportStatusLabel(item.status),
         parseMoney(item.price),
         item.link || "",
       ]);
     });
-  return { header, rows };
+  return {
+    header,
+    rows,
+    columnWeights: [1.4, 1, 0.8, 1.7, 1.7, 1.3, 1, 0.75],
+  };
 }
 
 function buildPlanCsv() {
@@ -6642,10 +7132,10 @@ function escapeSpreadsheetValue(value = "") {
   return escapeHtml(String(value ?? ""));
 }
 
-function buildSpreadsheetHtml(title, table) {
+function buildSpreadsheetHtml(title, table, sheetName = title) {
   const headerHtml = table.header.map((cell) => `<th>${escapeSpreadsheetValue(cell)}</th>`).join("");
   const textColumnIndexes = table.header
-    .map((cell, index) => (cell === "Время" ? index : -1))
+    .map((cell, index) => (cell === exportT("itinerary.column.time") ? index : -1))
     .filter((index) => index >= 0);
   const rowsHtml = table.rows
     .map(
@@ -6659,9 +7149,10 @@ function buildSpreadsheetHtml(title, table) {
     )
     .join("");
   return `<!doctype html>
-<html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
 <head>
   <meta charset="utf-8">
+  <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>${escapeSpreadsheetValue(sheetName)}</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
   <style>
     body { font-family: Arial, sans-serif; }
     h1 { font-size: 18px; }
@@ -6681,29 +7172,29 @@ function buildSpreadsheetHtml(title, table) {
 </html>`;
 }
 
-function downloadSpreadsheet(fileName, title, table) {
+function downloadSpreadsheet(fileName, title, table, sheetName = title) {
   downloadTextFile(
     fileName,
-    `\uFEFF${buildSpreadsheetHtml(title, table)}`,
+    `\uFEFF${buildSpreadsheetHtml(title, table, sheetName)}`,
     "application/vnd.ms-excel;charset=utf-8",
   );
 }
 
 function downloadEstimate() {
   if (!canShowBudget()) {
-    showToast("Автор скрыл смету");
+    showToast(window.t("budget.export.estimate.hidden"));
     return;
   }
   const name = `${slugifyFileName(state.trip.title)}-estimate.xls`;
-  downloadSpreadsheet(name, "Смета поездки", buildEstimateRows());
-  showToast("Смета скачана");
+  downloadSpreadsheet(name, exportT("estimate.title"), buildEstimateRows(), exportT("estimate.sheet"));
+  showToast(window.t("budget.export.estimate.downloaded"));
   trackEvent("export_completed", { ...getTripAnalyticsContext(), export_type: "estimate", format: "xls" });
 }
 
 function downloadPlan() {
   const name = `${slugifyFileName(state.trip.title)}-plan.xls`;
-  downloadSpreadsheet(name, "План по дням", buildPlanRows());
-  showToast("План скачан");
+  downloadSpreadsheet(name, exportT("itinerary.title"), buildPlanRows(), exportT("itinerary.sheet"));
+  showToast(window.t("budget.export.plan.downloaded"));
   trackEvent("export_completed", { ...getTripAnalyticsContext(), export_type: "plan", format: "xls" });
 }
 
@@ -6719,12 +7210,12 @@ function chooseExportFormat() {
     dialog.innerHTML = `
       <div class="export-format-backdrop" data-export-cancel></div>
       <section class="export-format-panel" role="dialog" aria-modal="true" aria-labelledby="exportFormatTitle">
-        <h2 id="exportFormatTitle">Выберите удобный формат:</h2>
+        <h2 id="exportFormatTitle">${escapeHtml(window.t("budget.export.format.title"))}</h2>
         <div class="export-format-actions">
           <button class="export-format-button" type="button" data-export-format="pdf">PDF</button>
           <button class="export-format-button" type="button" data-export-format="xls">XLS</button>
         </div>
-        <button class="export-format-cancel" type="button" data-export-cancel>Отмена</button>
+        <button class="export-format-cancel" type="button" data-export-cancel>${escapeHtml(window.t("budget.export.format.cancel"))}</button>
       </section>
     `;
     document.body.appendChild(dialog);
@@ -6762,7 +7253,7 @@ function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
 async function downloadPdfFile(fileName, title, table, previewWindow = null) {
   if (!window.PDFLib?.PDFDocument) {
     previewWindow?.close();
-    showToast("PDF-модуль не загрузился");
+    showToast(window.t("budget.export.pdf.module.error"));
     return;
   }
 
@@ -6795,7 +7286,11 @@ async function downloadPdfFile(fileName, title, table, previewWindow = null) {
   const maxWidth = pageWidth - x * 2;
 
   const columnCount = table.header.length;
-  const columnWidth = maxWidth / columnCount;
+  const columnWeights = Array.isArray(table.columnWeights) && table.columnWeights.length === columnCount
+    ? table.columnWeights
+    : Array(columnCount).fill(1);
+  const columnWeightTotal = columnWeights.reduce((total, weight) => total + weight, 0);
+  const columnWidths = columnWeights.map((weight) => maxWidth * weight / columnWeightTotal);
   const lineHeight = 14;
   const cellPadding = 5;
   const rowFont = "400 10px Arial, sans-serif";
@@ -6805,7 +7300,32 @@ async function downloadPdfFile(fileName, title, table, previewWindow = null) {
     const words = String(text ?? "").split(/\s+/).filter(Boolean);
     const lines = [];
     let line = "";
+    const splitLongWord = (word) => {
+      const chunks = [];
+      let chunk = "";
+      Array.from(word).forEach((character) => {
+        const test = `${chunk}${character}`;
+        if (chunk && ctx.measureText(test).width > width) {
+          chunks.push(chunk);
+          chunk = character;
+        } else {
+          chunk = test;
+        }
+      });
+      if (chunk) chunks.push(chunk);
+      return chunks;
+    };
     words.forEach((word) => {
+      if (ctx.measureText(word).width > width) {
+        if (line) {
+          lines.push(line);
+          line = "";
+        }
+        const chunks = splitLongWord(word);
+        lines.push(...chunks.slice(0, -1));
+        line = chunks.at(-1) || "";
+        return;
+      }
       const test = line ? `${line} ${word}` : word;
       if (ctx.measureText(test).width > width && line) {
         lines.push(line);
@@ -6822,7 +7342,7 @@ async function downloadPdfFile(fileName, title, table, previewWindow = null) {
     ctx.font = font;
     const linesCount = Math.max(
       1,
-      ...row.map((cell) => wrapCellText(cell, columnWidth - cellPadding * 2).length),
+      ...row.map((cell, index) => wrapCellText(formatExportTableCell(cell), columnWidths[index] - cellPadding * 2).length),
     );
     return Math.max(26, linesCount * lineHeight + cellPadding * 2);
   }
@@ -6831,15 +7351,17 @@ async function downloadPdfFile(fileName, title, table, previewWindow = null) {
     ctx.font = font;
     ctx.fillStyle = fillStyle;
     ctx.fillRect(x, rowY, maxWidth, rowHeight);
+    let cellX = x;
     row.forEach((cell, index) => {
-      const cellX = x + index * columnWidth;
+      const columnWidth = columnWidths[index];
       ctx.strokeStyle = "#9aa6a3";
       ctx.lineWidth = 1;
       ctx.strokeRect(cellX, rowY, columnWidth, rowHeight);
       ctx.fillStyle = "#1f2423";
-      wrapCellText(cell, columnWidth - cellPadding * 2).forEach((line, lineIndex) => {
+      wrapCellText(formatExportTableCell(cell), columnWidth - cellPadding * 2).forEach((line, lineIndex) => {
         ctx.fillText(line, cellX + cellPadding, rowY + cellPadding + 10 + lineIndex * lineHeight);
       });
+      cellX += columnWidth;
     });
   }
 
@@ -6850,7 +7372,7 @@ async function downloadPdfFile(fileName, title, table, previewWindow = null) {
     y += 28;
     ctx.font = "400 12px Arial, sans-serif";
     ctx.fillStyle = "#66716f";
-    ctx.fillText(`${state.trip.title} · ${formatDate(state.trip.startDate)}-${formatDate(state.trip.endDate)}`, x, y);
+    ctx.fillText(`${state.trip.title} · ${formatExportTripDateRange(state.trip.startDate, state.trip.endDate)}`, x, y);
     y += 24;
   }
 
@@ -6895,12 +7417,12 @@ async function downloadPdfFile(fileName, title, table, previewWindow = null) {
     window.open(url, "_blank");
   }
   window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-  showToast("PDF скачан");
+  showToast(window.t("budget.export.pdf.downloaded"));
 }
 
 async function chooseAndDownloadEstimate() {
   if (!canShowBudget()) {
-    showToast("Автор скрыл смету");
+    showToast(window.t("budget.export.estimate.hidden"));
     return;
   }
   const format = await chooseExportFormat();
@@ -6909,8 +7431,8 @@ async function chooseAndDownloadEstimate() {
     downloadEstimate();
   } else {
     const previewWindow = window.open("", "_blank");
-    previewWindow?.document.write("<p>Готовим PDF...</p>");
-    await downloadPdfFile(`${slugifyFileName(state.trip.title)}-estimate.pdf`, "Смета поездки", buildEstimateRows(), previewWindow);
+    previewWindow?.document.write(`<p>${escapeHtml(window.t("budget.export.pdf.preparing"))}</p>`);
+    await downloadPdfFile(`${slugifyFileName(state.trip.title)}-estimate.pdf`, exportT("estimate.title"), buildEstimateRows(), previewWindow);
     trackEvent("export_completed", { ...getTripAnalyticsContext(), export_type: "estimate", format: "pdf" });
   }
 }
@@ -6922,8 +7444,8 @@ async function chooseAndDownloadPlan() {
     downloadPlan();
   } else {
     const previewWindow = window.open("", "_blank");
-    previewWindow?.document.write("<p>Готовим PDF...</p>");
-    await downloadPdfFile(`${slugifyFileName(state.trip.title)}-plan.pdf`, "План по дням", buildPlanRows(), previewWindow);
+    previewWindow?.document.write(`<p>${escapeHtml(window.t("budget.export.pdf.preparing"))}</p>`);
+    await downloadPdfFile(`${slugifyFileName(state.trip.title)}-plan.pdf`, exportT("itinerary.title"), buildPlanRows(), previewWindow);
     trackEvent("export_completed", { ...getTripAnalyticsContext(), export_type: "plan", format: "pdf" });
   }
 }
@@ -7136,10 +7658,10 @@ async function buildTripPdfBlob(options) {
     }
     ctx.fillStyle = "#1f2423";
     ctx.font = "800 22px Arial, sans-serif";
-    drawPdfWrappedText(ctx, state.trip.title || "Поездка", margin + 66, y + 31, contentWidth - 76, 25, 1);
+    drawPdfWrappedText(ctx, state.trip.title || exportT("trip.title.fallback"), margin + 66, y + 31, contentWidth - 76, 25, 1);
     ctx.font = "700 12px Arial, sans-serif";
     ctx.fillStyle = "#66716f";
-    const meta = `${state.trip.destination || "Направление не задано"} · ${formatTripCardDateRange(state.trip.startDate, state.trip.endDate)} · ${formatTripDayCount(state.trip)}`;
+    const meta = `${state.trip.destination || exportT("trip.destination.missing")} · ${formatExportTripDateRange(state.trip.startDate, state.trip.endDate)} · ${formatExportTripDayCount(state.trip)}`;
     drawPdfWrappedText(ctx, meta, margin + 66, y + 56, contentWidth - 76, 15, 1);
 
     if (options.includeBudget) {
@@ -7150,20 +7672,20 @@ async function buildTripPdfBlob(options) {
       ctx.stroke();
       ctx.fillStyle = "#12363d";
       ctx.font = "800 13px Arial, sans-serif";
-      ctx.fillText(`Бюджет ${formatMoney(totals.budgetLimit)}`, margin + 194, y + 94);
+      ctx.fillText(exportT("financial.summary", { amount: formatExportMoney(totals.budgetLimit) }), margin + 194, y + 94);
 
       const cardGap = 8;
       const cardWidth = (contentWidth - cardGap * 2) / 3;
       const cardY = y + 114;
-      drawPdfMetricCard(margin, cardY, cardWidth, 42, "Оплачено", formatMoney(totals.paidTotal), "paid");
-      drawPdfMetricCard(margin + cardWidth + cardGap, cardY, cardWidth, 42, "Бронь", formatMoney(totals.confirmedOutstanding));
-      drawPdfMetricCard(margin + (cardWidth + cardGap) * 2, cardY, cardWidth, 42, "Свободно", formatMoney(totals.remainingConfirmed));
+      drawPdfMetricCard(margin, cardY, cardWidth, 42, exportT("financial.paid"), formatExportMoney(totals.paidTotal), "paid");
+      drawPdfMetricCard(margin + cardWidth + cardGap, cardY, cardWidth, 42, exportT("financial.booked"), formatExportMoney(totals.confirmedOutstanding));
+      drawPdfMetricCard(margin + (cardWidth + cardGap) * 2, cardY, cardWidth, 42, exportT("financial.available"), formatExportMoney(totals.remainingConfirmed));
     }
     if (hasGroupParticipants) {
       const participantsY = options.includeBudget ? y + 175 : y + 91;
       ctx.fillStyle = "#66716f";
       ctx.font = "800 11px Arial, sans-serif";
-      ctx.fillText("Участники", margin + 8, participantsY);
+      ctx.fillText(exportT("participants"), margin + 8, participantsY);
       ctx.fillStyle = "#1f2423";
       ctx.font = "700 11px Arial, sans-serif";
       drawPdfWrappedText(
@@ -7192,15 +7714,15 @@ async function buildTripPdfBlob(options) {
     ctx.stroke();
     ctx.fillStyle = "#1f2423";
     ctx.font = "800 15px Arial, sans-serif";
-    ctx.fillText("Бюджет", margin + 14, y + 24);
+    ctx.fillText(exportT("financial.title"), margin + 14, y + 24);
     const budgetRows = [
-      ["Бюджет поездки", formatMoney(totals.budgetLimit)],
-      ["Оплачено", formatMoney(totals.paidTotal)],
-      ["Бронь", formatMoney(totals.confirmedOutstanding)],
-      ["Свободно", formatMoney(totals.remainingConfirmed)],
-      ["Запас", formatMoney(totals.additionalTotal)],
-      ["С учётом идей, хотелок, запаса", formatMoney(totals.possibleTotal)],
-      ["Остаток с учётом идей, хотелок, запаса", formatMoney(totals.remainingAll)],
+      [exportT("financial.limit"), formatExportMoney(totals.budgetLimit)],
+      [exportT("financial.paid"), formatExportMoney(totals.paidTotal)],
+      [exportT("financial.booked"), formatExportMoney(totals.confirmedOutstanding)],
+      [exportT("financial.available"), formatExportMoney(totals.remainingConfirmed)],
+      [exportT("financial.backup"), formatExportMoney(totals.additionalTotal)],
+      [exportT("financial.possible"), formatExportMoney(totals.possibleTotal)],
+      [exportT("financial.remaining"), formatExportMoney(totals.remainingAll)],
     ];
     ctx.font = "700 11px Arial, sans-serif";
     budgetRows.forEach((row, index) => {
@@ -7216,7 +7738,7 @@ async function buildTripPdfBlob(options) {
     if (hasGroupParticipants) {
       const rowY = y + 48 + budgetRows.length * 18;
       ctx.fillStyle = "#66716f";
-      ctx.fillText("Участники", margin + 14, rowY);
+      ctx.fillText(exportT("participants"), margin + 14, rowY);
       ctx.fillStyle = "#1f2423";
       drawPdfWrappedText(
         ctx,
@@ -7244,12 +7766,12 @@ async function buildTripPdfBlob(options) {
 
   function getPdfStatusMark(status) {
     return {
-      paid: "✓",
-      fixed: "Б",
-      want: "Х",
-      maybe: "?",
-      backup: "З",
-      skipped: "×",
+      paid: exportT("status.mark.paid"),
+      fixed: exportT("status.mark.fixed"),
+      want: exportT("status.mark.want"),
+      maybe: exportT("status.mark.maybe"),
+      backup: exportT("status.mark.backup"),
+      skipped: exportT("status.mark.skipped"),
     }[status] || "•";
   }
 
@@ -7376,14 +7898,20 @@ async function buildTripPdfBlob(options) {
       ctx.font = "800 23px Arial, sans-serif";
       ctx.fillText(getPdfTypeMark(item.type), padding + 2, 29);
     }
-    const typeLabel = getTypeLabel(item.type).toUpperCase();
-    ctx.font = "800 18px Arial, sans-serif";
+    const typeLabel = getExportTypeLabel(item.type).toUpperCase();
+    const maxTypeLabelWidth = baseWidth - padding * 2 - 38;
+    let typeLabelFontSize = 18;
+    ctx.font = `800 ${typeLabelFontSize}px Arial, sans-serif`;
+    while (typeLabelFontSize > 11 && ctx.measureText(typeLabel).width > maxTypeLabelWidth) {
+      typeLabelFontSize -= 1;
+      ctx.font = `800 ${typeLabelFontSize}px Arial, sans-serif`;
+    }
     ctx.fillStyle = "#ffffff";
     ctx.textAlign = "right";
     ctx.fillText(typeLabel, baseWidth - padding, 28);
     ctx.textAlign = "left";
 
-    const price = options.includeBudget && parseMoney(item.price) ? formatMoney(item.price) : "--";
+    const price = options.includeBudget && parseMoney(item.price) ? formatExportMoney(item.price) : "--";
     const priceWidth = Math.max(78, Math.min(100, ctx.measureText(price).width + 20));
     drawPdfPricePill(price, baseWidth - padding - priceWidth, localBodyY + 17, priceWidth);
 
@@ -7392,11 +7920,11 @@ async function buildTripPdfBlob(options) {
     drawPdfWrappedText(ctx, item.title, padding, localBodyY + 22, baseWidth - padding * 2 - priceWidth - 10, 17, 2);
     ctx.fillStyle = accent;
     ctx.font = "900 italic 13px Arial, sans-serif";
-    ctx.fillText(formatDurationText(item.durationMinutes), padding, localBodyY + 64);
+    ctx.fillText(formatExportDuration(item.durationMinutes), padding, localBodyY + 64);
     drawPdfTimeSlots(item, padding, localBodyY + 73, slotFill);
     ctx.fillStyle = accent;
     ctx.font = "900 italic 13px Arial, sans-serif";
-    ctx.fillText("Дата", padding, localBodyY + 124);
+    ctx.fillText(exportT("item.date"), padding, localBodyY + 124);
     drawPdfDateSlots(item, padding, localBodyY + 133, slotFill);
 
     drawPdfImageBadge(badgeX, localBodyY + 87, 18, accent, statusImages[item.status], getPdfStatusMark(item.status));
@@ -7437,13 +7965,13 @@ async function buildTripPdfBlob(options) {
   for (const [index, date] of getTripDates().entries()) {
     const items = state.items.filter((item) => item.date === date && item.status !== "skipped").sort(sortItems);
     await ensureSpace(60);
-    drawSectionTitle(`День ${index + 1}`, formatDate(date));
+    drawSectionTitle(exportT("day.label", { number: index + 1 }), formatExportDate(date));
     if (items.length) {
       await drawItemGrid(items);
     } else {
       ctx.font = "700 12px Arial, sans-serif";
       ctx.fillStyle = "#66716f";
-      ctx.fillText("Пока пусто", margin, y);
+      ctx.fillText(exportT("day.empty"), margin, y);
       y += 28;
     }
   }
@@ -7451,7 +7979,7 @@ async function buildTripPdfBlob(options) {
   const undated = state.items.filter((item) => !item.date && item.status !== "skipped").sort(sortItems);
   if (options.includeUndated && undated.length) {
     await ensureSpace(60);
-    drawSectionTitle("Без даты", "Идеи и запасные варианты");
+    drawSectionTitle(exportT("unscheduled"), exportT("unscheduled.subtitle"));
     await drawItemGrid(undated);
   }
 
@@ -7554,8 +8082,8 @@ function setTripPdfButtonsBusy(isBusy, label = "") {
   [downloadButton, shareButton].forEach((button) => {
     if (button) button.disabled = isBusy;
   });
-  if (downloadButton) downloadButton.textContent = isBusy && label === "download" ? "Готовим..." : "Скачать";
-  if (shareButton) shareButton.textContent = isBusy && label === "share" ? "Готовим..." : "Поделиться";
+  if (downloadButton) downloadButton.textContent = window.t(isBusy && label === "download" ? "share.pdf.preparing" : "share.pdf.download");
+  if (shareButton) shareButton.textContent = window.t(isBusy && label === "share" ? "share.pdf.preparing" : "share.pdf.share");
 }
 
 async function prepareTripPdfExport(deliveryMethod) {
@@ -7563,7 +8091,7 @@ async function prepareTripPdfExport(deliveryMethod) {
   const options = getTripPdfOptions();
   const itemCount = getTripPdfItemCount(options);
   if (!itemCount) {
-    showToast("В поездке пока нет элементов для экспорта.");
+    showToast(window.t("share.pdf.empty"));
     return;
   }
   tripPdfGenerating = true;
@@ -7580,7 +8108,7 @@ async function prepareTripPdfExport(deliveryMethod) {
     blob = await buildTripPdfBlob(options);
   } catch (error) {
     trackTripPdfExportFailed(deliveryMethod, classifyTripPdfGenerationFailure(error));
-    showToast("Не удалось создать PDF. Попробуйте ещё раз.");
+    showToast(window.t("share.pdf.create.error"));
     finishTripPdfExport();
     return;
   }
@@ -7625,14 +8153,14 @@ async function downloadTripPdf() {
       if (outcome.status === "cancelled") return;
       if (outcome.status === "failure") {
         trackTripPdfExportFailed("download", "native_save");
-        showToast("Не удалось сохранить PDF. Попробуйте ещё раз.");
+        showToast(window.t("share.pdf.save.error"));
         return;
       }
     } else {
       downloadBlobFile(result.fileName, result.blob);
     }
     trackTripPdfExportCompleted("download", result.optionProps);
-    showToast("PDF сохранён");
+    showToast(window.t("share.pdf.saved"));
   } finally {
     finishTripPdfExport();
   }
@@ -7649,12 +8177,12 @@ async function shareTripPdf() {
       if (outcome.status === "cancelled") return;
       if (outcome.status === "failure") {
         trackTripPdfExportFailed("share", "native_share");
-        showToast("Не удалось отправить PDF. Попробуйте ещё раз.");
+        showToast(window.t("share.pdf.send.error"));
         return;
       }
       trackEvent("share_completed", { ...getTripAnalyticsContext(), share_format: "pdf", method: "native_share" });
       trackTripPdfExportCompleted("share", result.optionProps);
-      showToast("PDF отправлен");
+      showToast(window.t("share.pdf.sent"));
     } finally {
       finishTripPdfExport();
     }
@@ -7671,23 +8199,23 @@ async function shareTripPdf() {
       const file = new File([result.blob], result.fileName, { type: "application/pdf" });
       await navigator.share({
         title: `Backpacker: ${state.trip.title}`,
-        text: "План поездки из Backpacker",
+        text: window.t("share.pdf.description"),
         files: [file],
       });
       trackEvent("share_completed", { ...getTripAnalyticsContext(), share_format: "pdf", method: "web_share" });
       trackTripPdfExportCompleted(deliveryMethod, result.optionProps);
-      showToast("PDF отправлен");
+      showToast(window.t("share.pdf.sent"));
     } else {
       downloadBlobFile(result.fileName, result.blob);
       trackTripPdfExportCompleted(deliveryMethod, result.optionProps);
-      showToast("PDF сохранён. Его можно отправить из загрузок.");
+      showToast(window.t("share.pdf.download.fallback"));
     }
   } catch (error) {
     // A dismissed share sheet raises AbortError. It was never a failure, and it
     // is not a completed export either — neither event fires.
     if (error?.name !== "AbortError") {
       trackTripPdfExportFailed(deliveryMethod, "share_api");
-      showToast("Не удалось создать PDF. Попробуйте ещё раз.");
+      showToast(window.t("share.pdf.create.error"));
     }
   } finally {
     finishTripPdfExport();
@@ -7717,7 +8245,7 @@ async function shareTrip() {
     }
   }
   await copyText(`${text}\n\n${window.location.href}`);
-  showToast("Ссылка и сводка скопированы");
+  showToast(window.t("share.text.copied"));
   trackEvent("share_completed", { ...getTripAnalyticsContext(), share_context: "trip", share_format: "text", method: "clipboard" });
 }
 
@@ -7727,7 +8255,7 @@ async function shareApp() {
     : "https://dphnll.github.io/Backpacker_demo/";
   const shareData = {
     title: "Backpacker",
-    text: "Backpacker — план поездки, все события, бюджет и ссылки в одном месте.",
+    text: window.t("share.app.copy"),
     url,
   };
   if (navigator.share) {
@@ -7740,7 +8268,7 @@ async function shareApp() {
     }
   }
   await copyText(`${shareData.text}\n${url}`);
-  showToast("Ссылка на Backpacker скопирована");
+  showToast(window.t("share.app.copied"));
   trackEvent("share_completed", { method: "copy_fallback", result: "fallback", share_target: "app" });
 }
 
@@ -7767,14 +8295,14 @@ function openItemLink() {
 
 async function installPwa() {
   if (window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone) {
-    showToast("Приложение уже установлено");
+    showToast(window.t("home.install.already"));
     trackEvent("pwa_install_clicked", { already_installed: true });
     return;
   }
 
   if (isAppleMobileBrowser()) {
     renderIosInstallOnboarding();
-    showToast("На iPhone: Safari → Поделиться → На экран Домой");
+    showToast(window.t("home.install.ios.hint"));
     trackEvent("pwa_install_clicked", { prompt_available: false, platform: "ios" });
     return;
   }
@@ -7788,14 +8316,14 @@ async function installPwa() {
     return;
   }
 
-  showToast("Откройте меню браузера и выберите «Добавить на главный экран»");
+  showToast(window.t("home.install.browser.hint"));
   trackEvent("pwa_install_clicked", { prompt_available: false });
 }
 
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
-    showToast("Скопировано");
+    showToast(window.t("share.copy.done"));
   } catch {
     const textarea = document.createElement("textarea");
     textarea.value = text;
@@ -7803,7 +8331,7 @@ async function copyText(text) {
     textarea.select();
     document.execCommand("copy");
     textarea.remove();
-    showToast("Скопировано");
+    showToast(window.t("share.copy.done"));
   }
 }
 
@@ -7885,10 +8413,10 @@ async function startApp() {
   trackAppOpen();
   const recoverableUser = await handleRecoverableAuthCallback();
   const splashStatus = $("#appSplashStatus");
-  if (splashStatus && getSharePayloadFromUrl()) splashStatus.textContent = "Открываем приглашение...";
+  if (splashStatus && getSharePayloadFromUrl()) splashStatus.textContent = window.t("share.readonly.opening");
   readOnlyShare = await loadReadOnlyShareFromUrl();
   if (readOnlyShare) {
-    if (readOnlyShare.invalid) showToast("Ссылка недействительна");
+    if (readOnlyShare.invalid) showToast(window.t("share.readonly.invalid"));
     state = readOnlyShare.state;
     hideAppSplash();
     showTripScreen();
@@ -8024,15 +8552,17 @@ function renderTripDraftAiSheet() {
   recordingIndicator?.classList.toggle("hidden", !tripDraftAiState.isRecording);
   if (textModeButton) textModeButton.disabled = !TRIP_DRAFT_AI_ENABLED;
   if (voiceModeButton) voiceModeButton.disabled = !TRIP_DRAFT_AI_ENABLED;
-  if (title) title.textContent = ["choice", "resume"].includes(tripDraftAiState.mode) ? "Создать поездку" : "AI-черновик поездки";
-  if (recordButton) recordButton.textContent = tripDraftAiState.isRecording ? "Остановить запись" : "🎙 Надиктовать";
+  if (title) title.textContent = ["choice", "resume"].includes(tripDraftAiState.mode)
+    ? window.t("trip.setup.create.title")
+    : tripDraftT("title");
+  if (recordButton) recordButton.textContent = tripDraftAiState.isRecording ? tripDraftT("voice.stop") : tripDraftT("voice.record");
   if (parseButton) {
     parseButton.disabled = tripDraftAiState.isBusy || !TRIP_DRAFT_AI_ENABLED;
-    parseButton.textContent = tripDraftAiState.isBusy ? "Разбираю..." : "Собрать черновик";
+    parseButton.textContent = tripDraftAiState.isBusy ? tripDraftT("input.parsing") : tripDraftT("input.parse");
   }
   if (createButton) {
     createButton.disabled = tripDraftAiState.isBusy || tripDraftAiState.isCreating || !tripDraftAiState.draft;
-    createButton.textContent = tripDraftAiState.isCreating ? "Создаю..." : "Создать поездку";
+    createButton.textContent = tripDraftAiState.isCreating ? tripDraftT("preview.creating") : tripDraftT("preview.create");
   }
 }
 
@@ -8069,22 +8599,22 @@ function addBookingPackFiles(fileList) {
     const mimeType = String(file.type || "").toLowerCase();
     const descriptor = { fileName: file.name, fileSize: file.size, mimeType };
     if (!["application/pdf", "image/jpeg", "image/png", "image/webp"].includes(mimeType)) {
-      rejected.push(`${file.name}: неподдерживаемый формат`);
+      rejected.push(tripDraftT("documents.validation.unsupported", { name: file.name }));
       return;
     }
     if (file.size > core.BOOKING_PACK_MAX_FILE_BYTES) {
-      rejected.push(`${file.name}: больше 10 МБ`);
+      rejected.push(tripDraftT("documents.validation.file.large", { name: file.name }));
       return;
     }
     // Deduplicating on the same triple used to match files back after a reload keeps that
     // key unique inside a pack.
     if (seen.has(core.getBookingPackFileKey(descriptor))) return;
     if (existing.length >= core.BOOKING_PACK_MAX_FILES) {
-      rejected.push(`${file.name}: больше ${core.BOOKING_PACK_MAX_FILES} файлов`);
+      rejected.push(tripDraftT("documents.validation.files.many", { name: file.name, count: core.BOOKING_PACK_MAX_FILES }));
       return;
     }
     if (totalBytes + file.size > core.BOOKING_PACK_MAX_TOTAL_BYTES) {
-      rejected.push(`${file.name}: пакет больше 30 МБ`);
+      rejected.push(tripDraftT("documents.validation.pack.large", { name: file.name }));
       return;
     }
     seen.add(core.getBookingPackFileKey(descriptor));
@@ -8137,24 +8667,24 @@ function renderTripDraftDocumentsStep() {
       <article class="trip-draft-document-row${entry.file ? "" : " is-missing"}">
         <div class="trip-draft-document-copy">
           <span class="trip-draft-document-name" title="${escapeAttr(entry.fileName)}">${escapeHtml(entry.fileName)}</span>
-          <span class="trip-draft-document-meta">${escapeHtml(getTripItemAttachmentsCore()?.formatAttachmentSize?.(entry.fileSize) || "")}${entry.file ? "" : " · файл не найден"}</span>
+          <span class="trip-draft-document-meta">${escapeHtml(getTripItemAttachmentsCore()?.formatAttachmentSize?.(entry.fileSize) || "")}${entry.file ? "" : ` · ${escapeHtml(tripDraftT("documents.file.missing"))}`}</span>
         </div>
-        <button class="ghost-button compact" type="button" data-booking-pack-remove="${index}">Убрать</button>
+        <button class="ghost-button compact" type="button" data-booking-pack-remove="${index}">${escapeHtml(tripDraftT("documents.remove"))}</button>
       </article>
     `).join("")
-    : `<p class="trip-draft-document-empty">Документы не выбраны.</p>`;
+    : `<p class="trip-draft-document-empty">${escapeHtml(tripDraftT("documents.empty"))}</p>`;
 
   if (missingNote) {
     missingNote.classList.toggle("hidden", missing.length === 0);
     // After a reload the descriptors are there but the files are not; say so plainly.
     if (missing.length) {
-      missingNote.textContent = `Не найдены исходные файлы: ${missing.length}. Выберите их снова, чтобы прикрепить к карточкам. Поездку можно создать и без них.`;
+      missingNote.textContent = tripDraftT("documents.missing", { count: missing.length });
     }
   }
   if (parseButton) {
     const ready = files.some((entry) => entry.file);
     parseButton.disabled = tripDraftAiState.isBusy || !ready;
-    parseButton.textContent = tripDraftAiState.isBusy ? "Читаю документы..." : "Собрать поездку";
+    parseButton.textContent = tripDraftAiState.isBusy ? tripDraftT("documents.parsing") : tripDraftT("documents.parse");
   }
 }
 
@@ -8182,12 +8712,12 @@ async function parseBookingPackDocuments() {
   if (tripDraftAiState.isBusy) return;
   const entries = tripDraftAiState.bookingPackFiles.filter((entry) => entry.file);
   if (!entries.length) {
-    setTripDraftAiStatus("Выберите документы поездки.", true);
+    setTripDraftAiStatus(tripDraftT("documents.validation.required"), true);
     return;
   }
   const comment = $("#tripDraftDocumentsComment")?.value.trim() || "";
   tripDraftAiState = { ...tripDraftAiState, isBusy: true, sourceText: comment, isBookingPack: true };
-  setTripDraftAiStatus("Читаю документы...");
+  setTripDraftAiStatus(tripDraftT("documents.parsing"));
   renderTripDraftAiSheet();
   trackEvent("trip_draft_ai_generation_started", { mode: "documents" });
   try {
@@ -8219,11 +8749,11 @@ async function parseBookingPackDocuments() {
   } catch (error) {
     tripDraftAiState = { ...tripDraftAiState, isBusy: false };
     const message = {
-      documents_too_large: "Пакет документов больше 30 МБ. Уберите часть файлов.",
-      too_many_documents: "Слишком много файлов. Оставьте не больше восьми.",
-      unsupported_document_type: "Один из файлов неподдерживаемого формата.",
-      supabase_not_configured: "Supabase не настроен: разбор документов пока недоступен.",
-    }[error.message] || "Не удалось разобрать документы. Файлы остались выбранными, попробуйте ещё раз.";
+      documents_too_large: tripDraftT("documents.error.pack.large"),
+      too_many_documents: tripDraftT("documents.error.files.many"),
+      unsupported_document_type: tripDraftT("documents.error.unsupported"),
+      supabase_not_configured: tripDraftT("documents.error.unavailable"),
+    }[error.message] || tripDraftT("documents.error.parse");
     setTripDraftAiStatus(message, true);
     renderTripDraftAiSheet();
     trackEvent("trip_draft_ai_generation_failed", { mode: "documents", result: "failed", error_reason_bucket: "unknown" });
@@ -8332,7 +8862,7 @@ function restoreTripDraftPending(pending) {
     // The traveller's own words outlive a contract change; a parsed draft does not.
     tripDraftAiState = { ...tripDraftAiState, mode: "input", inputMode: pending.inputMode, sourceText: pending.sourceText, draft: null };
     if (input) input.value = pending.sourceText;
-    setTripDraftAiStatus("Исходный текст восстановлен. Черновик нужно пересобрать.");
+    setTripDraftAiStatus(tripDraftT("resume.restored.source"));
     return;
   }
   // Re-normalize rather than trust storage, but without guardrails: hand-typed prices are
@@ -8364,7 +8894,7 @@ function continueTripDraftPending() {
 }
 
 function restartTripDraftPending() {
-  if (!window.confirm("Начать заново? Сохранённый черновик будет удалён.")) return;
+  if (!window.confirm(tripDraftT("resume.confirm.restart"))) return;
   clearTripDraftPending();
   tripDraftAiState = createEmptyTripDraftAiState();
   const input = $("#tripDraftTextInput");
@@ -8390,7 +8920,7 @@ function openTripDraftAiSheet() {
 function startTripDraftTextMode(mode = "text") {
   if (!TRIP_DRAFT_AI_ENABLED) return;
   tripDraftAiState = { ...tripDraftAiState, mode: "input", inputMode: mode, draft: null, isCreating: false };
-  setTripDraftAiStatus(mode === "voice" ? "Запишите голос, потом проверьте текст перед разбором." : "");
+  setTripDraftAiStatus(mode === "voice" ? tripDraftT("voice.hint") : "");
   renderTripDraftAiSheet();
   window.setTimeout(() => $("#tripDraftTextInput")?.focus(), 80);
 }
@@ -8431,7 +8961,7 @@ async function toggleTripDraftRecording() {
     return;
   }
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-    setTripDraftAiStatus("Запись голоса не поддерживается в этом браузере. Можно вставить текст.", true);
+    setTripDraftAiStatus(tripDraftT("voice.unsupported"), true);
     return;
   }
   try {
@@ -8445,7 +8975,7 @@ async function toggleTripDraftRecording() {
       stream.getTracks().forEach((track) => track.stop());
       tripDraftAiState = { ...tripDraftAiState, isRecording: false, mediaRecorder: null, isBusy: true };
       renderTripDraftAiSheet();
-      setTripDraftAiStatus("Расшифровываю запись...");
+      setTripDraftAiStatus(tripDraftT("voice.transcribing"));
       try {
         const blob = new Blob(tripDraftAiState.chunks, { type: recorder.mimeType || "audio/webm" });
         const audioDataUrl = await blobToDataUrl(blob);
@@ -8453,14 +8983,14 @@ async function toggleTripDraftRecording() {
         const input = $("#tripDraftTextInput");
         if (input) input.value = [input.value.trim(), payload.text || ""].filter(Boolean).join(input.value.trim() ? "\n\n" : "");
         tripDraftAiState = { ...tripDraftAiState, inputMode: "voice" };
-        setTripDraftAiStatus("Текст готов. Проверьте его перед разбором.");
+        setTripDraftAiStatus(tripDraftT("voice.ready"));
         // A dictated minute is the most expensive thing to lose, so it is persisted at once.
         saveTripDraftPending();
         trackEvent("trip_draft_voice_transcribed", { ok: true });
       } catch (error) {
         const message = error.message === "invalid_audio"
-          ? "Запись получилась слишком короткой или в неподходящем формате. Попробуйте записать ещё раз."
-          : "Не удалось расшифровать запись. Можно вставить текст вручную.";
+          ? tripDraftT("voice.invalid")
+          : tripDraftT("voice.error");
         setTripDraftAiStatus(message, true);
         trackEvent("trip_draft_voice_transcribed", { ok: false, error_reason_bucket: error.message === "invalid_audio" ? "invalid_audio" : "unknown" });
       } finally {
@@ -8469,10 +8999,10 @@ async function toggleTripDraftRecording() {
       }
     });
     recorder.start();
-    setTripDraftAiStatus("Говорите. Нажмите ещё раз, чтобы остановить запись.");
+    setTripDraftAiStatus(tripDraftT("voice.listening"));
     renderTripDraftAiSheet();
   } catch {
-    setTripDraftAiStatus("Не удалось получить доступ к микрофону. Можно вставить текст.", true);
+    setTripDraftAiStatus(tripDraftT("voice.microphone.error"), true);
   }
 }
 
@@ -8614,13 +9144,14 @@ function normalizeTripDraftResponse(payload = {}, sourceText = "", { applyGuardr
   // Chronology settles every card's day from the traveller's own signals before the mapping
   // below consumes dayIndex. Skipped for preview edits, where the day is the user's choice.
   const chronology = applyChronology && core?.applyTripChronology
-    ? core.applyTripChronology({ items, questions: draft.questions, trip: { startDate, endDate, dayCount } })
+    ? core.applyTripChronology({ items, questions: draft.questions, trip: { startDate, endDate, dayCount }, locale: getTripDraftLocale() })
     : { items, questions: draft.questions };
   const scheduledItems = Array.isArray(chronology.items) ? chronology.items : items;
   const questions = Array.isArray(chronology.questions) ? chronology.questions.filter(Boolean).slice(0, 5) : [];
   const normalizedItems = scheduledItems.slice(0, 80).map((item, index) => {
+    const fallbackTitle = tripDraftT("preview.item.default", { number: index + 1 });
     return {
-      title: String(item.title || `Идея ${index + 1}`).trim().slice(0, 120) || `Идея ${index + 1}`,
+      title: String(item.title || fallbackTitle).trim().slice(0, 120) || fallbackTitle,
       type: normalizeTripDraftItemTypeForItem(item),
       status: statuses.some(([key]) => key === item.status) ? item.status : DEFAULT_ITEM_STATUS,
       priority: priorities.some(([key]) => key === item.priority) ? item.priority : DEFAULT_ITEM_PRIORITY,
@@ -8650,7 +9181,7 @@ function normalizeTripDraftResponse(payload = {}, sourceText = "", { applyGuardr
   ) || normalizedItems;
   return {
     trip: {
-      title: String(trip.title || "Новая поездка").trim().slice(0, 80) || "Новая поездка",
+      title: String(trip.title || tripDraftT("preview.trip.default")).trim().slice(0, 80) || tripDraftT("preview.trip.default"),
       destination: String(trip.destination || "").trim().slice(0, 120),
       startDate,
       endDate: startDate && endDate && endDate < startDate ? startDate : endDate,
@@ -8674,16 +9205,14 @@ function renderTripDraftOptionList(options, selectedValue) {
   return options.map(([value, label]) => `<option value="${escapeAttr(value)}"${value === selectedValue ? " selected" : ""}>${escapeHtml(label)}</option>`).join("");
 }
 
-const TRIP_DRAFT_BUDGET_LEVEL_LABELS = Object.freeze({
-  unknown: "Не указан",
-  low: "Бюджетно",
-  medium: "Средний",
-  high: "Высокий",
-});
+function getTripDraftBudgetLevelLabel(level) {
+  const normalized = ["low", "medium", "high"].includes(level) ? level : "unknown";
+  return tripDraftT(`preview.budget.level.${normalized}`);
+}
 
 function renderTripDraftBudgetLevelOptions(selectedValue) {
-  return Object.entries(TRIP_DRAFT_BUDGET_LEVEL_LABELS)
-    .map(([value, label]) => `<option value="${escapeAttr(value)}"${value === selectedValue ? " selected" : ""}>${escapeHtml(label)}</option>`)
+  return ["unknown", "low", "medium", "high"]
+    .map((value) => `<option value="${escapeAttr(value)}"${value === selectedValue ? " selected" : ""}>${escapeHtml(getTripDraftBudgetLevelLabel(value))}</option>`)
     .join("");
 }
 
@@ -8692,10 +9221,13 @@ function renderTripDraftBudgetLevelOptions(selectedValue) {
 function renderTripDraftBudgetNote(trip = {}) {
   if (trip.budgetLevel === "unknown" && !trip.budgetLimit) return "";
   const parts = [];
-  if (trip.budgetLevel && trip.budgetLevel !== "unknown") parts.push(`уровень «${TRIP_DRAFT_BUDGET_LEVEL_LABELS[trip.budgetLevel]}»`);
-  if (trip.budgetLimit) parts.push("сумма");
-  const source = trip.budgetSourceText ? ` По формулировке: ${escapeHtml(trip.budgetSourceText)}.` : "";
-  return `<p class="trip-draft-budget-note">Из вашего описания: ${escapeHtml(parts.join(" и "))}.${source}</p>`;
+  if (trip.budgetLevel && trip.budgetLevel !== "unknown") {
+    parts.push(tripDraftT("preview.budget.part.level", { level: getTripDraftBudgetLevelLabel(trip.budgetLevel) }));
+  }
+  if (trip.budgetLimit) parts.push(tripDraftT("preview.budget.part.amount"));
+  const formattedParts = new Intl.ListFormat(getTripDraftLocale(), { style: "long", type: "conjunction" }).format(parts);
+  const source = trip.budgetSourceText ? tripDraftT("preview.budget.source", { text: trip.budgetSourceText }) : "";
+  return `<p class="trip-draft-budget-note">${escapeHtml(tripDraftT("preview.budget.summary", { parts: formattedParts, source }))}</p>`;
 }
 
 function renderTripDraftPriceNote(item = {}, tripCurrency = "") {
@@ -8703,18 +9235,20 @@ function renderTripDraftPriceNote(item = {}, tripCurrency = "") {
   // A number is only meaningful in its own currency. Converting it would invent a fact, so
   // the amount stays visible and explicitly out of the budget.
   if (item.documentCurrency && !core?.isBookingPackPriceBudgetEligible?.(item, tripCurrency)) {
-    return `<p class="trip-draft-price-note is-mismatch"><strong>Цена указана в ${escapeHtml(item.documentCurrency)}, а валюта поездки — ${escapeHtml(tripCurrency)}.</strong> В бюджет она не будет добавлена. Укажите сумму в валюте поездки вручную.${item.evidenceText ? ` В документе: «${escapeHtml(item.evidenceText)}»` : ""}</p>`;
+    const heading = tripDraftT("preview.price.currency.mismatch", { documentCurrency: item.documentCurrency, tripCurrency });
+    const evidence = item.evidenceText ? tripDraftT("preview.price.document.source", { text: item.evidenceText }) : "";
+    return `<p class="trip-draft-price-note is-mismatch"><strong>${escapeHtml(heading)}</strong>${escapeHtml(tripDraftT("preview.price.currency.hint"))}${escapeHtml(evidence)}</p>`;
   }
   // A value read out of the traveller's own document: shown with its quote so they can
   // check it against the file. Until they press create it is extracted, not confirmed.
   if (item.evidenceText) {
-    return `<p class="trip-draft-price-note is-extracted"><strong>Из документа — проверьте.</strong> В документе: «${escapeHtml(item.evidenceText)}»</p>`;
+    return `<p class="trip-draft-price-note is-extracted"><strong>${escapeHtml(tripDraftT("preview.price.document"))}</strong>${escapeHtml(tripDraftT("preview.price.document.source", { text: item.evidenceText }))}</p>`;
   }
   if (item.priceConfidence === "estimate" && item.priceSourceText) {
-    return `<p class="trip-draft-price-note is-estimate">Примерно: ${escapeHtml(item.priceSourceText)}. Это ваша формулировка, а не подтверждённая цена.</p>`;
+    return `<p class="trip-draft-price-note is-estimate">${escapeHtml(tripDraftT("preview.price.estimate", { text: item.priceSourceText }))}</p>`;
   }
   if (item.priceConfidence === "unknown") {
-    return `<p class="trip-draft-price-note">Цена не указана. Пустое поле — не бесплатное событие, а неизвестная стоимость.</p>`;
+    return `<p class="trip-draft-price-note">${escapeHtml(tripDraftT("preview.price.unknown"))}</p>`;
   }
   return "";
 }
@@ -8728,15 +9262,15 @@ function renderTripDraftCurrencyOptions(selectedValue) {
 function renderTripDraftDayField(draft, item) {
   if (!draft.trip.startDate && !draft.trip.endDate && draft.trip.dayCount > 0) {
     const options = [
-      `<option value="">Без даты</option>`,
+      `<option value="">${escapeHtml(tripDraftT("preview.day.unscheduled"))}</option>`,
       ...Array.from({ length: normalizeTripDayCount(draft.trip.dayCount) }, (_, index) => {
         const value = createVirtualDayDate(index + 1);
-        return `<option value="${escapeAttr(value)}"${item.date === value ? " selected" : ""}>День ${index + 1}</option>`;
+        return `<option value="${escapeAttr(value)}"${item.date === value ? " selected" : ""}>${escapeHtml(tripDraftT("preview.day.number", { number: index + 1 }))}</option>`;
       }),
     ].join("");
-    return `<label class="field">День<select data-draft-item-field="date">${options}</select></label>`;
+    return `<label class="field">${escapeHtml(tripDraftT("preview.field.day"))}<select data-draft-item-field="date">${options}</select></label>`;
   }
-  return `<label class="field">День<input type="date" data-draft-item-field="date" value="${escapeAttr(item.date)}" /></label>`;
+  return `<label class="field">${escapeHtml(tripDraftT("preview.field.day"))}<input type="date" data-draft-item-field="date" value="${escapeAttr(item.date)}" /></label>`;
 }
 
 function normalizeTripDraftItemDate(value = "", trip = {}) {
@@ -8755,56 +9289,57 @@ function renderTripDraftPreview(draft) {
     return;
   }
   const sourceText = tripDraftAiState.sourceText || $("#tripDraftTextInput")?.value || "";
+  const localizedItemTypes = itemTypes.map(([value]) => [value, getPlanTypeLabel(value)]);
   const approximateDateNote = draft.trip.datePrecision === "approximate"
-    ? `<p class="trip-draft-date-note"><strong>Примерные даты.</strong>${draft.trip.dateSourceText ? ` По формулировке: ${escapeHtml(draft.trip.dateSourceText)}.` : ""} Можно изменить даты вручную перед созданием.</p>`
+    ? `<p class="trip-draft-date-note"><strong>${escapeHtml(tripDraftT("preview.date.approximate"))}</strong>${draft.trip.dateSourceText ? escapeHtml(tripDraftT("preview.date.source", { text: draft.trip.dateSourceText })) : ""}${escapeHtml(tripDraftT("preview.date.hint"))}</p>`
     : "";
   box.innerHTML = `
     <article class="trip-draft-preview-card">
-      <h3>Поездка</h3>
+      <h3>${escapeHtml(tripDraftT("preview.trip"))}</h3>
       <div class="trip-draft-field-grid">
-        <label class="field">Название<input data-draft-trip-field="title" value="${escapeAttr(draft.trip.title)}" /></label>
-        <label class="field">Направление<input data-draft-trip-field="destination" value="${escapeAttr(draft.trip.destination)}" /></label>
-        <label class="field">Дата с<input type="date" data-draft-trip-field="startDate" value="${escapeAttr(draft.trip.startDate)}" /></label>
-        <label class="field">Дата до<input type="date" data-draft-trip-field="endDate" value="${escapeAttr(draft.trip.endDate)}" /></label>
-        <label class="field">Валюта<select data-draft-trip-field="currency">${renderTripDraftCurrencyOptions(draft.trip.currency)}</select></label>
-        <label class="field">Бюджет<input inputmode="numeric" data-draft-trip-field="budgetLimit" value="${escapeAttr(draft.trip.budgetLimit ? draft.trip.budgetLimit : "")}" /></label>
-        <label class="field">Уровень бюджета<select data-draft-trip-field="budgetLevel">${renderTripDraftBudgetLevelOptions(draft.trip.budgetLevel)}</select></label>
+        <label class="field">${escapeHtml(tripDraftT("preview.field.title"))}<input data-draft-trip-field="title" value="${escapeAttr(draft.trip.title)}" /></label>
+        <label class="field">${escapeHtml(tripDraftT("preview.field.destination"))}<input data-draft-trip-field="destination" value="${escapeAttr(draft.trip.destination)}" /></label>
+        <label class="field">${escapeHtml(tripDraftT("preview.field.start"))}<input type="date" data-draft-trip-field="startDate" value="${escapeAttr(draft.trip.startDate)}" /></label>
+        <label class="field">${escapeHtml(tripDraftT("preview.field.end"))}<input type="date" data-draft-trip-field="endDate" value="${escapeAttr(draft.trip.endDate)}" /></label>
+        <label class="field">${escapeHtml(tripDraftT("preview.field.currency"))}<select data-draft-trip-field="currency">${renderTripDraftCurrencyOptions(draft.trip.currency)}</select></label>
+        <label class="field">${escapeHtml(tripDraftT("preview.field.budget"))}<input inputmode="numeric" data-draft-trip-field="budgetLimit" value="${escapeAttr(draft.trip.budgetLimit ? draft.trip.budgetLimit : "")}" /></label>
+        <label class="field">${escapeHtml(tripDraftT("preview.field.budget.level"))}<select data-draft-trip-field="budgetLevel">${renderTripDraftBudgetLevelOptions(draft.trip.budgetLevel)}</select></label>
       </div>
       ${renderTripDraftBudgetNote(draft.trip)}
       ${approximateDateNote}
-      <label class="field wide trip-draft-preferences-field">Пожелания к поездке<textarea rows="4" data-draft-trip-field="preferencesText">${escapeHtml(draft.trip.preferencesText || "")}</textarea></label>
+      <label class="field wide trip-draft-preferences-field">${escapeHtml(tripDraftT("preview.field.preferences"))}<textarea rows="4" data-draft-trip-field="preferencesText">${escapeHtml(draft.trip.preferencesText || "")}</textarea></label>
     </article>
     <details class="trip-draft-source">
-      <summary>Исходное описание</summary>
+      <summary>${escapeHtml(tripDraftT("preview.source"))}</summary>
       <textarea id="tripDraftPreviewSourceText" rows="5">${escapeHtml(sourceText)}</textarea>
       <div class="trip-draft-source-actions">
-        <button class="ghost-button compact" type="button" data-trip-draft-action="edit-source">Вернуться к описанию</button>
-        <button class="ghost-button compact" type="button" data-trip-draft-action="rebuild">Пересобрать черновик</button>
+        <button class="ghost-button compact" type="button" data-trip-draft-action="edit-source">${escapeHtml(tripDraftT("preview.source.edit"))}</button>
+        <button class="ghost-button compact" type="button" data-trip-draft-action="rebuild">${escapeHtml(tripDraftT("preview.rebuild"))}</button>
       </div>
     </details>
     <article class="trip-draft-preview-card">
-      <h3>События</h3>
+      <h3>${escapeHtml(tripDraftT("preview.items"))}</h3>
       <div class="trip-draft-items-editor">
         ${draft.items.length ? draft.items.map((item, index) => `
           <section class="trip-draft-item-editor" data-draft-item-index="${index}">
             <div class="trip-draft-item-header">
-              <strong>${escapeHtml(item.title || `Идея ${index + 1}`)}</strong>
-              <button class="ghost-button compact" type="button" data-trip-draft-action="delete-item" data-draft-item-index="${index}">Удалить</button>
+              <strong>${escapeHtml(item.title || tripDraftT("preview.item.default", { number: index + 1 }))}</strong>
+              <button class="ghost-button compact" type="button" data-trip-draft-action="delete-item" data-draft-item-index="${index}">${escapeHtml(tripDraftT("preview.item.delete"))}</button>
             </div>
-            <label class="field wide">Название<input data-draft-item-field="title" value="${escapeAttr(item.title)}" /></label>
+            <label class="field wide">${escapeHtml(tripDraftT("preview.field.title"))}<input data-draft-item-field="title" value="${escapeAttr(item.title)}" /></label>
             <div class="trip-draft-field-grid">
-              <label class="field">Тип<select data-draft-item-field="type">${renderTripDraftOptionList(itemTypes, item.type)}</select></label>
+              <label class="field">${escapeHtml(tripDraftT("preview.field.type"))}<select data-draft-item-field="type">${renderTripDraftOptionList(localizedItemTypes, item.type)}</select></label>
               ${renderTripDraftDayField(draft, item)}
-              <label class="field">Время<input type="time" data-draft-item-field="startTime" value="${escapeAttr(item.startTime)}" /></label>
-              <label class="field">Цена<input inputmode="numeric" data-draft-item-field="price" value="${escapeAttr(item.price ? item.price : "")}" placeholder="${escapeAttr(item.priceConfidence === "unknown" ? "Цена не указана" : "")}" /></label>
+              <label class="field">${escapeHtml(tripDraftT("preview.field.time"))}<input type="time" data-draft-item-field="startTime" value="${escapeAttr(item.startTime)}" /></label>
+              <label class="field">${escapeHtml(tripDraftT("preview.field.price"))}<input inputmode="numeric" data-draft-item-field="price" value="${escapeAttr(item.price ? item.price : "")}" placeholder="${escapeAttr(item.priceConfidence === "unknown" ? tripDraftT("preview.field.price.placeholder") : "")}" /></label>
             </div>
             ${renderTripDraftPriceNote(item, draft.trip.currency)}
-            <label class="field wide">Заметка<textarea rows="3" data-draft-item-field="notes">${escapeHtml(item.notes || "")}</textarea></label>
+            <label class="field wide">${escapeHtml(tripDraftT("preview.field.notes"))}<textarea rows="3" data-draft-item-field="notes">${escapeHtml(item.notes || "")}</textarea></label>
           </section>
-        `).join("") : `<p>AI не нашёл событий. Можно вернуться к описанию и пересобрать черновик.</p>`}
+        `).join("") : `<p>${escapeHtml(tripDraftT("preview.items.empty"))}</p>`}
       </div>
     </article>
-    ${draft.questions.length ? `<article class="trip-draft-preview-card"><h3>Что можно уточнить позже</h3><ul>${draft.questions.map((question) => `<li>${escapeHtml(question)}</li>`).join("")}</ul></article>` : ""}
+    ${draft.questions.length ? `<article class="trip-draft-preview-card"><h3>${escapeHtml(tripDraftT("preview.questions"))}</h3><ul>${draft.questions.map((question) => `<li>${escapeHtml(question)}</li>`).join("")}</ul></article>` : ""}
   `;
 }
 
@@ -8827,7 +9362,7 @@ function collectTripDraftPreviewForm() {
     const priceConfidence = !nextPrice ? "unknown" : priceChanged ? "confirmed" : (original.priceConfidence || "confirmed");
     return {
       ...original,
-      title: readItemField("title").trim() || original.title || `Идея ${index + 1}`,
+      title: readItemField("title").trim() || original.title || tripDraftT("preview.item.default", { number: index + 1 }),
       type: normalizeTripDraftItemType(readItemField("type") || original.type),
       date: normalizeTripDraftItemDate(readItemField("date"), current.trip),
       startTime: normalizeTripDraftTime(readItemField("startTime")),
@@ -8892,10 +9427,10 @@ function handleTripDraftPreviewAction(event) {
   if (action === "rebuild") {
     const sourceText = $("#tripDraftPreviewSourceText")?.value.trim() || "";
     if (!sourceText) {
-      setTripDraftAiStatus("Добавьте описание поездки перед сборкой черновика.", true);
+      setTripDraftAiStatus(tripDraftT("input.validation.required"), true);
       return;
     }
-    if (tripDraftAiState.draft && !window.confirm("Текущие правки черновика будут заменены новым результатом AI. Пересобрать?")) return;
+    if (tripDraftAiState.draft && !window.confirm(tripDraftT("input.confirm.rebuild"))) return;
     const input = $("#tripDraftTextInput");
     if (input) input.value = sourceText;
     tripDraftAiState = { ...tripDraftAiState, mode: "input", sourceText };
@@ -8909,7 +9444,7 @@ async function parseTripDraftText() {
   const input = $("#tripDraftTextInput");
   const text = input?.value.trim() || "";
   if (!text) {
-    setTripDraftAiStatus("Добавьте описание поездки перед сборкой черновика.", true);
+    setTripDraftAiStatus(tripDraftT("input.validation.required"), true);
     input?.focus();
     return;
   }
@@ -8918,14 +9453,13 @@ async function parseTripDraftText() {
   tripDraftAiState = { ...tripDraftAiState, sourceText: text };
   flushTripDraftPendingSave();
   tripDraftAiState = { ...tripDraftAiState, isBusy: true, sourceText: text };
-  setTripDraftAiStatus("Разбираю текст в черновик...");
+  setTripDraftAiStatus(tripDraftT("input.status.parsing"));
   renderTripDraftAiSheet();
   trackEvent("trip_draft_ai_generation_started", { mode: tripDraftAiState.inputMode === "voice" ? "voice" : "text" });
   try {
     const payload = await callTripDraftAiFunction("parse", {
       text,
       schemaVersion: TRIP_DRAFT_AI_SCHEMA_VERSION,
-      locale: "ru-RU",
       // The model has no reliable notion of today, so the client states it.
       today: getClientTodayIsoDate(),
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
@@ -8939,7 +9473,7 @@ async function parseTripDraftText() {
     trackEvent("trip_draft_ai_generation_completed", { mode: tripDraftAiState.inputMode === "voice" ? "voice" : "text", result: "success" });
   } catch (error) {
     tripDraftAiState = { ...tripDraftAiState, isBusy: false };
-    setTripDraftAiStatus(error.message === "supabase_not_configured" ? "Supabase не настроен: AI-черновик пока недоступен." : "Не удалось разобрать поездку. Попробуйте ещё раз.", true);
+    setTripDraftAiStatus(error.message === "supabase_not_configured" ? tripDraftT("input.error.unavailable") : tripDraftT("input.error.parse"), true);
     renderTripDraftAiSheet();
     trackEvent("trip_draft_ai_generation_failed", { mode: tripDraftAiState.inputMode === "voice" ? "voice" : "text", result: "failed", error_reason_bucket: error.message === "supabase_not_configured" ? "network" : "unknown" });
   }
@@ -9021,11 +9555,13 @@ async function attachBookingPackDocuments(entry, draft, skippedCount = 0) {
     });
   });
   if (!jobs.length) {
-    showToast(skippedCount ? `Поездка создана. Вложений не добавлено: ${skippedCount}` : "Поездка создана");
+    showToast(skippedCount
+      ? tripDraftT("toast.created.attachments.skipped", { count: skippedCount })
+      : tripDraftT("toast.created"));
     return;
   }
 
-  showToast("Поездка создана. Прикрепляю документы...");
+  showToast(tripDraftT("toast.attachments.uploading"));
   const failed = [];
   try {
     await ensureSupabaseOwnerSession();
@@ -9047,8 +9583,8 @@ async function attachBookingPackDocuments(entry, draft, skippedCount = 0) {
   bookingPackFailedUploads = failed.map((job) => ({ ...job, tripId: entry.id }));
   renderBookingPackUploadNotice();
   const total = failed.length + skippedCount;
-  if (!total) showToast("Поездка создана, документы прикреплены");
-  else showToast(`Поездка создана. Не добавлено вложений: ${total}`);
+  if (!total) showToast(tripDraftT("toast.attachments.done"));
+  else showToast(tripDraftT("toast.attachments.failed", { count: total }));
 }
 
 async function retryBookingPackUploads() {
@@ -9073,7 +9609,9 @@ async function retryBookingPackUploads() {
   }
   bookingPackFailedUploads = failed;
   renderBookingPackUploadNotice();
-  showToast(failed.length ? `Осталось не загружено: ${failed.length}` : "Документы прикреплены");
+  showToast(failed.length
+    ? tripDraftT("toast.attachments.retry.failed", { count: failed.length })
+    : tripDraftT("toast.attachments.retry.done"));
 }
 
 function renderBookingPackUploadNotice() {
@@ -9083,14 +9621,14 @@ function renderBookingPackUploadNotice() {
   notice.classList.toggle("hidden", count === 0);
   if (!count) return;
   const names = bookingPackFailedUploads.map((job) => job.fileName).join(", ");
-  $("#bookingPackUploadSummary").textContent = `Не загрузились вложения: ${count}. ${names}`;
+  $("#bookingPackUploadSummary").textContent = tripDraftT("attachments.notice", { count, names });
 }
 
 async function createTripFromAiDraft() {
   if (!tripDraftAiState.draft || tripDraftAiState.isCreating) return;
   const previewSourceText = $("#tripDraftPreviewSourceText")?.value.trim();
   if (typeof previewSourceText === "string" && previewSourceText !== String(tripDraftAiState.sourceText || "").trim()) {
-    setTripDraftAiStatus("Исходное описание изменено. Нажмите «Пересобрать черновик», чтобы обновить preview.", true);
+    setTripDraftAiStatus(tripDraftT("preview.error.source.changed"), true);
     return;
   }
   const draft = syncTripDraftPreviewStateFromForm();
@@ -9100,14 +9638,10 @@ async function createTripFromAiDraft() {
   const missingFiles = tripDraftAiState.isBookingPack ? getBookingPackMissingFiles() : [];
   if (missingFiles.length) {
     const names = missingFiles.map((entry) => entry.fileName).join(", ");
-    const proceed = window.confirm(
-      `Не найдены исходные файлы: ${missingFiles.length}. Поездка будет создана без этих вложений. `
-      + `Извлечённые данные останутся в карточках — проверьте их.\n\n${names}\n\n`
-      + `ОК — создать без вложений. Отмена — вернуться и выбрать файлы.`,
-    );
+    const proceed = window.confirm(tripDraftT("preview.confirm.missing.files", { count: missingFiles.length, names }));
     if (!proceed) {
       tripDraftAiState = { ...tripDraftAiState, mode: "documents" };
-      setTripDraftAiStatus("Выберите недостающие файлы и вернитесь к созданию поездки.");
+      setTripDraftAiStatus(tripDraftT("preview.missing.files.back"));
       renderTripDraftAiSheet();
       return;
     }
@@ -9123,7 +9657,7 @@ async function createTripFromAiDraft() {
     closeSheet("tripDraftAiSheet");
     openTrip(entry.id);
     if (tripDraftAiState.isBookingPack) await attachBookingPackDocuments(entry, draft, missingFiles.length);
-    else showToast("Поездка создана");
+    else showToast(tripDraftT("toast.created"));
     trackEvent("trip_draft_ai_confirmed", { mode: tripDraftAiState.inputMode === "voice" ? "voice" : "text", result: "success" });
     trackEvent("trip_created", {
       ...getTripAnalyticsContext(entry.state.trip),
@@ -9137,13 +9671,14 @@ async function createTripFromAiDraft() {
   } catch {
     tripDraftAiState = { ...tripDraftAiState, isCreating: false, draft };
     renderTripDraftAiSheet();
-    setTripDraftAiStatus("Не удалось создать поездку. Черновик сохранён, попробуйте ещё раз.", true);
+    setTripDraftAiStatus(tripDraftT("preview.error.create"), true);
     trackEvent("trip_draft_ai_generation_failed", { mode: tripDraftAiState.inputMode === "voice" ? "voice" : "text", result: "failed", error_reason_bucket: "save" });
   }
 }
 
 function createNewTrip(creationSource = "home") {
   const entry = createBlankTripEntry();
+  entry.state.trip.title = window.t("trip.setup.default.title");
   tripStore.trips.push(entry);
   persistTripStore(tripStore);
   openTrip(entry.id);
@@ -9209,18 +9744,18 @@ async function saveSelectedCover(event) {
     entry.updatedAt = new Date().toISOString();
     persistTripStore(tripStore);
     renderHome();
-    showToast("Обложка обновлена");
+    showToast(window.t("home.trip.cover.updated"));
     trackEvent("trip_cover_updated", getTripAnalyticsContext(entry.state.trip));
   } catch {
-    showToast("Не удалось загрузить обложку");
+    showToast(window.t("home.trip.cover.failed"));
   }
 }
 
 function deleteTrip(tripId) {
   const entry = tripStore.trips.find((trip) => trip.id === tripId);
   if (!entry || entry.isDemo) return;
-  const title = entry.state.trip.title || "поездку";
-  if (!window.confirm(`Удалить «${title}»? Это действие нельзя отменить.`)) return;
+  const title = entry.state.trip.title || window.t("home.trip.delete.fallback");
+  if (!window.confirm(window.t("home.trip.delete.confirm", { title }))) return;
 
   queuePrivateTripDeletion(tripId);
   tripStore.trips = tripStore.trips.filter((trip) => trip.id !== tripId);
@@ -9236,7 +9771,7 @@ function deleteTrip(tripId) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
   renderHome();
-  showToast("Поездка удалена");
+  showToast(window.t("home.trip.deleted"));
   trackEvent("trip_deleted", { trip_id: tripId, trip_origin: "user_created" });
 }
 
@@ -9684,7 +10219,24 @@ function handleNativeDateTimeClear(event) {
   input.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
+function bindLanguageSelector() {
+  const select = $("#languageSelect");
+  const i18n = window.BackpackerI18n;
+  if (!select || !i18n) return;
+
+  select.value = i18n.getPreference();
+  select.addEventListener("change", () => {
+    const previousPreference = i18n.getPreference();
+    if (!i18n.setLocalePreference(select.value)) {
+      select.value = previousPreference;
+      return;
+    }
+    window.location.reload();
+  });
+}
+
 function bindEvents() {
+  bindLanguageSelector();
   document.addEventListener("keydown", handleNativeDateTimeClear);
 
   document.addEventListener("click", (event) => {
@@ -9697,7 +10249,7 @@ function bindEvents() {
     if (addButton) {
       event.preventDefault();
       event.stopPropagation();
-      if (isReadOnlyMode()) openItemProposalSheet().catch(() => showToast("Не удалось открыть форму идеи"));
+      if (isReadOnlyMode()) openItemProposalSheet().catch(() => showToast(window.t("share.proposal.item.open.error")));
       else openItemSheet();
       return;
     }
@@ -9878,7 +10430,7 @@ function bindEvents() {
     if (saveProposalNameButton) {
       const name = normalizeParticipantName($("#proposalParticipantNameInput")?.value);
       if (!name) {
-        showToast("Введите имя");
+        showToast(window.t("share.proposal.expense.name.required"));
         return;
       }
       expenseProposalDraft.proposedParticipantName = name;
@@ -10102,6 +10654,8 @@ function bindEvents() {
   $("#feedbackButton").addEventListener("click", () => trackEvent("feedback_channel_opened", { channel: "telegram" }));
   $("#homeButton").addEventListener("click", () => showHomeScreen("trip_bottom_bar"));
   $("#itemForm").addEventListener("submit", saveItem);
+  $("#itemForm").elements.title.addEventListener("input", (event) => validateItemTitleInput(event.currentTarget));
+  $("#itemForm").elements.date.addEventListener("input", (event) => validateItemDateInput(event.currentTarget));
   ["price", "paidAmount"].forEach((name) => {
     $("#itemForm").elements[name].addEventListener("input", (event) => validateMoneyInput(event.currentTarget));
   });
@@ -10136,7 +10690,9 @@ function bindEvents() {
   $("#tripMeta").addEventListener("click", openTripSheet);
   $("#tripBudgetMeta").addEventListener("click", openTripSheet);
   $("#tripForm").addEventListener("submit", saveTrip);
-  $("#tripForm").elements.budgetLimit.addEventListener("input", (event) => validateMoneyInput(event.currentTarget));
+  $("#tripForm").elements.title.addEventListener("input", validateTripRequiredInputs);
+  $("#tripForm").elements.destination.addEventListener("input", validateTripRequiredInputs);
+  $("#tripForm").elements.budgetLimit.addEventListener("input", (event) => validateTripBudgetInput(event.currentTarget));
   $("#tripForm").elements.startDate.addEventListener("change", handleTripStartDateChange);
   $("#tripForm").elements.startDate.addEventListener("input", handleTripStartDateChange);
   $("#tripForm").elements.endDate.addEventListener("change", handleTripEndDateChange);
@@ -10195,15 +10751,25 @@ function bindDonationSheetGestures() {
   });
 }
 
-bindEvents();
-setupDonationFlow();
-renderProductVersionInfo();
-switchView(currentView);
-render();
-initializeExtensionConnectBridge();
-subscribeRecoverableAuthChanges();
-window.setTimeout(startApp, 520);
-refreshExchangeRates();
+async function bootstrapApp() {
+  try {
+    await window.BackpackerI18n?.init();
+  } catch {
+    // The existing Russian DOM copy remains the safe startup fallback.
+  }
+
+  bindEvents();
+  setupDonationFlow();
+  renderProductVersionInfo();
+  switchView(currentView);
+  render();
+  initializeExtensionConnectBridge();
+  subscribeRecoverableAuthChanges();
+  window.setTimeout(startApp, 520);
+  refreshExchangeRates();
+}
+
+bootstrapApp();
 
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();

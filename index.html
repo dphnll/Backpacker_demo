@@ -13,11 +13,11 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icons/backpacker-192.png?v=logo-beige-20260808" type="image/png" />
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png?v=logo-beige-20260808" />
-    <link rel="stylesheet" href="./styles.css?v=drop-preview-20260808" />
+    <link rel="stylesheet" href="./styles.css?v=i18n-trip-setup-20260820" />
     <script src="./analytics-config.js?v=1"></script>
   </head>
   <body>
-    <section class="app-splash" id="appSplash" aria-label="Backpacker загружается">
+    <section class="app-splash" id="appSplash" aria-label="Backpacker загружается" data-i18n-aria-label="app.loading.aria">
       <div class="app-splash-tiles" aria-hidden="true">
         <span class="splash-tile splash-ticket">
           <svg viewBox="0 0 24 24"><path d="M3 12h18M4 12l6-6M4 12l6 6M14 6l6 6-6 6"></path></svg>
@@ -38,7 +38,7 @@
       <div class="app-splash-card">
         <h1>HEY, BACKPACKER!</h1>
         <img src="./icons/backpacker-logo-transparent.png" alt="" aria-hidden="true" />
-        <p id="appSplashStatus">Собираем рюкзак...</p>
+        <p id="appSplashStatus" data-i18n="app.loading.status">Собираем рюкзак...</p>
       </div>
     </section>
 
@@ -109,18 +109,18 @@
       </div>
     </section>
 
-    <section class="home-screen hidden" id="homeScreen" aria-label="Мои поездки">
+    <section class="home-screen hidden" id="homeScreen" aria-label="Мои поездки" data-i18n-aria-label="home.screen.aria">
       <header class="home-header">
         <div class="home-brand">
           <img src="./icons/backpacker-logo-transparent.png" alt="" aria-hidden="true" />
           <div>
             <h1>BACKPACKER</h1>
             <button class="home-profile-card hidden" id="homeProfileButton" type="button">
-              <strong id="homeProfileName">Добавьте имя или ник</strong>
+              <strong id="homeProfileName" data-i18n="home.profile.add">Добавьте имя или ник</strong>
             </button>
           </div>
         </div>
-        <button class="icon-button share-icon-button home-share-button" id="homeShareButton" type="button" title="Поделиться Backpacker" aria-label="Поделиться Backpacker">
+        <button class="icon-button share-icon-button home-share-button" id="homeShareButton" type="button" title="Поделиться Backpacker" aria-label="Поделиться Backpacker" data-i18n-title="home.share.action" data-i18n-aria-label="home.share.action">
           <svg aria-hidden="true" viewBox="0 0 24 24">
             <path d="M8.4 10.4 15.6 6.5" />
             <path d="M8.4 13.6 15.6 17.5" />
@@ -133,34 +133,34 @@
 
       <main class="home-content">
         <section class="sync-conflict-card hidden" id="syncConflictCard" aria-live="polite">
-          <button class="sync-conflict-close" id="syncConflictCloseButton" type="button" aria-label="Скрыть">×</button>
-          <h2 id="syncConflictTitle">Две версии одной поездки</h2>
+          <button class="sync-conflict-close" id="syncConflictCloseButton" type="button" aria-label="Скрыть" data-i18n-aria-label="home.sync.dismiss">×</button>
+          <h2 id="syncConflictTitle" data-i18n="home.sync.title.single">Две версии одной поездки</h2>
           <p id="syncConflictSummary"></p>
           <ul class="sync-conflict-list" id="syncConflictList"></ul>
-          <p class="sync-conflict-hint">Сравните версии, перенесите нужное в одну поездку и удалите лишнюю. Backpacker не выбирает сам, чтобы ничего не пропало.</p>
+          <p class="sync-conflict-hint" data-i18n="home.sync.hint">Сравните версии, перенесите нужное в одну поездку и удалите лишнюю. Backpacker не выбирает сам, чтобы ничего не пропало.</p>
         </section>
 
         <section class="home-trainer-shell" id="homeTrainerShell">
-          <button class="home-trainer-hide" id="hideTrainerButton" type="button">Скрыть тренажер</button>
+          <button class="home-trainer-hide" id="hideTrainerButton" type="button" data-i18n="home.trainer.hide">Скрыть тренажер</button>
           <section class="home-card trainer-card" id="trainerTripCard" role="button" tabindex="0">
             <div class="trip-card-status-row">
-              <span class="home-card-kicker">Тренажер</span>
+              <span class="home-card-kicker" data-i18n="home.trainer.kicker">Тренажер</span>
             </div>
             <div class="trip-card-title-block">
-              <h2>Казань соло</h2>
+              <h2 data-i18n="home.trainer.title">Казань соло</h2>
               <div class="trip-card-submeta">
-                <span>Казань</span>
-                <span>12 июля-15 июля</span>
+                <span data-i18n="home.trainer.destination">Казань</span>
+                <span data-i18n="home.trainer.dates">12 июля–15 июля</span>
               </div>
             </div>
             <div class="home-card-meta">
-              <span>4 дня</span>
-              <span>45 000 ₽</span>
+              <span data-i18n="home.trainer.days">4 дня</span>
+              <span data-i18n="home.trainer.budget">45 000 ₽</span>
             </div>
           </section>
         </section>
 
-        <button class="home-trainer-restore hidden" id="showTrainerButton" type="button">Показать тренажер</button>
+        <button class="home-trainer-restore hidden" id="showTrainerButton" type="button" data-i18n="home.trainer.show">Показать тренажер</button>
 
         <button class="home-card create-trip-card" id="createTripButton" type="button">
           <span class="cover-icon" aria-hidden="true">
@@ -171,8 +171,8 @@
             </svg>
           </span>
           <span>
-            <strong>Создать новую поездку</strong>
-            <small>Добавить обложку поездки</small>
+            <strong data-i18n="home.trip.create">Создать новую поездку</strong>
+            <small data-i18n="home.trip.cover.add">Добавить обложку поездки</small>
           </span>
         </button>
 
@@ -183,8 +183,8 @@
             </svg>
           </span>
           <span>
-            <strong>Идеи</strong>
-            <small>Места, ссылки и хотелки до поездки</small>
+            <strong data-i18n="home.ideas.title">Идеи</strong>
+            <small data-i18n="home.ideas.description">Места, ссылки и хотелки до поездки</small>
           </span>
         </button>
 
@@ -192,49 +192,49 @@
           <div class="sheet-backdrop" data-close="tripDraftAi"></div>
           <section class="sheet-panel trip-draft-ai-panel" role="dialog" aria-modal="true" aria-labelledby="tripDraftAiTitle">
             <header class="sheet-header">
-              <h2 id="tripDraftAiTitle">Создать поездку</h2>
-              <button class="icon-button" data-close="tripDraftAi" type="button" aria-label="Закрыть">×</button>
+              <h2 id="tripDraftAiTitle" data-i18n="trip.setup.create.title">Создать поездку</h2>
+              <button class="icon-button" data-close="tripDraftAi" type="button" aria-label="Закрыть" data-i18n-aria-label="trip.setup.create.close">×</button>
             </header>
             <div class="trip-draft-ai-body">
-              <section class="trip-draft-choice-grid" id="tripDraftChoiceStep" aria-label="Способ создания поездки">
-                <button class="trip-draft-choice primary-button" id="tripDraftManualButton" type="button" data-trip-draft-mode="manual">Собрать вручную</button>
-                <button class="trip-draft-choice primary-button" id="tripDraftTextModeButton" type="button" data-trip-draft-mode="text">Собрать с помощью AI</button>
-                <button class="trip-draft-choice primary-button hidden" id="tripDraftVoiceModeButton" type="button" data-trip-draft-mode="voice" hidden>Надиктовать голосом для AI</button>
-                <button class="trip-draft-choice primary-button" id="tripDraftDocumentsModeButton" type="button" data-trip-draft-mode="documents">Собрать из документов</button>
+              <section class="trip-draft-choice-grid" id="tripDraftChoiceStep" aria-label="Способ создания поездки" data-i18n-aria-label="trip.setup.create.method.aria">
+                <button class="trip-draft-choice primary-button" id="tripDraftManualButton" type="button" data-trip-draft-mode="manual" data-i18n="trip.setup.create.method.manual">Собрать вручную</button>
+                <button class="trip-draft-choice primary-button" id="tripDraftTextModeButton" type="button" data-trip-draft-mode="text" data-i18n="trip.setup.create.method.ai">Собрать с помощью AI</button>
+                <button class="trip-draft-choice primary-button hidden" id="tripDraftVoiceModeButton" type="button" data-trip-draft-mode="voice" hidden data-i18n="trip.setup.create.method.voice">Надиктовать голосом для AI</button>
+                <button class="trip-draft-choice primary-button" id="tripDraftDocumentsModeButton" type="button" data-trip-draft-mode="documents" data-i18n="trip.setup.create.method.documents">Собрать из документов</button>
               </section>
 
-              <section class="trip-draft-resume hidden" id="tripDraftResumeStep" aria-label="Незавершённый черновик">
-                <p class="trip-draft-copy" id="tripDraftResumeCopy">У вас остался незавершённый черновик поездки.</p>
+              <section class="trip-draft-resume hidden" id="tripDraftResumeStep" aria-label="Незавершённый черновик" data-i18n-aria-label="ai.draft.resume.aria">
+                <p class="trip-draft-copy" id="tripDraftResumeCopy" data-i18n="ai.draft.resume.copy">У вас остался незавершённый черновик поездки.</p>
                 <div class="trip-draft-choice-grid">
-                  <button class="trip-draft-choice primary-button" type="button" data-trip-draft-resume="continue">Продолжить</button>
-                  <button class="trip-draft-choice primary-button" type="button" data-trip-draft-resume="restart">Начать заново</button>
+                  <button class="trip-draft-choice primary-button" type="button" data-trip-draft-resume="continue" data-i18n="ai.draft.resume.continue">Продолжить</button>
+                  <button class="trip-draft-choice primary-button" type="button" data-trip-draft-resume="restart" data-i18n="ai.draft.resume.restart">Начать заново</button>
                 </div>
               </section>
 
               <section class="trip-draft-input hidden" id="tripDraftInputStep">
                 <p class="trip-draft-copy">
-                  <strong>Опишите поездку своими словами — AI-ассистент разложит идеи по дням и соберёт редактируемый черновик.</strong>
-                  Можно написать текст или надиктовать его голосом. Укажите направление, длительность, участников, интересы и ограничения.
+                  <strong data-i18n="ai.draft.input.copy.title">Опишите поездку своими словами — AI-ассистент разложит идеи по дням и соберёт редактируемый черновик.</strong>
+                  <span data-i18n="ai.draft.input.copy.body">Можно написать текст или надиктовать его голосом. Укажите направление, длительность, участников, интересы и ограничения.</span>
                 </p>
                 <label class="field wide">
-                  <textarea id="tripDraftTextInput" rows="7" aria-label="Описание поездки" placeholder="Например: едем в Стамбул на 5 дней, двое взрослых и ребёнок, любим еду и прогулки, не хотим ранних подъёмов..."></textarea>
+                  <textarea id="tripDraftTextInput" rows="7" aria-label="Описание поездки" placeholder="Например: едем в Стамбул на 5 дней, двое взрослых и ребёнок, любим еду и прогулки, не хотим ранних подъёмов..." data-i18n-aria-label="ai.draft.input.aria" data-i18n-placeholder="ai.draft.input.placeholder"></textarea>
                 </label>
                 <div class="trip-draft-voice-controls" id="tripDraftVoiceControls">
-                  <button class="ghost-button" id="tripDraftRecordButton" type="button">🎙 Надиктовать</button>
-                  <span class="trip-draft-recording-indicator hidden" id="tripDraftRecordingIndicator">Идёт запись...</span>
+                  <button class="ghost-button" id="tripDraftRecordButton" type="button" data-i18n="ai.draft.voice.record">🎙 Надиктовать</button>
+                  <span class="trip-draft-recording-indicator hidden" id="tripDraftRecordingIndicator" data-i18n="ai.draft.voice.recording">Идёт запись...</span>
                 </div>
-                <p class="field-hint wide">Ограничения вроде аллергий, питания и темпа будут учтены как ограничения планирования, не как медицинские рекомендации.</p>
+                <p class="field-hint wide" data-i18n="ai.draft.input.hint">Ограничения вроде аллергий, питания и темпа будут учтены как ограничения планирования, не как медицинские рекомендации.</p>
                 <p class="trip-draft-status" id="tripDraftStatus" aria-live="polite"></p>
                 <div class="trip-draft-actions">
-                  <button class="ghost-button" id="tripDraftBackButton" type="button">Назад</button>
-                  <button class="primary-button" id="tripDraftParseButton" type="button">Собрать черновик</button>
+                  <button class="ghost-button" id="tripDraftBackButton" type="button" data-i18n="ai.draft.back">Назад</button>
+                  <button class="primary-button" id="tripDraftParseButton" type="button" data-i18n="ai.draft.input.parse">Собрать черновик</button>
                 </div>
               </section>
 
-              <section class="trip-draft-documents hidden" id="tripDraftDocumentsStep" aria-label="Документы поездки">
+              <section class="trip-draft-documents hidden" id="tripDraftDocumentsStep" aria-label="Документы поездки" data-i18n-aria-label="ai.draft.documents.aria">
                 <p class="trip-draft-copy">
-                  <strong>Загрузите билеты, брони и ваучеры — Backpacker соберёт из них черновик поездки.</strong>
-                  Данные берутся только из ваших документов. Коды броней, номера билетов и паспортные данные не извлекаются: они остаются внутри самого файла.
+                  <strong data-i18n="ai.draft.documents.copy.title">Загрузите билеты, брони и ваучеры — Backpacker соберёт из них черновик поездки.</strong>
+                  <span data-i18n="ai.draft.documents.copy.body">Данные берутся только из ваших документов. Коды броней, номера билетов и паспортные данные не извлекаются: они остаются внутри самого файла.</span>
                 </p>
                 <input
                   id="tripDraftDocumentsInput"
@@ -243,27 +243,27 @@
                   accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp"
                   hidden
                 />
-                <button class="ghost-button" id="tripDraftDocumentsAddButton" type="button">+ Выбрать документы</button>
+                <button class="ghost-button" id="tripDraftDocumentsAddButton" type="button" data-i18n="ai.draft.documents.add">+ Выбрать документы</button>
                 <div class="trip-draft-documents-list" id="tripDraftDocumentsList"></div>
                 <p class="trip-draft-documents-missing hidden" id="tripDraftDocumentsMissing" aria-live="polite"></p>
                 <label class="field wide">
-                  Комментарий, необязательно
-                  <textarea id="tripDraftDocumentsComment" rows="3" placeholder="Например: это поездка на свадьбу, отель уже оплачен"></textarea>
+                  <span data-i18n="ai.draft.documents.comment.label">Комментарий, необязательно</span>
+                  <textarea id="tripDraftDocumentsComment" rows="3" placeholder="Например: это поездка на свадьбу, отель уже оплачен" data-i18n-placeholder="ai.draft.documents.comment.placeholder"></textarea>
                 </label>
-                <p class="field-hint wide">До 8 файлов, до 10 МБ каждый и до 30 МБ на пакет. PDF, JPEG, PNG и WebP.</p>
+                <p class="field-hint wide" data-i18n="ai.draft.documents.hint">До 8 файлов, до 10 МБ каждый и до 30 МБ на пакет. PDF, JPEG, PNG и WebP.</p>
                 <p class="trip-draft-status" id="tripDraftDocumentsStatus" aria-live="polite"></p>
                 <div class="trip-draft-actions">
-                  <button class="ghost-button" id="tripDraftDocumentsBackButton" type="button">Назад</button>
-                  <button class="primary-button" id="tripDraftDocumentsParseButton" type="button">Собрать поездку</button>
+                  <button class="ghost-button" id="tripDraftDocumentsBackButton" type="button" data-i18n="ai.draft.back">Назад</button>
+                  <button class="primary-button" id="tripDraftDocumentsParseButton" type="button" data-i18n="ai.draft.documents.parse">Собрать поездку</button>
                 </div>
               </section>
 
               <section class="trip-draft-preview hidden" id="tripDraftPreviewStep">
-                <p class="trip-draft-copy">Проверьте черновик. Датированные идеи попадут в план, остальные — в парковку.</p>
+                <p class="trip-draft-copy" data-i18n="ai.draft.preview.intro">Проверьте черновик. Датированные идеи попадут в план, остальные — в парковку.</p>
                 <div class="trip-draft-preview-box" id="tripDraftPreviewBox"></div>
                 <div class="trip-draft-actions">
-                  <button class="ghost-button" id="tripDraftEditTextButton" type="button">Править текст</button>
-                  <button class="primary-button" id="tripDraftCreateButton" type="button">Создать поездку</button>
+                  <button class="ghost-button" id="tripDraftEditTextButton" type="button" data-i18n="ai.draft.preview.edit">Править текст</button>
+                  <button class="primary-button" id="tripDraftCreateButton" type="button" data-i18n="ai.draft.preview.create">Создать поездку</button>
                 </div>
               </section>
             </div>
@@ -272,42 +272,50 @@
 
         <section class="trip-list-section">
           <div class="section-heading home-list-heading">
-            <h2>Лента поездок</h2>
+            <h2 data-i18n="home.feed.title">Лента поездок</h2>
           </div>
           <div class="trip-list" id="tripList"></div>
         </section>
 
         <section class="trip-list-section received-trips-section hidden" id="receivedTripsSection">
           <div class="section-heading home-list-heading">
-            <h2>Со мной поделились</h2>
+            <h2 data-i18n="home.received.title">Со мной поделились</h2>
           </div>
           <div class="trip-list received-trip-list" id="receivedTripList"></div>
         </section>
 
-        <section class="ios-install-card hidden" id="iosInstallCard" aria-label="Установить Backpacker">
-          <button class="ios-install-close" id="iosInstallCloseButton" type="button" aria-label="Скрыть">×</button>
-          <h2>Установить Backpacker</h2>
-          <p>На iPhone версия с домашнего экрана хранит данные отдельно от Safari. Сохранённый доступ по email перенесёт ваши поездки в установленное приложение.</p>
+        <section class="ios-install-card hidden" id="iosInstallCard" aria-label="Установить Backpacker" data-i18n-aria-label="home.ios.install.title">
+          <button class="ios-install-close" id="iosInstallCloseButton" type="button" aria-label="Скрыть" data-i18n-aria-label="home.ios.install.dismiss">×</button>
+          <h2 data-i18n="home.ios.install.title">Установить Backpacker</h2>
+          <p data-i18n="home.ios.install.copy">На iPhone версия с домашнего экрана хранит данные отдельно от Safari. Сохранённый доступ по email перенесёт ваши поездки в установленное приложение.</p>
           <ol>
-            <li>Откройте Backpacker в Safari.</li>
-            <li>Нажмите «Поделиться».</li>
-            <li>Выберите «На экран Домой».</li>
-            <li>Включите «Открывать как веб-приложение» и нажмите «Добавить».</li>
+            <li data-i18n="home.ios.install.open.safari">Откройте Backpacker в Safari.</li>
+            <li data-i18n="home.ios.install.share">Нажмите «Поделиться».</li>
+            <li data-i18n="home.ios.install.add.home">Выберите «На экран Домой».</li>
+            <li data-i18n="home.ios.install.open.as.app">Включите «Открывать как веб-приложение» и нажмите «Добавить».</li>
           </ol>
         </section>
 
-        <section class="home-support" aria-label="Информация и помощь">
-          <div class="home-support-menu" role="group" aria-label="Меню Backpacker">
-            <button class="home-support-button" type="button" data-home-panel="product" aria-label="О продукте">
+        <section class="home-support" aria-label="Информация и помощь" data-i18n-aria-label="home.support.aria">
+          <label class="home-language-control" for="languageSelect">
+            <span data-i18n="language.label">Язык интерфейса</span>
+            <select id="languageSelect" data-i18n-aria-label="language.label" aria-label="Язык интерфейса">
+              <option value="auto" data-i18n="language.auto">Автоматически</option>
+              <option value="ru" data-i18n="language.ru">Русский</option>
+              <option value="en" data-i18n="language.en">English</option>
+            </select>
+          </label>
+          <div class="home-support-menu" role="group" aria-label="Меню Backpacker" data-i18n-aria-label="home.support.menu.aria">
+            <button class="home-support-button" type="button" data-home-panel="product" aria-label="О продукте" data-i18n-aria-label="home.support.product">
               <span aria-hidden="true">i</span>
             </button>
-            <button class="home-support-button" type="button" data-home-panel="howto" aria-label="How-to">
+            <button class="home-support-button" type="button" data-home-panel="howto" aria-label="How-to" data-i18n-aria-label="home.support.howto">
               <span aria-hidden="true">?</span>
             </button>
-            <button class="home-support-button" id="donationPigButton" type="button" disabled aria-disabled="true" aria-label="Свинья-копилка">
+            <button class="home-support-button" id="donationPigButton" type="button" disabled aria-disabled="true" aria-label="Свинья-копилка" data-i18n-aria-label="home.support.donation">
               <img class="home-support-icon" src="./icons/piggy-bank.png" alt="" aria-hidden="true" />
             </button>
-            <a class="home-support-button" id="homeTelegramButton" href="https://t.me/bckpckrbot?start=backpacker_demo" target="_blank" rel="noreferrer" aria-label="Написать в ТГ">
+            <a class="home-support-button" id="homeTelegramButton" href="https://t.me/bckpckrbot?start=backpacker_demo" target="_blank" rel="noreferrer" aria-label="Написать в ТГ" data-i18n-aria-label="home.support.telegram">
               <svg aria-hidden="true" viewBox="0 0 24 24">
                 <path d="M21 4 3.8 11.1c-.8.3-.8 1.4.1 1.7l4.3 1.4 1.6 5c.2.8 1.3.9 1.7.2l2.4-3.4 4.4 3.2c.7.5 1.7.1 1.8-.8L22 5.2c.1-.8-.4-1.4-1-1.2z" />
                 <path d="m8.3 14.1 8.8-5.7-6.9 7.3" />
@@ -319,30 +327,30 @@
       <input id="coverInput" type="file" accept="image/*" hidden />
     </section>
 
-    <section class="ideas-screen hidden" id="ideasScreen" aria-label="Идеи">
+    <section class="ideas-screen hidden" id="ideasScreen" aria-label="Идеи" data-i18n-aria-label="ideas.screen.aria">
       <header class="ideas-header">
-        <button class="icon-button ideas-back-button" id="ideasBackButton" type="button" aria-label="Вернуться на главную">
+        <button class="icon-button ideas-back-button" id="ideasBackButton" type="button" aria-label="Вернуться на главную" data-i18n-aria-label="ideas.back">
           <svg aria-hidden="true" viewBox="0 0 24 24">
             <path d="M15 4.5 7.5 12l7.5 7.5" />
           </svg>
         </button>
         <div>
-          <h1>Идеи</h1>
-          <p>Места, ссылки и хотелки до поездки</p>
+          <h1 data-i18n="ideas.title">Идеи</h1>
+          <p data-i18n="ideas.description">Места, ссылки и хотелки до поездки</p>
         </div>
       </header>
       <main class="ideas-content">
-        <div class="ideas-collection-row" id="ideaCollectionChips" aria-label="Подборки идей"></div>
+        <div class="ideas-collection-row" id="ideaCollectionChips" aria-label="Подборки идей" data-i18n-aria-label="ideas.collections.aria"></div>
         <section class="ideas-list" id="ideasList" aria-live="polite"></section>
       </main>
-      <button class="ideas-fab" id="ideasFabAddButton" type="button" aria-label="Добавить идею">+</button>
+      <button class="ideas-fab" id="ideasFabAddButton" type="button" aria-label="Добавить идею" data-i18n-aria-label="ideas.add.aria">+</button>
     </section>
 
     <div class="app-shell hidden">
       <header class="trip-header">
         <div class="brand-row">
           <div class="brand-lockup">
-            <button class="brand-home-button" id="homeButton" type="button" aria-label="На главную" title="На главную">
+            <button class="brand-home-button" id="homeButton" type="button" aria-label="На главную" title="На главную" data-i18n-aria-label="plan.shell.home" data-i18n-title="plan.shell.home">
               <svg aria-hidden="true" viewBox="0 0 24 24">
                 <path d="M15 4.5 7.5 12l7.5 7.5" />
               </svg>
@@ -352,8 +360,8 @@
             </div>
           </div>
           <div class="header-actions">
-            <button class="icon-button" id="editTripButton" type="button" title="Настройки поездки" aria-label="Настройки поездки">⚙</button>
-            <button class="icon-button share-icon-button" id="shareButton" type="button" title="Поделиться поездкой" aria-label="Поделиться поездкой">
+            <button class="icon-button" id="editTripButton" type="button" title="Настройки поездки" aria-label="Настройки поездки" data-i18n-title="plan.shell.settings" data-i18n-aria-label="plan.shell.settings">⚙</button>
+            <button class="icon-button share-icon-button" id="shareButton" type="button" title="Поделиться поездкой" aria-label="Поделиться поездкой" data-i18n-title="plan.shell.share" data-i18n-aria-label="plan.shell.share">
               <svg aria-hidden="true" viewBox="0 0 24 24">
                 <path d="M8.4 10.4 15.6 6.5" />
                 <path d="M8.4 13.6 15.6 17.5" />
@@ -362,7 +370,7 @@
                 <circle cx="18" cy="18.7" r="3.4" />
               </svg>
             </button>
-            <a class="icon-button telegram-icon-button" id="feedbackButton" href="https://t.me/bckpckrbot?start=backpacker_demo" target="_blank" rel="noreferrer" title="Написать нам" aria-label="Написать нам">
+            <a class="icon-button telegram-icon-button" id="feedbackButton" href="https://t.me/bckpckrbot?start=backpacker_demo" target="_blank" rel="noreferrer" title="Написать нам" aria-label="Написать нам" data-i18n-title="plan.shell.feedback" data-i18n-aria-label="plan.shell.feedback">
               <svg aria-hidden="true" viewBox="0 0 24 24">
                 <path d="M21 4.6 3.8 11.2c-1 .4-.9 1.8.1 2.1l4.4 1.3 1.7 5.3c.3 1 1.6 1.1 2.2.2l2.4-3.4 4.7 3.5c.8.6 1.9.1 2.1-.9L23 6c.2-1-1-1.8-2-1.4z" />
                 <path d="M8.6 14.5 21.2 5.1" />
@@ -370,23 +378,23 @@
             </a>
           </div>
         </div>
-        <button class="save-received-button hidden" id="saveReceivedTripButton" type="button">Добавить в «Со мной поделились»</button>
+        <button class="save-received-button hidden" id="saveReceivedTripButton" type="button" data-i18n="share.received.save">Добавить в «Со мной поделились»</button>
         <button class="trip-meta" id="tripMeta" type="button">Казань · 12 июля-15 июля · 4 дня</button>
         <div class="trip-summary-row">
           <p class="share-role-banner hidden" id="shareRoleBanner"></p>
           <button class="trip-budget-meta" id="tripBudgetMeta" type="button">Бюджет 45 000 ₽</button>
         </div>
-        <section class="budget-strip" aria-label="Бюджет поездки">
+        <section class="budget-strip" aria-label="Бюджет поездки" data-i18n-aria-label="plan.budget.aria">
           <div class="paid-card">
-            <span>Оплачено</span>
+            <span data-i18n="plan.budget.paid">Оплачено</span>
             <strong id="paidTotal">0 ₽</strong>
           </div>
           <div class="budget-allocation-card">
-            <span>Бронь</span>
+            <span data-i18n="plan.budget.booked">Бронь</span>
             <strong id="plannedTotal">0 ₽</strong>
           </div>
           <div class="budget-allocation-card">
-            <span>Свободно</span>
+            <span data-i18n="plan.budget.available">Свободно</span>
             <strong id="remainingTotal">0 ₽</strong>
           </div>
         </section>
@@ -396,69 +404,69 @@
         <section class="card booking-pack-upload-notice hidden" id="bookingPackUploadNotice" aria-live="polite">
           <p id="bookingPackUploadSummary"></p>
           <div class="booking-pack-upload-actions">
-            <button class="ghost-button compact" id="bookingPackUploadRetryButton" type="button">Повторить загрузку</button>
-            <button class="ghost-button compact" id="bookingPackUploadDismissButton" type="button">Скрыть</button>
+            <button class="ghost-button compact" id="bookingPackUploadRetryButton" type="button" data-i18n="ai.draft.attachments.retry">Повторить загрузку</button>
+            <button class="ghost-button compact" id="bookingPackUploadDismissButton" type="button" data-i18n="ai.draft.attachments.dismiss">Скрыть</button>
           </div>
         </section>
 
-        <section class="card proposal-inbox-card hidden" id="myItemProposalsSection" aria-label="Мои предложения">
+        <section class="card proposal-inbox-card hidden" id="myItemProposalsSection" aria-label="Мои предложения" data-i18n-aria-label="share.proposal.mine.title">
           <div class="card-title-row">
-            <h3>Мои предложения</h3>
+            <h3 data-i18n="share.proposal.mine.title">Мои предложения</h3>
           </div>
           <div class="proposal-inbox-list" id="myItemProposalsList"></div>
         </section>
 
-        <section class="card proposal-inbox-card hidden" id="proposalInboxSection" aria-label="Предложения участников">
+        <section class="card proposal-inbox-card hidden" id="proposalInboxSection" aria-label="Предложения участников" data-i18n-aria-label="share.proposal.inbox.aria">
           <div class="card-title-row">
             <h3 id="proposalInboxTitle">Предложения · 0</h3>
-            <button class="ghost-button compact" id="refreshProposalsButton" type="button">Обновить</button>
+            <button class="ghost-button compact" id="refreshProposalsButton" type="button" data-i18n="share.proposal.refresh">Обновить</button>
           </div>
           <div class="proposal-inbox-list" id="proposalInboxList"></div>
         </section>
 
-        <section class="view active" id="planView" aria-label="План поездки">
+        <section class="view active" id="planView" aria-label="План поездки" data-i18n-aria-label="plan.aria">
           <div class="section-heading">
             <div>
-              <h2>План</h2>
+              <h2 data-i18n="plan.title">План</h2>
             </div>
           </div>
           <div class="days-list" id="daysList"></div>
           <section class="day-card unscheduled-card">
             <header class="day-header">
               <div class="card-title-row">
-                <h3>Без даты</h3>
-                <span class="day-date">Парковка для идей</span>
+                <h3 data-i18n="plan.unscheduled.title">Без даты</h3>
+                <span class="day-date" data-i18n="plan.unscheduled.subtitle">Парковка для идей</span>
                 <span id="unscheduledCount">0</span>
               </div>
-              <p>Парковка для идей</p>
+              <p data-i18n="plan.unscheduled.subtitle">Парковка для идей</p>
             </header>
             <div class="day-items" id="unscheduledPreview"></div>
           </section>
         </section>
 
-        <section class="view" id="basketView" aria-label="Все события поездки">
+        <section class="view" id="basketView" aria-label="Все события поездки" data-i18n-aria-label="plan.events.aria">
           <div class="section-heading">
             <div>
-              <h2>Все события</h2>
+          <h2 data-i18n="plan.events.title">Все события</h2>
             </div>
           </div>
           <div class="filter-row" id="filterRow"></div>
           <div class="basket-list" id="basketList"></div>
         </section>
 
-        <section class="view" id="budgetView" aria-label="Бюджет">
+        <section class="view" id="budgetView" aria-label="Бюджет поездки" data-i18n-aria-label="budget.aria">
           <div class="section-heading">
             <div>
-              <h2>Бюджет</h2>
+              <h2 data-i18n="budget.title">Бюджет</h2>
             </div>
           </div>
           <div class="budget-page" id="budgetPage"></div>
           <section class="card estimate-card">
             <div class="card-title-row">
               <div>
-                <h3>Смета поездки</h3>
+                <h3 data-i18n="budget.estimate.title">Смета поездки</h3>
               </div>
-              <button class="ghost-button compact" id="copyEstimateButton" type="button">Скачать</button>
+              <button class="ghost-button compact" id="copyEstimateButton" type="button" data-i18n="budget.export.download">Скачать</button>
             </div>
             <div class="estimate-table-wrap">
               <table class="estimate-table" id="estimateTable"></table>
@@ -467,20 +475,20 @@
           </section>
         </section>
 
-        <section class="view" id="currencyView" aria-label="Курс валют">
+        <section class="view" id="currencyView" aria-label="Калькулятор валют" data-i18n-aria-label="budget.currency.aria">
           <div class="section-heading">
             <div>
-              <h2>Калькулятор валют</h2>
+              <h2 data-i18n="budget.currency.title">Калькулятор валют</h2>
             </div>
-            <button class="ghost-button compact" id="refreshRatesButton" type="button">Обновить</button>
+            <button class="ghost-button compact" id="refreshRatesButton" type="button" data-i18n="budget.currency.refresh">Обновить</button>
           </div>
           <section class="card currency-card">
             <label class="field wide">
-              Сумма
+              <span data-i18n="budget.currency.amount">Сумма</span>
               <input id="currencyAmount" inputmode="decimal" value="1000" />
             </label>
             <label class="field">
-              Из
+              <span data-i18n="budget.currency.from">Из</span>
               <select id="currencyFrom">
                 <option value="RUB">RUB</option>
                 <option value="EUR">EUR</option>
@@ -492,9 +500,9 @@
                 <option value="BAM">BAM / KM</option>
               </select>
             </label>
-            <button class="ghost-button currency-swap-button" id="currencySwapButton" type="button" title="Поменять валюты местами" aria-label="Поменять валюты местами">⇄</button>
+            <button class="ghost-button currency-swap-button" id="currencySwapButton" type="button" title="Поменять валюты местами" aria-label="Поменять валюты местами" data-i18n-title="budget.currency.swap" data-i18n-aria-label="budget.currency.swap">⇄</button>
             <label class="field">
-              В
+              <span data-i18n="budget.currency.to">В</span>
               <select id="currencyTo">
                 <option value="EUR">EUR</option>
                 <option value="SEK">SEK</option>
@@ -507,19 +515,19 @@
               </select>
             </label>
             <div class="currency-result" id="currencyResult">—</div>
-            <p class="field-hint wide" id="ratesStatus">Курс загрузится автоматически, если доступен внешний API.</p>
+            <p class="field-hint wide" id="ratesStatus" data-i18n="budget.currency.status.loading">Курс загрузится автоматически, если доступен внешний API.</p>
           </section>
         </section>
       </main>
 
-      <button class="fab" data-action="add" type="button" aria-label="Добавить элемент">
+      <button class="fab" data-action="add" type="button" aria-label="Добавить элемент" data-i18n-aria-label="plan.fab.add">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 5v14M5 12h14"></path>
         </svg>
       </button>
 
-      <nav class="bottom-nav" aria-label="Основная навигация">
-        <button class="nav-button active" data-view="plan" type="button" aria-label="План">
+      <nav class="bottom-nav" aria-label="Основная навигация" data-i18n-aria-label="plan.navigation.aria">
+        <button class="nav-button active" data-view="plan" type="button" aria-label="План" data-i18n-aria-label="plan.navigation.plan">
           <span aria-hidden="true">
             <svg viewBox="0 0 24 24" role="img">
               <rect x="4" y="5" width="16" height="15" rx="3"></rect>
@@ -527,7 +535,7 @@
             </svg>
           </span>
         </button>
-        <button class="nav-button" data-view="basket" type="button" aria-label="Все события">
+        <button class="nav-button" data-view="basket" type="button" aria-label="Все события" data-i18n-aria-label="plan.navigation.events">
           <span aria-hidden="true">
             <svg viewBox="0 0 24 24" role="img">
               <path d="M12 3.2 3.4 6.75 12 10.45l8.6-3.7L12 3.2Z"></path>
@@ -537,14 +545,14 @@
             </svg>
           </span>
         </button>
-        <button class="nav-button" data-view="budget" type="button" aria-label="Бюджет">
+        <button class="nav-button" data-view="budget" type="button" aria-label="Бюджет" data-i18n-aria-label="plan.navigation.budget">
           <span aria-hidden="true">
             <svg viewBox="0 0 24 24" role="img">
               <path d="M8 4h6a5 5 0 0 1 0 10H8M8 4v16M6 14h9M6 18h8"></path>
             </svg>
           </span>
         </button>
-        <button class="nav-button" data-view="currency" type="button" aria-label="Курс валют">
+        <button class="nav-button" data-view="currency" type="button" aria-label="Курс валют" data-i18n-aria-label="plan.navigation.currency">
           <span aria-hidden="true">
             <svg viewBox="0 0 24 24" role="img">
               <path d="M7 7h10M14 4l3 3-3 3M17 17H7M10 14l-3 3 3 3"></path>
@@ -558,90 +566,90 @@
       <div class="sheet-backdrop" data-close="item"></div>
       <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="itemSheetTitle">
         <header class="sheet-header">
-          <h2 id="itemSheetTitle">Добавить в поездку</h2>
-          <button class="icon-button item-copy-button" id="copyItemButton" type="button" aria-label="Скопировать карточку" hidden>
+          <h2 id="itemSheetTitle" data-i18n="item.editor.title.create">Добавить в поездку</h2>
+          <button class="icon-button item-copy-button" id="copyItemButton" type="button" aria-label="Скопировать карточку" data-i18n-aria-label="item.editor.copy" hidden>
             <img src="./icons/card-copy.png" alt="" aria-hidden="true" />
           </button>
-          <button class="icon-button" data-close="item" type="button" aria-label="Закрыть">×</button>
+          <button class="icon-button" data-close="item" type="button" aria-label="Закрыть" data-i18n-aria-label="item.editor.close">×</button>
         </header>
         <form id="itemForm" class="sheet-form">
           <input type="hidden" name="id" />
           <label class="field wide">
-            Название
-            <input name="title" placeholder="Баня, экскурсия, билет..." required />
+            <span data-i18n="item.editor.field.title.label">Название</span>
+            <input name="title" placeholder="Баня, экскурсия, билет..." data-i18n-placeholder="item.editor.field.title.placeholder" required />
           </label>
           <label class="field">
-            Тип
+            <span data-i18n="item.editor.field.type.label">Тип</span>
             <select name="type"></select>
           </label>
           <label class="field">
-            Статус
+            <span data-i18n="item.editor.field.status.label">Статус</span>
             <select name="status"></select>
           </label>
           <label class="field wide participant-owner-field" id="participantOwnerField" hidden>
-            Расход берет на себя
+            <span data-i18n="item.editor.field.owner.label">Расход берет на себя</span>
             <select name="participantId"></select>
           </label>
           <p class="item-allocation-summary hidden" id="itemAllocationSummary"></p>
           <label class="field">
-            Дата
+            <span data-i18n="item.editor.field.date.label">Дата</span>
             <input name="date" type="date" />
           </label>
           <label class="field">
-            Время
+            <span data-i18n="item.editor.field.time.label">Время</span>
             <input name="startTime" type="time" />
           </label>
           <label class="field">
-            Длительность
+            <span data-i18n="item.editor.field.duration.label">Длительность</span>
             <span class="duration-fields">
               <span class="duration-field">
                 <input name="durationHours" inputmode="numeric" />
-                <span>ч.</span>
+                <span data-i18n="item.editor.field.duration.hours">ч.</span>
               </span>
               <span class="duration-field">
                 <input name="durationRemainder" inputmode="numeric" />
-                <span>мин.</span>
+                <span data-i18n="item.editor.field.duration.minutes">мин.</span>
               </span>
             </span>
           </label>
           <label class="field">
-            Цена
+            <span data-item-price-label>Цена</span>
             <input name="price" inputmode="decimal" placeholder="0" />
           </label>
           <p class="card-copy-warning item-draft-warning hidden" id="itemDraftWarning"></p>
           <label class="field">
-            Оплачено
+            <span data-item-paid-label>Оплачено</span>
             <input name="paidAmount" inputmode="decimal" placeholder="0" />
           </label>
           <section class="accepted-expense-controls hidden" id="acceptedExpenseControls"></section>
           <label class="field">
-            Приоритет
+            <span data-i18n="item.editor.field.priority.label">Приоритет</span>
             <select name="priority"></select>
           </label>
           <label class="field">
-            Ссылка
-            <input name="link" inputmode="url" placeholder="Aviasales, Tripster, кафе, отель..." />
+            <span data-i18n="item.editor.field.link.label">Ссылка</span>
+            <input name="link" inputmode="url" placeholder="Aviasales, Tripster, кафе, отель..." data-i18n-placeholder="item.editor.field.link.placeholder" />
           </label>
-          <button class="ghost-button link-open-button" id="openLinkButton" type="button" disabled>Перейти</button>
+          <button class="ghost-button link-open-button" id="openLinkButton" type="button" disabled data-i18n="item.editor.link.open">Перейти</button>
           <section class="link-intake-panel hidden" id="linkIntakePanel" aria-live="polite">
             <div class="link-intake-actions">
-              <button class="ghost-button compact" id="linkIntakePreviewButton" type="button">Собрать по ссылке</button>
+              <button class="ghost-button compact" id="linkIntakePreviewButton" type="button" data-i18n="item.editor.link.preview">Собрать по ссылке</button>
               <span class="link-intake-status" id="linkIntakeStatus"></span>
             </div>
-            <p class="link-intake-hint" id="linkIntakeHint">Вставьте ссылку и нажмите «Собрать по ссылке».</p>
+            <p class="link-intake-hint" id="linkIntakeHint" data-i18n="item.editor.link.hint">Вставьте ссылку и нажмите «Собрать по ссылке».</p>
             <div class="link-intake-preview hidden" id="linkIntakePreview"></div>
           </section>
           <label class="field wide">
-            Локация
-            <input name="locationText" placeholder="Адрес или район" />
+            <span data-i18n="item.editor.field.location.label">Локация</span>
+            <input name="locationText" placeholder="Адрес или район" data-i18n-placeholder="item.editor.field.location.placeholder" />
           </label>
           <label class="field wide">
-            Заметка
-            <textarea name="notes" rows="3" placeholder="Почему хочу, что важно, запасной план..."></textarea>
+            <span data-i18n="item.editor.field.notes.label">Заметка</span>
+            <textarea name="notes" rows="3" placeholder="Почему хочу, что важно, запасной план..." data-i18n-placeholder="item.editor.field.notes.placeholder"></textarea>
           </label>
           <section class="item-attachments hidden" id="itemAttachmentsSection" aria-labelledby="itemAttachmentsTitle">
             <div class="item-attachments-header">
-              <h3 id="itemAttachmentsTitle">Вложения</h3>
+              <h3 id="itemAttachmentsTitle" data-i18n="item.editor.attachments.title">Вложения</h3>
               <span class="item-attachments-status" id="itemAttachmentsStatus" aria-live="polite"></span>
             </div>
             <div class="item-attachments-list" id="itemAttachmentsList"></div>
@@ -651,12 +659,12 @@
               accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp"
               hidden
             />
-            <button class="ghost-button compact item-attachment-add" id="itemAttachmentAddButton" type="button">+ Добавить вложение</button>
+            <button class="ghost-button compact item-attachment-add" id="itemAttachmentAddButton" type="button" data-i18n="item.editor.attachments.add">+ Добавить вложение</button>
           </section>
           <div class="form-actions">
-            <button class="primary-button" id="itemSaveButton" type="submit">Сохранить</button>
-            <button class="primary-button" id="resetItemButton" type="button">Сбросить</button>
-            <button class="danger-button" id="deleteItemButton" type="button">Удалить</button>
+            <button class="primary-button" id="itemSaveButton" type="submit" data-i18n="item.editor.save">Сохранить</button>
+            <button class="primary-button" id="resetItemButton" type="button" data-i18n="item.editor.reset">Сбросить</button>
+            <button class="danger-button" id="deleteItemButton" type="button" data-i18n="item.editor.delete">Удалить</button>
           </div>
         </form>
       </section>
@@ -666,8 +674,8 @@
       <div class="sheet-backdrop" data-close="expenseProposal"></div>
       <section class="sheet-panel expense-proposal-panel" role="dialog" aria-modal="true" aria-labelledby="expenseProposalTitle">
         <header class="sheet-header">
-          <h2 id="expenseProposalTitle">Предложить свою долю</h2>
-          <button class="icon-button" data-close="expenseProposal" type="button" aria-label="Закрыть">×</button>
+          <h2 id="expenseProposalTitle" data-i18n="share.proposal.expense.title">Предложить свою долю</h2>
+          <button class="icon-button" data-close="expenseProposal" type="button" aria-label="Закрыть" data-i18n-aria-label="share.close">×</button>
         </header>
         <div class="expense-proposal-body" id="expenseProposalBody"></div>
       </section>
@@ -677,32 +685,32 @@
       <div class="sheet-backdrop" data-close="itemProposal"></div>
       <section class="sheet-panel item-proposal-panel" role="dialog" aria-modal="true" aria-labelledby="itemProposalTitle">
         <header class="sheet-header">
-          <h2 id="itemProposalTitle">Предложить идею</h2>
-          <button class="icon-button" data-close="itemProposal" type="button" aria-label="Закрыть">×</button>
+          <h2 id="itemProposalTitle" data-i18n="share.proposal.item.title">Предложить идею</h2>
+          <button class="icon-button" data-close="itemProposal" type="button" aria-label="Закрыть" data-i18n-aria-label="share.close">×</button>
         </header>
         <form id="itemProposalForm" class="sheet-form">
           <label class="field wide">
-            Название
-            <input id="itemProposalTitleInput" name="title" placeholder="Прогулка, место, билет..." required />
+            <span data-i18n="share.proposal.item.field.title">Название</span>
+            <input id="itemProposalTitleInput" name="title" placeholder="Прогулка, место, билет..." data-i18n-placeholder="share.proposal.item.field.title.placeholder" required />
           </label>
           <label class="field">
-            Тип
+            <span data-i18n="share.proposal.item.field.type">Тип</span>
             <select name="itemType"></select>
           </label>
           <label class="field wide">
-            Ссылка
+            <span data-i18n="share.proposal.item.field.link">Ссылка</span>
             <input name="link" inputmode="url" placeholder="https://..." />
           </label>
           <label class="field">
-            Цена
+            <span data-i18n="share.proposal.item.field.price">Цена</span>
             <input name="price" inputmode="decimal" placeholder="0" />
           </label>
           <label class="field wide">
-            Заметка
-            <textarea name="notes" rows="3" placeholder="Что автору стоит знать"></textarea>
+            <span data-i18n="share.proposal.item.field.notes">Заметка</span>
+            <textarea name="notes" rows="3" placeholder="Что автору стоит знать" data-i18n-placeholder="share.proposal.item.field.notes.placeholder"></textarea>
           </label>
-          <button class="primary-button" id="itemProposalSubmitButton" type="submit">Отправить автору</button>
-          <p class="field-hint">Идея не попадёт в поездку, пока автор её не примет.</p>
+          <button class="primary-button" id="itemProposalSubmitButton" type="submit" data-i18n="share.proposal.item.submit">Отправить автору</button>
+          <p class="field-hint" data-i18n="share.proposal.item.hint">Идея не попадёт в поездку, пока автор её не примет.</p>
         </form>
       </section>
     </div>
@@ -711,8 +719,8 @@
       <div class="sheet-backdrop" data-card-copy-dismiss="backdrop"></div>
       <section class="sheet-panel card-copy-panel" role="dialog" aria-modal="true" aria-labelledby="cardCopySheetTitle">
         <header class="sheet-header">
-          <h2 id="cardCopySheetTitle">Куда скопировать карточку?</h2>
-          <button class="icon-button" data-card-copy-dismiss="close" type="button" aria-label="Закрыть">×</button>
+          <h2 id="cardCopySheetTitle" data-i18n="plan.copy.title.card">Куда скопировать карточку?</h2>
+          <button class="icon-button" data-card-copy-dismiss="close" type="button" aria-label="Закрыть" data-i18n-aria-label="plan.copy.close">×</button>
         </header>
         <div class="card-copy-body">
           <div class="card-copy-step" id="cardCopyScopeStep"></div>
@@ -721,8 +729,8 @@
           <p class="card-copy-warning hidden" id="cardCopyWarning"></p>
         </div>
         <div class="card-copy-actions">
-          <button class="ghost-button" id="cardCopyBackButton" type="button">Назад</button>
-          <button class="primary-button" id="cardCopyConfirmButton" type="button" disabled>Скопировать</button>
+          <button class="ghost-button" id="cardCopyBackButton" type="button" data-i18n="plan.copy.back">Назад</button>
+          <button class="primary-button" id="cardCopyConfirmButton" type="button" disabled data-i18n="plan.copy.confirm.card">Скопировать</button>
         </div>
       </section>
     </div>
@@ -731,49 +739,49 @@
       <div class="sheet-backdrop" data-close="idea"></div>
       <section class="sheet-panel idea-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="ideaSheetTitle">
         <header class="sheet-header">
-          <h2 id="ideaSheetTitle">Добавить идею</h2>
-          <button class="icon-button" data-close="idea" type="button" aria-label="Закрыть">×</button>
+          <h2 id="ideaSheetTitle" data-i18n="ideas.form.title.create">Добавить идею</h2>
+          <button class="icon-button" data-close="idea" type="button" aria-label="Закрыть" data-i18n-aria-label="ideas.form.close">×</button>
         </header>
         <form id="ideaForm" class="sheet-form idea-form">
           <input type="hidden" name="id" />
           <label class="field wide">
-            Название
-            <input name="title" maxlength="160" placeholder="Баня, музей, кафе..." required />
+            <span data-i18n="ideas.form.field.title">Название</span>
+            <input name="title" maxlength="160" placeholder="Баня, музей, кафе..." data-i18n-placeholder="ideas.form.field.title.placeholder" required />
           </label>
           <label class="field">
-            Тип
+            <span data-i18n="ideas.form.field.type">Тип</span>
             <select name="semanticType"></select>
           </label>
           <label class="field">
-            Подборка
+            <span data-i18n="ideas.form.field.collection">Подборка</span>
             <select name="collectionKey"></select>
           </label>
-          <button class="ghost-button compact idea-new-collection-button" id="ideaNewCollectionButton" type="button">Новая подборка</button>
+          <button class="ghost-button compact idea-new-collection-button" id="ideaNewCollectionButton" type="button" data-i18n="ideas.collection.new">Новая подборка</button>
           <label class="field wide">
-            Ссылка
-            <input name="url" inputmode="url" placeholder="https://..." />
+            <span data-i18n="ideas.form.field.url">Ссылка</span>
+            <input name="url" inputmode="url" placeholder="https://..." data-i18n-placeholder="ideas.form.field.url.placeholder" />
           </label>
           <label class="field wide">
-            Локация
-            <input name="locationText" maxlength="240" placeholder="Адрес, район или город" />
+            <span data-i18n="ideas.form.field.location">Локация</span>
+            <input name="locationText" maxlength="240" placeholder="Адрес, район или город" data-i18n-placeholder="ideas.form.field.location.placeholder" />
           </label>
           <label class="field">
-            Цена
-            <input name="priceAmount" inputmode="decimal" placeholder="0" />
+            <span data-i18n="ideas.form.field.price">Цена</span>
+            <input name="priceAmount" inputmode="decimal" placeholder="0" data-i18n-placeholder="ideas.form.field.price.placeholder" />
           </label>
           <label class="field">
-            Валюта
+            <span data-i18n="ideas.form.field.currency">Валюта</span>
             <select name="priceCurrency"></select>
           </label>
           <label class="field wide">
-            Заметка / описание
-            <textarea name="notes" rows="4" placeholder="Почему хочется, что важно проверить..."></textarea>
+            <span data-i18n="ideas.form.field.notes">Заметка / описание</span>
+            <textarea name="notes" rows="4" placeholder="Почему хочется, что важно проверить..." data-i18n-placeholder="ideas.form.field.notes.placeholder"></textarea>
           </label>
           <p class="profile-error" id="ideaFormError" aria-live="polite"></p>
           <div class="form-actions idea-form-actions">
-            <button class="primary-button" id="ideaSaveButton" type="submit">Сохранить</button>
-            <button class="ghost-button" id="ideaAddToTripButton" type="button" hidden>Добавить в поездку</button>
-            <button class="ghost-button" id="ideaArchiveButton" type="button" hidden>Архивировать</button>
+            <button class="primary-button" id="ideaSaveButton" type="submit" data-i18n="ideas.form.save">Сохранить</button>
+            <button class="ghost-button" id="ideaAddToTripButton" type="button" hidden data-i18n="ideas.form.add.to.trip">Добавить в поездку</button>
+            <button class="ghost-button" id="ideaArchiveButton" type="button" hidden data-i18n="ideas.form.archive">Архивировать</button>
           </div>
         </form>
       </section>
@@ -783,16 +791,16 @@
       <div class="sheet-backdrop" data-close="ideaCollection"></div>
       <section class="sheet-panel idea-collection-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="ideaCollectionSheetTitle">
         <header class="sheet-header">
-          <h2 id="ideaCollectionSheetTitle">Новая подборка</h2>
-          <button class="icon-button" data-close="ideaCollection" type="button" aria-label="Закрыть">×</button>
+          <h2 id="ideaCollectionSheetTitle" data-i18n="ideas.collection.form.title">Новая подборка</h2>
+          <button class="icon-button" data-close="ideaCollection" type="button" aria-label="Закрыть" data-i18n-aria-label="ideas.collection.form.close">×</button>
         </header>
         <form id="ideaCollectionForm" class="sheet-form idea-collection-form">
           <label class="field wide">
-            Название подборки
-            <input name="title" maxlength="120" placeholder="Грузия, Китай, Азия — пока не решила..." required />
+            <span data-i18n="ideas.collection.form.field.title">Название подборки</span>
+            <input name="title" maxlength="120" placeholder="Грузия, Китай, Азия — пока не решила..." data-i18n-placeholder="ideas.collection.form.field.title.placeholder" required />
           </label>
           <p class="profile-error" id="ideaCollectionFormError" aria-live="polite"></p>
-          <button class="primary-button" id="ideaCollectionSaveButton" type="submit">Создать подборку</button>
+          <button class="primary-button" id="ideaCollectionSaveButton" type="submit" data-i18n="ideas.collection.form.create">Создать подборку</button>
         </form>
       </section>
     </div>
@@ -801,33 +809,33 @@
       <div class="sheet-backdrop" data-close="trip"></div>
       <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="tripSheetTitle">
         <header class="sheet-header">
-          <h2 id="tripSheetTitle">Настройки поездки</h2>
-          <button class="icon-button" data-close="trip" type="button" aria-label="Закрыть">×</button>
+          <h2 id="tripSheetTitle" data-i18n="trip.setup.title">Настройки поездки</h2>
+          <button class="icon-button" data-close="trip" type="button" aria-label="Закрыть" data-i18n-aria-label="trip.setup.close">×</button>
         </header>
         <form id="tripForm" class="sheet-form">
           <label class="field wide">
-            Название поездки
-            <input name="title" required />
+            <span data-i18n="trip.setup.field.title.label">Название поездки</span>
+            <input name="title" required placeholder="Например, Лето в Грузии" data-i18n-placeholder="trip.setup.field.title.placeholder" />
           </label>
           <label class="field wide">
-            Направление
-            <input name="destination" required />
+            <span data-i18n="trip.setup.field.destination.label">Направление</span>
+            <input name="destination" required placeholder="Например, Тбилиси" data-i18n-placeholder="trip.setup.field.destination.placeholder" />
           </label>
           <label class="field wide ai-source-field" id="aiSourceTextField" hidden>
-            Исходное описание поездки
+            <span data-i18n="trip.setup.field.source.label">Исходное описание поездки</span>
             <textarea name="aiSourceText" rows="5"></textarea>
-            <span class="field-hint">Используется как общий контекст поездки. Изменение описания не изменит уже созданный план.</span>
+            <span class="field-hint" data-i18n="trip.setup.field.source.hint">Используется как общий контекст поездки. Изменение описания не изменит уже созданный план.</span>
           </label>
           <label class="field">
-            Дата начала
+            <span data-i18n="trip.setup.field.start.label">Дата начала</span>
             <input name="startDate" type="date" />
           </label>
           <label class="field">
-            Дата окончания
+            <span data-i18n="trip.setup.field.end.label">Дата окончания</span>
             <input name="endDate" type="date" />
           </label>
           <label class="field">
-            Валюта
+            <span data-i18n="trip.setup.field.currency.label">Валюта</span>
             <select name="currency">
               <option value="RUB">RUB</option>
               <option value="EUR">EUR</option>
@@ -840,26 +848,26 @@
             </select>
           </label>
           <label class="field">
-            Бюджет
-            <input name="budgetLimit" inputmode="decimal" />
+            <span data-i18n="trip.setup.field.budget.label">Бюджет</span>
+            <input name="budgetLimit" inputmode="decimal" placeholder="Например, 1500" data-i18n-placeholder="trip.setup.field.budget.placeholder" />
           </label>
-          <p class="field-hint wide">При смене валюты суммы пересчитываются по демо-курсу.</p>
+          <p class="field-hint wide" data-i18n="trip.setup.field.currency.hint">При смене валюты суммы пересчитываются по демо-курсу.</p>
           <label class="field wide">
-            Предпочтения
-            <textarea name="preferencesText" rows="4"></textarea>
+            <span data-trip-preferences-label data-i18n="trip.setup.field.preferences.label">Пожелания к поездке</span>
+            <textarea name="preferencesText" rows="4" placeholder="Темп, питание, интересы и другие пожелания" data-i18n-placeholder="trip.setup.field.preferences.placeholder"></textarea>
           </label>
-          <section class="field wide participants-field" aria-label="Участники поездки">
-            <span>Участники</span>
+          <section class="field wide participants-field" aria-label="Участники поездки" data-i18n-aria-label="trip.setup.participants.aria">
+            <span data-i18n="trip.setup.participants.title">Участники</span>
             <div class="participants-section">
               <div class="participants-list" id="participantsList"></div>
               <div class="participants-actions">
-                <button class="ghost-button compact" id="addParticipantButton" type="button">Добавить участника</button>
+                <button class="ghost-button compact" id="addParticipantButton" type="button" data-i18n="trip.setup.participants.add">Добавить участника</button>
               </div>
             </div>
           </section>
           <div class="form-actions">
-            <button class="ghost-button" type="button" id="resetDemoButton">Сбросить</button>
-            <button class="primary-button" type="submit">Сохранить</button>
+            <button class="ghost-button" type="button" id="resetDemoButton" data-i18n="trip.setup.reset">Сбросить</button>
+            <button class="primary-button" type="submit" data-i18n="trip.setup.save">Сохранить</button>
           </div>
         </form>
       </section>
@@ -968,16 +976,16 @@
       <div class="sheet-backdrop" data-close="homeShare"></div>
       <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="homeShareSheetTitle">
         <header class="sheet-header">
-          <h2 id="homeShareSheetTitle">Поделиться Backpacker</h2>
-          <button class="icon-button" data-close="homeShare" type="button" aria-label="Закрыть">×</button>
+          <h2 id="homeShareSheetTitle" data-i18n="share.app.title">Поделиться Backpacker</h2>
+          <button class="icon-button" data-close="homeShare" type="button" aria-label="Закрыть" data-i18n-aria-label="share.close">×</button>
         </header>
         <div class="share-actions">
-          <button class="ghost-button" id="homeInstallAppButton" type="button">Установить Backpacker</button>
-          <button class="primary-button" id="shareAppButton" type="button">Поделиться Backpacker</button>
+          <button class="ghost-button" id="homeInstallAppButton" type="button" data-i18n="share.app.install">Установить Backpacker</button>
+          <button class="primary-button" id="shareAppButton" type="button" data-i18n="share.app.action">Поделиться Backpacker</button>
         </div>
         <p class="home-share-hint">
-          <span>💡Скачайте мини-приложение - с мобильного будет удобнее пользоваться</span>
-          <span>💡 Чтобы пригласить друга в приложение - поделитесь ссылкой</span>
+          <span data-i18n="share.app.install.hint">💡Скачайте мини-приложение - с мобильного будет удобнее пользоваться</span>
+          <span data-i18n="share.app.invite.hint">💡 Чтобы пригласить друга в приложение - поделитесь ссылкой</span>
         </p>
       </section>
     </div>
@@ -1018,48 +1026,48 @@
       <div class="sheet-backdrop" data-close="share"></div>
       <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="shareSheetTitle">
         <header class="sheet-header">
-          <h2 id="shareSheetTitle">Поделиться поездкой</h2>
-          <button class="icon-button" data-close="share" type="button" aria-label="Закрыть">×</button>
+          <h2 id="shareSheetTitle" data-i18n="share.sheet.title">Поделиться поездкой</h2>
+          <button class="icon-button" data-close="share" type="button" aria-label="Закрыть" data-i18n-aria-label="share.close">×</button>
         </header>
         <div class="share-actions">
-          <button class="primary-button" id="shareTripTextButton" type="button">Отправить поездку текстом</button>
-          <button class="primary-button" id="openTripLinkButton" type="button">Открыть доступ по ссылке</button>
+          <button class="primary-button" id="shareTripTextButton" type="button" data-i18n="share.text.action">Отправить поездку текстом</button>
+          <button class="primary-button" id="openTripLinkButton" type="button" data-i18n="share.link.open">Открыть доступ по ссылке</button>
           <div class="trip-link-options hidden" id="tripLinkOptions">
             <label class="trip-pdf-toggle">
               <input id="tripLinkIncludeBudget" type="checkbox" checked />
-              <span>Показывать смету</span>
+              <span data-i18n="share.link.include.budget">Показывать смету</span>
             </label>
             <div class="share-link-box">
-              <input id="tripShareLinkInput" readonly placeholder="Ссылка появится после публикации" />
-              <button class="ghost-button compact" id="copyTripLinkButton" type="button">Скопировать</button>
+              <input id="tripShareLinkInput" readonly placeholder="Ссылка появится после публикации" data-i18n-placeholder="share.link.placeholder" aria-label="Ссылка на поездку" data-i18n-aria-label="share.link.input.aria" />
+              <button class="ghost-button compact" id="copyTripLinkButton" type="button" data-i18n="share.link.copy">Скопировать</button>
             </div>
             <p class="share-link-status" id="tripShareLinkStatus"></p>
-            <p class="share-link-hint">Управление поездкой - только у автора, гостям доступен просмотр.</p>
-            <button class="danger-button" id="revokeTripLinkButton" type="button">Отозвать доступ</button>
+            <p class="share-link-hint" data-i18n="share.link.hint">Управление поездкой - только у автора, гостям доступен просмотр.</p>
+            <button class="danger-button" id="revokeTripLinkButton" type="button" data-i18n="share.link.revoke">Отозвать доступ</button>
           </div>
-          <button class="primary-button" id="openTripPdfOptionsButton" type="button">Отправить поездку в PDF</button>
+          <button class="primary-button" id="openTripPdfOptionsButton" type="button" data-i18n="share.pdf.open">Отправить поездку в PDF</button>
         </div>
         <div class="trip-pdf-options hidden" id="tripPdfOptions">
           <label class="trip-pdf-toggle">
             <input id="tripPdfIncludeBudget" type="checkbox" checked />
-            <span>Включить смету</span>
+            <span data-i18n="share.pdf.include.budget">Включить смету</span>
           </label>
           <label class="trip-pdf-toggle">
             <input id="tripPdfIncludeNotes" type="checkbox" />
-            <span>Включить заметки</span>
+            <span data-i18n="share.pdf.include.notes">Включить заметки</span>
           </label>
           <label class="trip-pdf-toggle">
             <input id="tripPdfIncludeUndated" type="checkbox" checked />
-            <span>Включить элементы без даты</span>
+            <span data-i18n="share.pdf.include.unscheduled">Включить элементы без даты</span>
           </label>
           <div class="trip-pdf-actions">
-            <button class="primary-button" id="downloadTripPdfButton" type="button">Скачать</button>
-            <button class="primary-button" id="shareTripPdfButton" type="button">Поделиться</button>
+            <button class="primary-button" id="downloadTripPdfButton" type="button" data-i18n="share.pdf.download">Скачать</button>
+            <button class="primary-button" id="shareTripPdfButton" type="button" data-i18n="share.pdf.share">Поделиться</button>
           </div>
         </div>
         <div class="share-actions share-secondary-actions">
-          <button class="ghost-button" id="downloadEstimateButton" type="button">Скачать смету</button>
-          <button class="ghost-button" id="downloadPlanButton" type="button">Скачать план по дням</button>
+          <button class="ghost-button" id="downloadEstimateButton" type="button" data-i18n="share.estimate.download">Скачать смету</button>
+          <button class="ghost-button" id="downloadPlanButton" type="button" data-i18n="share.plan.download">Скачать план по дням</button>
         </div>
         <pre class="share-preview" id="sharePreview"></pre>
       </section>
@@ -1069,39 +1077,39 @@
       <div class="sheet-backdrop" data-close="profile"></div>
       <section class="sheet-panel profile-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="profileSheetTitle">
         <header class="sheet-header">
-          <h2 id="profileSheetTitle">Как вас показывать в Backpacker?</h2>
-          <button class="icon-button" data-close="profile" type="button" aria-label="Закрыть">×</button>
+          <h2 id="profileSheetTitle" data-i18n="share.profile.title">Как вас показывать в Backpacker?</h2>
+          <button class="icon-button" data-close="profile" type="button" aria-label="Закрыть" data-i18n-aria-label="share.close">×</button>
         </header>
         <form class="sheet-form profile-form" id="profileForm">
-          <p class="profile-copy">Это имя увидят авторы поездок и другие участники. Можно указать имя или ник.</p>
+          <p class="profile-copy" data-i18n="share.profile.copy">Это имя увидят авторы поездок и другие участники. Можно указать имя или ник.</p>
           <label class="field wide">
-            Имя или ник
-            <input id="profileDisplayNameInput" name="displayName" maxlength="40" autocomplete="nickname" placeholder="Например, Ирина или backpacker_ira" />
+            <span data-i18n="share.profile.name">Имя или ник</span>
+            <input id="profileDisplayNameInput" name="displayName" maxlength="40" autocomplete="nickname" placeholder="Например, Ирина или backpacker_ira" data-i18n-placeholder="share.profile.name.placeholder" />
           </label>
           <p class="profile-error" id="profileError" aria-live="polite"></p>
-          <button class="primary-button" id="profileSaveButton" type="submit">Сохранить и продолжить</button>
-          <p class="field-hint">Имя не является логином и не меняет доступ к поездкам.</p>
+          <button class="primary-button" id="profileSaveButton" type="submit" data-i18n="share.profile.save.continue">Сохранить и продолжить</button>
+          <p class="field-hint" data-i18n="share.profile.hint">Имя не является логином и не меняет доступ к поездкам.</p>
         </form>
         <section class="recoverable-auth-card" id="recoverableAuthCard">
           <div class="recoverable-auth-heading">
-            <h3>Сохранить доступ по email</h3>
-            <p id="recoverableAuthSummary">Email связывает Backpacker на телефоне и ноутбуке: Cloud Ideas и идеи из расширения будут видны в одном месте.</p>
+            <h3 data-i18n="share.profile.email.title">Сохранить доступ по email</h3>
+            <p id="recoverableAuthSummary" data-i18n="share.profile.email.summary">Email связывает Backpacker на телефоне и ноутбуке: Cloud Ideas и идеи из расширения будут видны в одном месте.</p>
           </div>
           <p class="recoverable-auth-status" id="recoverableAuthStatus" aria-live="polite"></p>
           <form class="recoverable-auth-form" id="recoverableAuthUpgradeForm">
             <label class="field wide">
-              Email для доступа
+              <span data-i18n="share.profile.email.label">Email для доступа</span>
               <input id="recoverableAuthEmailInput" name="recoverableEmail" type="email" autocomplete="email" placeholder="you@example.com" />
             </label>
-            <button class="primary-button" id="recoverableAuthSendButton" type="submit">Отправить ссылку</button>
+            <button class="primary-button" id="recoverableAuthSendButton" type="submit" data-i18n="share.profile.email.send">Отправить ссылку</button>
           </form>
           <form class="recoverable-auth-form recoverable-auth-login-form" id="recoverableAuthLoginForm">
-            <p class="field-hint">Уже сохраняли доступ? Войдите по email, чтобы открыть те же Cloud Ideas на этом устройстве.</p>
+            <p class="field-hint" data-i18n="share.profile.email.login.hint">Уже сохраняли доступ? Войдите по email, чтобы открыть те же Cloud Ideas на этом устройстве.</p>
             <label class="field wide">
-              Email
+              <span>Email</span>
               <input id="recoverableLoginEmailInput" name="recoverableLoginEmail" type="email" autocomplete="email" placeholder="you@example.com" />
             </label>
-            <button class="ghost-button" id="recoverableAuthLoginButton" type="submit">Войти по email</button>
+            <button class="ghost-button" id="recoverableAuthLoginButton" type="submit" data-i18n="share.profile.email.login">Войти по email</button>
           </form>
         </section>
       </section>
@@ -1120,7 +1128,7 @@
     <script src="./financial-core.js"></script>
     <script src="./trip-date-core.js"></script>
     <script src="./trip-draft-quantity-core.js"></script>
-    <script src="./trip-draft-ai-core.js"></script>
+    <script src="./trip-draft-ai-core.js?v=i18n-ai-draft-20260824"></script>
     <script src="./link-intake-ui-core.js"></script>
     <script src="./recoverable-auth-core.js"></script>
     <script src="./extension-connect-ui-core.js"></script>
@@ -1132,6 +1140,7 @@
     <script src="./platform-file-boundary-core.js"></script>
     <script src="./private-trip-sync-core.js"></script>
     <script src="./private-trip-sync-client.js"></script>
-    <script src="./app.js?v=private-trip-sync-contract-fix-20260803"></script>
+    <script src="./i18n.js?v=i18n-foundation-20260820"></script>
+    <script src="./app.js?v=i18n-export-20260825"></script>
   </body>
 </html>
