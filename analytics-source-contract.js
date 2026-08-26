@@ -1,11 +1,11 @@
-// Backpacker Analytics Contract v0.1 source-event boundary.
+// Backpacker Analytics Contract v0.2 source-event boundary.
 (function initBackpackerAnalyticsSource(root, factory) {
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.BackpackerAnalyticsSource = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
-  const ANALYTICS_SCHEMA_VERSION = "2026-08-25.1";
-  const EVENT_CONTRACT_VERSION = "0.1";
+  const ANALYTICS_SCHEMA_VERSION = "2026-08-26.1";
+  const EVENT_CONTRACT_VERSION = "0.2";
 
   const CONTRACT_COMMON_PROPERTIES = Object.freeze([
     "anon_user_id", "session_id", "analytics_schema_version", "event_contract_version",
@@ -14,6 +14,7 @@
   ]);
 
   const CONTRACT_EVENT_PROPERTIES = Object.freeze({
+    app_shared: [],
     trip_created: [
       "trip_id", "trip_origin", "trip_phase", "days_until_trip_bucket",
       "creation_source", "trip_count_after_create", "is_second_user_trip",
@@ -58,6 +59,7 @@
   });
 
   const REQUIRED_EVENT_PROPERTIES = Object.freeze({
+    app_shared: [],
     trip_created: ["trip_id", "trip_origin", "creation_source"],
     trip_first_value_reached: ["trip_id", "trip_origin", "definition_version"],
     item_created: ["trip_id", "trip_origin", "item_id", "creation_source"],

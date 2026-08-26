@@ -168,7 +168,7 @@ test("Ideas translations interpolate collection and accessible card labels", asy
 
 test("Ideas release uses a fresh versioned app asset and PWA cache", () => {
   const serviceWorker = read("service-worker.js");
-  assert.match(index, /\.\/app\.js\?v=analytics-legacy-cleanup-20260825/);
-  assert.match(serviceWorker, /backpacker-pwa-v127/);
-  assert.match(serviceWorker, /\.\/app\.js\?v=analytics-legacy-cleanup-20260825/);
+  assert.match(index, /\.\/app\.js\?v=app-shared-20260826/);
+  assert.match(serviceWorker, /backpacker-pwa-v128/);
+  assert.match(serviceWorker, /\.\/app\.js\?v=app-shared-20260826/);
 });

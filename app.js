@@ -20,8 +20,8 @@ const ANALYTICS_MILESTONES_KEY = "backpacker.analytics.milestones.v1";
 const DONATION_STATE_KEY = "backpacker.donation.state.v1";
 const ANALYTICS_CONFIG = window.BACKPACKER_ANALYTICS || {};
 const ANALYTICS_SOURCE_CONTRACT = window.BackpackerAnalyticsSource;
-const ANALYTICS_SCHEMA_VERSION = ANALYTICS_SOURCE_CONTRACT?.ANALYTICS_SCHEMA_VERSION || "2026-08-25.1";
-const ANALYTICS_EVENT_CONTRACT_VERSION = ANALYTICS_SOURCE_CONTRACT?.EVENT_CONTRACT_VERSION || "0.1";
+const ANALYTICS_SCHEMA_VERSION = ANALYTICS_SOURCE_CONTRACT?.ANALYTICS_SCHEMA_VERSION || "2026-08-26.1";
+const ANALYTICS_EVENT_CONTRACT_VERSION = ANALYTICS_SOURCE_CONTRACT?.EVENT_CONTRACT_VERSION || "0.2";
 const SUPABASE_CLIENT_ANALYTICS_EVENTS = new Set([
   "trip_created",
   "trip_first_value_reached",
@@ -32,12 +32,13 @@ const SUPABASE_CLIENT_ANALYTICS_EVENTS = new Set([
   "idea_saved",
   "idea_add_to_trip_started",
   "trip_working_plan_reached",
+  "app_shared",
 ]);
 const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.79";
+const APP_VERSION = "1.1.2.80";
 const APP_RELEASE_SUMMARY = "Supabase — единственный runtime source аналитики; legacy PostHog emission отключён.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -8420,15 +8421,16 @@ async function shareApp() {
   if (navigator.share) {
     try {
       await navigator.share(shareData);
-      trackEvent("share_completed", { method: "web_share", result: "success", share_target: "app" });
+      trackEvent("app_shared");
       return;
     } catch (error) {
       if (error?.name === "AbortError") return;
     }
   }
-  await copyText(`${shareData.text}\n${url}`);
+  const copied = await copyText(`${shareData.text}\n${url}`);
+  if (!copied) return;
   showToast(window.t("share.app.copied"));
-  trackEvent("share_completed", { method: "copy_fallback", result: "fallback", share_target: "app" });
+  trackEvent("app_shared");
 }
 
 function getItemFormLink() {
@@ -8483,14 +8485,16 @@ async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
     showToast(window.t("share.copy.done"));
+    return true;
   } catch {
     const textarea = document.createElement("textarea");
     textarea.value = text;
     document.body.appendChild(textarea);
     textarea.select();
-    document.execCommand("copy");
+    const copied = document.execCommand("copy");
     textarea.remove();
-    showToast(window.t("share.copy.done"));
+    if (copied) showToast(window.t("share.copy.done"));
+    return copied;
   }
 }
 

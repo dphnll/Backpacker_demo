@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
+const vm = require("node:vm");
 
 const sourceContract = require("../analytics-source-contract.js");
 const appSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
@@ -19,11 +20,78 @@ function functionSource(name) {
 }
 
 test("source schema and event contract versions are independent and loaded before app", () => {
-  assert.equal(sourceContract.ANALYTICS_SCHEMA_VERSION, "2026-08-25.1");
-  assert.equal(sourceContract.EVENT_CONTRACT_VERSION, "0.1");
-  assert.ok(indexSource.indexOf("analytics-source-contract.js") < indexSource.indexOf("app.js?v=analytics-legacy-cleanup-20260825"));
-  assert.match(workerSource, /backpacker-pwa-v127/);
-  assert.match(workerSource, /analytics-source-contract\.js\?v=analytics-contract-20260825/);
+  assert.equal(sourceContract.ANALYTICS_SCHEMA_VERSION, "2026-08-26.1");
+  assert.equal(sourceContract.EVENT_CONTRACT_VERSION, "0.2");
+  assert.ok(indexSource.indexOf("analytics-source-contract.js") < indexSource.indexOf("app.js?v=app-shared-20260826"));
+  assert.match(workerSource, /backpacker-pwa-v128/);
+  assert.match(workerSource, /analytics-source-contract\.js\?v=app-shared-20260826/);
+});
+
+async function runAppShare({ share, copied = true }) {
+  const events = [];
+  const sandbox = {
+    navigator: { share },
+    window: {
+      location: {
+        origin: "https://dphnll.github.io",
+        pathname: "/Backpacker_demo/",
+        protocol: "https:",
+      },
+      t: () => "share text",
+    },
+    copyText: async () => copied,
+    showToast() {},
+    trackEvent(name, props) {
+      events.push({ name, props });
+    },
+  };
+  vm.runInNewContext(`${functionSource("shareApp")}; this.shareApp = shareApp;`, sandbox);
+  await sandbox.shareApp();
+  return events;
+}
+
+async function runCopyText({ clipboardWorks, legacyCopied }) {
+  const toasts = [];
+  const textarea = { remove() {}, select() {}, value: "" };
+  const sandbox = {
+    navigator: { clipboard: { writeText: async () => {
+      if (!clipboardWorks) throw new Error("clipboard unavailable");
+    } } },
+    document: {
+      body: { appendChild() {} },
+      createElement: () => textarea,
+      execCommand: () => legacyCopied,
+    },
+    window: { t: () => "copied" },
+    showToast: (message) => toasts.push(message),
+  };
+  vm.runInNewContext(`${functionSource("copyText")}; this.copyText = copyText;`, sandbox);
+  return { copied: await sandbox.copyText("canonical app link"), toasts };
+}
+
+test("app Share emits once only after confirmed Web Share or clipboard success", async () => {
+  assert.deepEqual(await runAppShare({ share: async () => {} }), [{ name: "app_shared", props: undefined }]);
+  assert.deepEqual(await runAppShare({
+    share: async () => { throw Object.assign(new Error("cancel"), { name: "AbortError" }); },
+  }), []);
+  assert.deepEqual(await runAppShare({
+    share: async () => { throw new Error("share failed"); },
+    copied: true,
+  }), [{ name: "app_shared", props: undefined }]);
+  assert.deepEqual(await runAppShare({ share: undefined, copied: false }), []);
+  assert.deepEqual(await runCopyText({ clipboardWorks: true }), { copied: true, toasts: ["copied"] });
+  assert.deepEqual(await runCopyText({ clipboardWorks: false, legacyCopied: true }), { copied: true, toasts: ["copied"] });
+  assert.deepEqual(await runCopyText({ clipboardWorks: false, legacyCopied: false }), { copied: false, toasts: [] });
+});
+
+test("app_shared has no event properties or share content", () => {
+  assert.deepEqual(sourceContract.sanitizeEventProperties("app_shared", {
+    url: "https://private.example.test",
+    title: "private title",
+    text: "private text",
+    method: "clipboard",
+  }), {});
+  assert.deepEqual(sourceContract.getMissingRequiredProperties("app_shared", {}), []);
 });
 
 test("canonical Supabase capture receives the privacy and source-time envelope", () => {
@@ -44,9 +112,9 @@ test("contract success payloads contain only the approved common envelope and ev
   const payload = sourceContract.sanitizeContractEventPayload("idea_saved", {
     anon_user_id: "anon-1",
     session_id: "session-1",
-    analytics_schema_version: "2026-08-25.1",
-    event_contract_version: "0.1",
-    app_version: "1.1.2.79",
+    analytics_schema_version: "2026-08-26.1",
+    event_contract_version: "0.2",
+    app_version: "1.1.2.80",
     environment: "production",
     is_internal_user: false,
     is_test_user: false,
@@ -188,6 +256,7 @@ test("AI draft and accepted proposals emit persisted item success signals", () =
 });
 
 test("new success event names have one canonical emitter per lifecycle path", () => {
+  assert.equal((appSource.match(/trackEvent\("app_shared"/g) || []).length, 2);
   assert.equal((appSource.match(/trackEvent\("trip_share_created"/g) || []).length, 1);
   assert.equal((appSource.match(/trackEvent\("idea_saved"/g) || []).length, 1);
   assert.equal((appSource.match(/trackEvent\("idea_add_to_trip_started"/g) || []).length, 1);

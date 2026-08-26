@@ -151,10 +151,10 @@ test("source text and preferences semantics survive the confirmation boundary", 
 test("AI Draft ships in a fresh versioned app shell", () => {
   const serviceWorker = read("service-worker.js");
   assert.match(index, /\.\/trip-draft-ai-core\.js\?v=i18n-ai-draft-20260824/);
-  assert.match(index, /\.\/app\.js\?v=analytics-legacy-cleanup-20260825/);
-  assert.match(serviceWorker, /backpacker-pwa-v127/);
+  assert.match(index, /\.\/app\.js\?v=app-shared-20260826/);
+  assert.match(serviceWorker, /backpacker-pwa-v128/);
   assert.match(serviceWorker, /\.\/trip-draft-ai-core\.js\?v=i18n-ai-draft-20260824/);
-  assert.match(serviceWorker, /\.\/app\.js\?v=analytics-legacy-cleanup-20260825/);
+  assert.match(serviceWorker, /\.\/app\.js\?v=app-shared-20260826/);
 });
 
 test("Booking Pack recovery controls are localized declaratively", () => {

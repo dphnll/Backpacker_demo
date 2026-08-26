@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.2.80 - 2026-08-26
+
+- App Share emits one typed `app_shared` only after confirmed Web Share or clipboard success.
+- Supabase analytics aggregate v0.2 adds the coverage-gated `app_sharers` observation.
+
 ## 1.1.2.79 - 2026-08-25
 
 - PostHog runtime emission отключён во всех Backpacker production paths: browser capture/fallback, client analytics Edge shadow, sharing lifecycle и Extension ingestion. Canonical typed Supabase source, privacy allowlist, idempotency и event semantics не менялись.
