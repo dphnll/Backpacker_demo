@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.2.82 - 2026-08-30
+
+- First-run intro полностью локализован на RU/EN через существующую i18n foundation; русская копия, три слайда, навигация и onboarding analytics остаются без изменений.
+- На главной добавлен отдельный компактный `AUTO / RU / EN` control с сохранённой preference semantics; unsupported browser language в AUTO теперь безопасно открывает английский интерфейс.
+- Language control вынесен из бренд-плашки, выровнен по её правому краю и использует общий 14px Home rhythm и фирменное emerald active state.
+
 ## 1.1.2.81 - 2026-08-29
 
 - App Share добавляет к app-level URL только controlled marker `ref=app_share_v1`; Web Share и clipboard используют один URL, а trip sharing не меняется.

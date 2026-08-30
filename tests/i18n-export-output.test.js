@@ -294,12 +294,12 @@ test("Legacy text and CSV builders plus formatters follow active export locale",
 });
 
 test("Export localization ships through a fresh app asset and cache", () => {
-  assert.match(app, /const APP_VERSION = "1\.1\.2\.81"/);
-  assert.match(index, /\.\/styles\.css\?v=share-export-layer-20260825/);
-  assert.match(index, /\.\/app\.js\?v=referral-arrival-20260829/);
-  assert.match(serviceWorker, /backpacker-pwa-v129/);
-  assert.match(serviceWorker, /\.\/styles\.css\?v=share-export-layer-20260825/);
-  assert.match(serviceWorker, /\.\/app\.js\?v=referral-arrival-20260829/);
+  assert.match(app, /const APP_VERSION = "1\.1\.2\.82"/);
+  assert.match(index, /\.\/styles\.css\?v=p0-language-access-20260830/);
+  assert.match(index, /\.\/app\.js\?v=p0-language-access-20260830/);
+  assert.match(serviceWorker, /backpacker-pwa-v130/);
+  assert.match(serviceWorker, /\.\/styles\.css\?v=p0-language-access-20260830/);
+  assert.match(serviceWorker, /\.\/app\.js\?v=p0-language-access-20260830/);
 });
 
 test("Share export format dialog stays above the Share sheet", () => {

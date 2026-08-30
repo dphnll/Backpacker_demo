@@ -41,8 +41,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.81";
-const APP_RELEASE_SUMMARY = "App Share referral activation добавляет privacy-safe учёт новых пользователей без referral graph или PII.";
+const APP_VERSION = "1.1.2.82";
+const APP_RELEASE_SUMMARY = "P0 завершает EN-интро и добавляет заметный переключатель AUTO/RU/EN на главной.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -10439,18 +10439,21 @@ function handleNativeDateTimeClear(event) {
 }
 
 function bindLanguageSelector() {
-  const select = $("#languageSelect");
+  const buttons = [...document.querySelectorAll("[data-language-preference]")];
   const i18n = window.BackpackerI18n;
-  if (!select || !i18n) return;
+  if (!buttons.length || !i18n) return;
 
-  select.value = i18n.getPreference();
-  select.addEventListener("change", () => {
-    const previousPreference = i18n.getPreference();
-    if (!i18n.setLocalePreference(select.value)) {
-      select.value = previousPreference;
-      return;
-    }
-    window.location.reload();
+  const preference = i18n.getPreference();
+  buttons.forEach((button) => {
+    const nextPreference = button.dataset.languagePreference;
+    const isSelected = nextPreference === preference;
+    button.classList.toggle("selected", isSelected);
+    button.setAttribute("aria-pressed", String(isSelected));
+    button.addEventListener("click", () => {
+      if (nextPreference === i18n.getPreference()) return;
+      if (!i18n.setLocalePreference(nextPreference)) return;
+      window.location.reload();
+    });
   });
 }
 

@@ -427,6 +427,69 @@ a {
   flex: 0 0 40px;
 }
 
+.home-language-switch {
+  display: flex;
+  width: max-content;
+  margin: var(--a-gap) 16px 4px auto;
+  align-items: center;
+}
+
+.home-language-option {
+  position: relative;
+  display: grid;
+  width: 40px;
+  min-width: 40px;
+  min-height: 38px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--a-line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--a-ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.home-language-option:first-child {
+  border-radius: 8px 0 0 8px;
+}
+
+.home-language-option:first-child[aria-pressed="false"] {
+  color: var(--blue);
+}
+
+.home-language-option svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.home-language-option:last-child {
+  border-radius: 0 8px 8px 0;
+}
+
+.home-language-option + .home-language-option {
+  margin-left: -1px;
+}
+
+.home-language-option[aria-pressed="true"] {
+  z-index: 1;
+  border-color: var(--a-brand);
+  background: var(--a-brand);
+  color: #fff;
+}
+
+.home-language-option:focus-visible {
+  z-index: 2;
+  outline: 2px solid rgba(47, 93, 85, 0.32);
+  outline-offset: 2px;
+}
+
 /* По центру, а не по верхнему краю: у логотипа margin -5px, и при
    выравнивании по верху он вставал на те же 5px выше кнопки «Поделиться». */
 .home-brand {
@@ -5479,7 +5542,10 @@ h4,
   padding: 4px 16px 24px;
 }
 
-.home-screen .trip-list-section { order: 1; }
+.home-screen .trip-list-section {
+  order: 1;
+  margin-top: 0;
+}
 .home-screen .received-trips-section { order: 2; }
 .home-screen #openIdeasButton { order: 3; }
 .home-screen .home-trainer-shell,
@@ -5856,34 +5922,6 @@ h4,
   border: 0;
   border-top: 1px solid var(--a-line);
   background: none;
-}
-
-.home-screen .home-language-control {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(118px, 160px);
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-  margin-bottom: 58px;
-  color: var(--a-ink-soft);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.home-screen .home-language-control span,
-.home-screen .home-language-control select {
-  min-width: 0;
-}
-
-.home-screen .home-language-control select {
-  width: 100%;
-  min-height: 40px;
-  padding: 8px 30px 8px 10px;
-  border: 1px solid var(--a-line);
-  border-radius: 8px;
-  background: var(--a-card);
-  color: var(--a-ink);
-  font: inherit;
 }
 
 /* Иконки здесь — не svg, а текстовые знаки «i» и «?», картинка копилки и

@@ -65,12 +65,12 @@ test("locale files have the same non-empty key contract", () => {
   }
 });
 
-test("browser locale detection supports ru and en and falls back to ru", () => {
+test("browser locale detection supports ru and en and falls back to en", () => {
   assert.equal(normalizeLocale("EN_us"), "en");
   assert.equal(detectLocale({ language: "en-US" }), "en");
   assert.equal(detectLocale({ language: "ru-RU" }), "ru");
   assert.equal(detectLocale({ languages: ["ka-GE", "en-GB"] }), "en");
-  assert.equal(detectLocale({ language: "ka-GE" }), "ru");
+  assert.equal(detectLocale({ language: "ka-GE" }), "en");
 });
 
 test("saved preference overrides the browser and auto follows it", async () => {
@@ -167,14 +167,15 @@ test("index, app bootstrap, and PWA cache are wired to the same foundation", () 
   const app = read("app.js");
   const serviceWorker = read("service-worker.js");
 
-  assert.match(index, /id="languageSelect"/);
-  assert.ok(index.indexOf("./i18n.js?v=i18n-foundation-20260820") < index.indexOf("./app.js?"));
+  assert.match(index, /class="home-language-switch"/);
+  assert.equal((index.match(/data-language-preference="(?:auto|ru|en)"/g) || []).length, 3);
+  assert.ok(index.indexOf("./i18n.js?v=p0-language-access-20260830") < index.indexOf("./app.js?"));
   assert.ok(app.indexOf("await window.BackpackerI18n?.init()") < app.indexOf("bindEvents();", app.indexOf("async function bootstrapApp")));
-  assert.match(serviceWorker, /backpacker-pwa-v129/);
-  assert.match(index, /\.\/styles\.css\?v=share-export-layer-20260825/);
-  assert.match(serviceWorker, /\.\/styles\.css\?v=share-export-layer-20260825/);
-  assert.match(index, /\.\/app\.js\?v=referral-arrival-20260829/);
-  assert.match(serviceWorker, /\.\/app\.js\?v=referral-arrival-20260829/);
+  assert.match(serviceWorker, /backpacker-pwa-v130/);
+  assert.match(index, /\.\/styles\.css\?v=p0-language-access-20260830/);
+  assert.match(serviceWorker, /\.\/styles\.css\?v=p0-language-access-20260830/);
+  assert.match(index, /\.\/app\.js\?v=p0-language-access-20260830/);
+  assert.match(serviceWorker, /\.\/app\.js\?v=p0-language-access-20260830/);
   assert.match(serviceWorker, /\.\/locales\/ru\.json/);
   assert.match(serviceWorker, /\.\/locales\/en\.json/);
 

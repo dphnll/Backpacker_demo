@@ -32,7 +32,7 @@
       const locale = normalizeLocale(candidate);
       if (locale) return locale;
     }
-    return DEFAULT_LOCALE;
+    return "en";
   }
 
   function getScriptBaseUrl(documentLike) {
