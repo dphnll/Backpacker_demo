@@ -41,8 +41,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.82";
-const APP_RELEASE_SUMMARY = "P0 завершает EN-интро и добавляет заметный переключатель AUTO/RU/EN на главной.";
+const APP_VERSION = "1.1.2.83";
+const APP_RELEASE_SUMMARY = "P0 завершает EN-локализацию разделов «О продукте» и How-to на главной.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -3504,7 +3504,11 @@ function renderSyncConflictNotice() {
 function renderProductVersionInfo() {
   const target = $("#productVersionInfo");
   if (!target) return;
-  target.textContent = `Версия ${APP_VERSION}: ${APP_RELEASE_SUMMARY}`;
+  const summary = window.t("home.support.product.release") || APP_RELEASE_SUMMARY;
+  target.textContent = window.t("home.support.product.version", {
+    version: APP_VERSION,
+    summary,
+  });
 }
 
 function toggleHomeSupportPanel(panelName) {
