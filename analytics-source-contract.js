@@ -4,8 +4,8 @@
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.BackpackerAnalyticsSource = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
-  const ANALYTICS_SCHEMA_VERSION = "2026-08-26.1";
-  const EVENT_CONTRACT_VERSION = "0.2";
+  const ANALYTICS_SCHEMA_VERSION = "2026-08-29.1";
+  const EVENT_CONTRACT_VERSION = "0.3";
 
   const CONTRACT_COMMON_PROPERTIES = Object.freeze([
     "anon_user_id", "session_id", "analytics_schema_version", "event_contract_version",
@@ -14,6 +14,7 @@
   ]);
 
   const CONTRACT_EVENT_PROPERTIES = Object.freeze({
+    app_referral_arrived: [],
     app_shared: [],
     trip_created: [
       "trip_id", "trip_origin", "trip_phase", "days_until_trip_bucket",
@@ -59,6 +60,7 @@
   });
 
   const REQUIRED_EVENT_PROPERTIES = Object.freeze({
+    app_referral_arrived: [],
     app_shared: [],
     trip_created: ["trip_id", "trip_origin", "creation_source"],
     trip_first_value_reached: ["trip_id", "trip_origin", "definition_version"],
@@ -84,7 +86,8 @@
     "notes", "url", "link", "shareurl", "sharetoken", "token", "startdate", "enddate", "date",
     "day", "image", "imagedata", "file", "filename", "attachment", "aisourcetext", "generatedtext",
     "voicetranscript", "transcript", "preferences", "preferencestext", "email", "phone", "displayname",
-    "username", "query", "prompt", "content", "description", "message",
+    "username", "query", "prompt", "content", "description", "message", "ref", "referral",
+    "marker", "senderid", "recipientid", "userid", "accountid", "ip", "ipaddress", "geo", "geoip",
   ]);
 
   function normalizePropertyName(value) {

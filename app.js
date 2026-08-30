@@ -20,9 +20,12 @@ const ANALYTICS_MILESTONES_KEY = "backpacker.analytics.milestones.v1";
 const DONATION_STATE_KEY = "backpacker.donation.state.v1";
 const ANALYTICS_CONFIG = window.BACKPACKER_ANALYTICS || {};
 const ANALYTICS_SOURCE_CONTRACT = window.BackpackerAnalyticsSource;
-const ANALYTICS_SCHEMA_VERSION = ANALYTICS_SOURCE_CONTRACT?.ANALYTICS_SCHEMA_VERSION || "2026-08-26.1";
-const ANALYTICS_EVENT_CONTRACT_VERSION = ANALYTICS_SOURCE_CONTRACT?.EVENT_CONTRACT_VERSION || "0.2";
+const ANALYTICS_SCHEMA_VERSION = ANALYTICS_SOURCE_CONTRACT?.ANALYTICS_SCHEMA_VERSION || "2026-08-29.1";
+const ANALYTICS_EVENT_CONTRACT_VERSION = ANALYTICS_SOURCE_CONTRACT?.EVENT_CONTRACT_VERSION || "0.3";
+const APP_REFERRAL_PARAM = "ref";
+const APP_REFERRAL_MARKER = "app_share_v1";
 const SUPABASE_CLIENT_ANALYTICS_EVENTS = new Set([
+  "app_referral_arrived",
   "trip_created",
   "trip_first_value_reached",
   "item_created",
@@ -38,8 +41,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.80";
-const APP_RELEASE_SUMMARY = "Supabase — единственный runtime source аналитики; legacy PostHog emission отключён.";
+const APP_VERSION = "1.1.2.81";
+const APP_RELEASE_SUMMARY = "App Share referral activation добавляет privacy-safe учёт новых пользователей без referral graph или PII.";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -519,10 +522,10 @@ async function getSupabaseAnalyticsAccessToken() {
 }
 
 function writeSupabaseAnalyticsEvent(eventName, payload) {
-  if (!SUPABASE_CLIENT_ANALYTICS_EVENTS.has(eventName)) return;
+  if (!SUPABASE_CLIENT_ANALYTICS_EVENTS.has(eventName)) return Promise.resolve(false);
   const config = getSupabaseConfig();
   const url = getAnalyticsSourceFunctionUrl();
-  if (!url || !config.anonKey) return;
+  if (!url || !config.anonKey) return Promise.resolve(false);
   const eventId = createAnalyticsEventId();
   const sourcePayload = { ...payload };
   delete sourcePayload.anon_user_id;
@@ -530,7 +533,7 @@ function writeSupabaseAnalyticsEvent(eventName, payload) {
   delete sourcePayload.identity_type;
   delete sourcePayload["$geoip_disable"];
 
-  void getSupabaseAnalyticsAccessToken()
+  return getSupabaseAnalyticsAccessToken()
     .then((accessToken) => fetch(url, {
       method: "POST",
       headers: {
@@ -545,11 +548,13 @@ function writeSupabaseAnalyticsEvent(eventName, payload) {
       if (!response.ok && ANALYTICS_CONFIG.debug) {
         console.warn("[Backpacker analytics] Supabase source write failed", eventName, response.status);
       }
+      return response.ok;
     })
     .catch((error) => {
       if (ANALYTICS_CONFIG.debug) {
         console.warn("[Backpacker analytics] Supabase source unavailable", eventName, error?.name || "unexpected");
       }
+      return false;
     });
 }
 
@@ -560,7 +565,7 @@ function trackEvent(name, props = {}) {
   const missingRequired = ANALYTICS_SOURCE_CONTRACT?.getMissingRequiredProperties?.(name, eventProps) || [];
   if (missingRequired.length) {
     if (ANALYTICS_CONFIG.debug) console.warn("[Backpacker analytics] skipped malformed event", name, missingRequired);
-    return;
+    return Promise.resolve(false);
   }
   const rawPayload = getAnalyticsContext({
     ...eventProps,
@@ -572,7 +577,7 @@ function trackEvent(name, props = {}) {
   if (ANALYTICS_CONFIG.debug) {
     console.info("[Backpacker analytics]", name, payload);
   }
-  writeSupabaseAnalyticsEvent(name, payload);
+  return writeSupabaseAnalyticsEvent(name, payload);
 }
 
 function trackAppOpen() {
@@ -931,6 +936,46 @@ async function getExistingSupabaseAccessToken() {
   if (!client) return "";
   const current = await client.auth.getSession();
   return current.data.session?.access_token || "";
+}
+
+async function hadExistingSupabaseSessionBeforeReferralLanding() {
+  const authCallback = getRecoverableAuthCore()?.getAuthCallbackInfo?.(window.location.href);
+  if (authCallback?.hasAuthParams) return false;
+  return Boolean(await getExistingSupabaseAccessToken().catch(() => ""));
+}
+
+function getCanonicalAppShareUrl() {
+  const base = window.location.origin && window.location.protocol !== "file:"
+    ? `${window.location.origin}${window.location.pathname}`
+    : "https://dphnll.github.io/Backpacker_demo/";
+  const url = new URL(base);
+  url.searchParams.set(APP_REFERRAL_PARAM, APP_REFERRAL_MARKER);
+  return url.toString();
+}
+
+function hasAppReferralMarker() {
+  try {
+    return new URL(window.location.href).searchParams.get(APP_REFERRAL_PARAM) === APP_REFERRAL_MARKER;
+  } catch {
+    return false;
+  }
+}
+
+function cleanAppReferralMarker() {
+  if (!window.history?.replaceState || !hasAppReferralMarker()) return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete(APP_REFERRAL_PARAM);
+  window.history.replaceState({}, document.title, url.toString());
+}
+
+async function captureAppReferralArrival({ hadExistingSession = true } = {}) {
+  if (!hasAppReferralMarker()) return false;
+  try {
+    if (hadExistingSession) return false;
+    return await trackEvent("app_referral_arrived");
+  } finally {
+    cleanAppReferralMarker();
+  }
 }
 
 async function callTripShareFunction(action, payload = {}, { requireOwner = false, useExistingSession = false, ensureSession = false } = {}) {
@@ -8410,9 +8455,7 @@ async function shareTrip() {
 }
 
 async function shareApp() {
-  const url = window.location.origin && window.location.protocol !== "file:"
-    ? `${window.location.origin}${window.location.pathname}`
-    : "https://dphnll.github.io/Backpacker_demo/";
+  const url = getCanonicalAppShareUrl();
   const shareData = {
     title: "Backpacker",
     text: window.t("share.app.copy"),
@@ -8573,8 +8616,13 @@ function trackOnboardingExit() {
 }
 
 async function startApp() {
+  const hasReferralMarker = hasAppReferralMarker();
+  const hadExistingSession = hasReferralMarker
+    ? await hadExistingSupabaseSessionBeforeReferralLanding()
+    : true;
   trackAppOpen();
   const recoverableUser = await handleRecoverableAuthCallback();
+  if (hasReferralMarker) await captureAppReferralArrival({ hadExistingSession });
   const splashStatus = $("#appSplashStatus");
   if (splashStatus && getSharePayloadFromUrl()) splashStatus.textContent = window.t("share.readonly.opening");
   readOnlyShare = await loadReadOnlyShareFromUrl();

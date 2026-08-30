@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.2.81 - 2026-08-29
+
+- App Share добавляет к app-level URL только controlled marker `ref=app_share_v1`; Web Share и clipboard используют один URL, а trip sharing не меняется.
+- Новая Supabase identity возрастом не более пяти минут может один раз записать property-free `app_referral_arrived` после server-side проверки; existing account/session, retries и дубликаты исключаются без сохранения URL, marker или PII.
+- Aggregate v0.2 получает optional observations `referred_users` и `activated_referred_users`; до зрелости 7/30 cohort ключи отсутствуют, после зрелости рассчитанный ноль возвращается явно.
+
 ## 1.1.2.80 - 2026-08-26
 
 - App Share emits one typed `app_shared` only after confirmed Web Share or clipboard success.

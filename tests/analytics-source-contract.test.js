@@ -20,17 +20,23 @@ function functionSource(name) {
 }
 
 test("source schema and event contract versions are independent and loaded before app", () => {
-  assert.equal(sourceContract.ANALYTICS_SCHEMA_VERSION, "2026-08-26.1");
-  assert.equal(sourceContract.EVENT_CONTRACT_VERSION, "0.2");
-  assert.ok(indexSource.indexOf("analytics-source-contract.js") < indexSource.indexOf("app.js?v=app-shared-20260826"));
-  assert.match(workerSource, /backpacker-pwa-v128/);
-  assert.match(workerSource, /analytics-source-contract\.js\?v=app-shared-20260826/);
+  assert.equal(sourceContract.ANALYTICS_SCHEMA_VERSION, "2026-08-29.1");
+  assert.equal(sourceContract.EVENT_CONTRACT_VERSION, "0.3");
+  assert.ok(indexSource.indexOf("analytics-source-contract.js") < indexSource.indexOf("app.js?v=referral-arrival-20260829"));
+  assert.match(workerSource, /backpacker-pwa-v129/);
+  assert.match(workerSource, /analytics-source-contract\.js\?v=referral-arrival-20260829/);
 });
 
 async function runAppShare({ share, copied = true }) {
   const events = [];
+  let sharedData = null;
+  let copiedText = "";
   const sandbox = {
-    navigator: { share },
+    URL,
+    navigator: { share: share ? async (data) => {
+      sharedData = JSON.parse(JSON.stringify(data));
+      return share(data);
+    } : undefined },
     window: {
       location: {
         origin: "https://dphnll.github.io",
@@ -39,15 +45,24 @@ async function runAppShare({ share, copied = true }) {
       },
       t: () => "share text",
     },
-    copyText: async () => copied,
+    copyText: async (value) => {
+      copiedText = value;
+      return copied;
+    },
     showToast() {},
     trackEvent(name, props) {
       events.push({ name, props });
     },
   };
-  vm.runInNewContext(`${functionSource("shareApp")}; this.shareApp = shareApp;`, sandbox);
+  vm.runInNewContext(`
+    const APP_REFERRAL_PARAM = "ref";
+    const APP_REFERRAL_MARKER = "app_share_v1";
+    ${functionSource("getCanonicalAppShareUrl")}
+    ${functionSource("shareApp")}
+    this.shareApp = shareApp;
+  `, sandbox);
   await sandbox.shareApp();
-  return events;
+  return { copiedText, events, sharedData };
 }
 
 async function runCopyText({ clipboardWorks, legacyCopied }) {
@@ -70,18 +85,83 @@ async function runCopyText({ clipboardWorks, legacyCopied }) {
 }
 
 test("app Share emits once only after confirmed Web Share or clipboard success", async () => {
-  assert.deepEqual(await runAppShare({ share: async () => {} }), [{ name: "app_shared", props: undefined }]);
-  assert.deepEqual(await runAppShare({
+  assert.deepEqual((await runAppShare({ share: async () => {} })).events, [{ name: "app_shared", props: undefined }]);
+  assert.deepEqual((await runAppShare({
     share: async () => { throw Object.assign(new Error("cancel"), { name: "AbortError" }); },
-  }), []);
-  assert.deepEqual(await runAppShare({
+  })).events, []);
+  assert.deepEqual((await runAppShare({
     share: async () => { throw new Error("share failed"); },
     copied: true,
-  }), [{ name: "app_shared", props: undefined }]);
-  assert.deepEqual(await runAppShare({ share: undefined, copied: false }), []);
+  })).events, [{ name: "app_shared", props: undefined }]);
+  assert.deepEqual((await runAppShare({ share: undefined, copied: false })).events, []);
   assert.deepEqual(await runCopyText({ clipboardWorks: true }), { copied: true, toasts: ["copied"] });
   assert.deepEqual(await runCopyText({ clipboardWorks: false, legacyCopied: true }), { copied: true, toasts: ["copied"] });
   assert.deepEqual(await runCopyText({ clipboardWorks: false, legacyCopied: false }), { copied: false, toasts: [] });
+});
+
+test("app Share uses one controlled marked URL for Web Share and clipboard only", async () => {
+  const web = await runAppShare({ share: async () => {} });
+  const clipboard = await runAppShare({ share: undefined, copied: true });
+  const markedUrl = "https://dphnll.github.io/Backpacker_demo/?ref=app_share_v1";
+  assert.equal(web.sharedData.url, markedUrl);
+  assert.equal(clipboard.copiedText, `share text\n${markedUrl}`);
+  const tripShare = functionSource("shareTrip");
+  assert.match(tripShare, /url: window\.location\.href/);
+  assert.doesNotMatch(tripShare, /APP_REFERRAL|app_share_v1/);
+});
+
+test("referral capture is property-free, excludes existing sessions, and cleans only its marker", async () => {
+  const run = async (hadExistingSession) => {
+    const events = [];
+    let replaced = "";
+    const sandbox = {
+      URL,
+      document: { title: "Backpacker" },
+      window: {
+        location: { href: "https://dphnll.github.io/Backpacker_demo/?ref=app_share_v1&keep=1#home" },
+        history: { replaceState(_state, _title, value) { replaced = value; } },
+      },
+      trackEvent: async (name, props) => {
+        events.push({ name, props });
+        return true;
+      },
+    };
+    vm.runInNewContext(`
+      const APP_REFERRAL_PARAM = "ref";
+      const APP_REFERRAL_MARKER = "app_share_v1";
+      ${functionSource("hasAppReferralMarker")}
+      ${functionSource("cleanAppReferralMarker")}
+      ${functionSource("captureAppReferralArrival")}
+      this.captureAppReferralArrival = captureAppReferralArrival;
+    `, sandbox);
+    const accepted = await sandbox.captureAppReferralArrival({ hadExistingSession });
+    return { accepted, events, replaced };
+  };
+  const fresh = await run(false);
+  assert.equal(fresh.accepted, true);
+  assert.deepEqual(fresh.events, [{ name: "app_referral_arrived", props: undefined }]);
+  assert.equal(fresh.replaced, "https://dphnll.github.io/Backpacker_demo/?keep=1#home");
+  const existing = await run(true);
+  assert.equal(existing.accepted, false);
+  assert.deepEqual(existing.events, []);
+  assert.equal(existing.replaced, "https://dphnll.github.io/Backpacker_demo/?keep=1#home");
+});
+
+test("auth callback landing defers newness to the server while an ordinary existing session is excluded", async () => {
+  const run = async ({ hasAuthParams, token }) => {
+    const sandbox = {
+      window: { location: { href: "https://example.test/?ref=app_share_v1&code=callback" } },
+      getRecoverableAuthCore: () => ({ getAuthCallbackInfo: () => ({ hasAuthParams }) }),
+      getExistingSupabaseAccessToken: async () => token,
+    };
+    vm.runInNewContext(`
+      ${functionSource("hadExistingSupabaseSessionBeforeReferralLanding")}
+      this.check = hadExistingSupabaseSessionBeforeReferralLanding;
+    `, sandbox);
+    return sandbox.check();
+  };
+  assert.equal(await run({ hasAuthParams: false, token: "existing-session" }), true);
+  assert.equal(await run({ hasAuthParams: true, token: "callback-session" }), false);
 });
 
 test("app_shared has no event properties or share content", () => {
@@ -92,6 +172,21 @@ test("app_shared has no event properties or share content", () => {
     method: "clipboard",
   }), {});
   assert.deepEqual(sourceContract.getMissingRequiredProperties("app_shared", {}), []);
+});
+
+test("app_referral_arrived accepts no properties or privacy-denylisted aliases", () => {
+  assert.deepEqual(sourceContract.sanitizeEventProperties("app_referral_arrived", {
+    ref: "app_share_v1",
+    marker: "app_share_v1",
+    sender_id: "sender-1",
+    recipient_id: "recipient-1",
+    account_id: "account-1",
+    url: "https://private.example.test",
+    ip: "192.0.2.1",
+    geo: "private",
+    notes: "private",
+  }), {});
+  assert.deepEqual(sourceContract.getMissingRequiredProperties("app_referral_arrived", {}), []);
 });
 
 test("canonical Supabase capture receives the privacy and source-time envelope", () => {
@@ -112,8 +207,8 @@ test("contract success payloads contain only the approved common envelope and ev
   const payload = sourceContract.sanitizeContractEventPayload("idea_saved", {
     anon_user_id: "anon-1",
     session_id: "session-1",
-    analytics_schema_version: "2026-08-26.1",
-    event_contract_version: "0.2",
+    analytics_schema_version: "2026-08-29.1",
+    event_contract_version: "0.3",
     app_version: "1.1.2.80",
     environment: "production",
     is_internal_user: false,
