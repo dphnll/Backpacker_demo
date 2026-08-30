@@ -1278,6 +1278,16 @@ button[aria-disabled="true"] .home-support-icon {
   box-shadow: var(--active-button-shadow);
 }
 
+.home-support-external-link {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 40px;
+  margin-top: 8px;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
 .trip-list-card {
   position: relative;
   display: grid;
@@ -1775,6 +1785,35 @@ button[aria-disabled="true"] .home-support-icon {
   border-color: rgba(158, 61, 54, 0.28);
   color: var(--danger);
   background: var(--danger-soft);
+}
+
+.ideas-extension-promo {
+  white-space: normal;
+}
+
+.ideas-extension-promo p {
+  white-space: pre-line;
+}
+
+.ideas-extension-promo .ideas-extension-device {
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.ideas-extension-promo .ideas-extension-cta {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  border-color: rgba(18, 54, 61, 0.34);
+  background: var(--active-button-gradient);
+  color: #fff;
+  box-shadow: var(--active-button-shadow);
+  font-size: 16px;
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .ideas-state-actions {

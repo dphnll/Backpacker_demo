@@ -44,6 +44,7 @@ const supportKeys = [
   "home.support.product.body.origin",
   "home.support.product.body.planning",
   "home.support.product.body.ideas",
+  "home.support.product.body.extension",
   "home.support.product.body.sync",
   "home.support.product.version",
   "home.support.product.release",
@@ -55,6 +56,11 @@ const supportKeys = [
   "home.support.howto.ideas.intro",
   ...[1, 2, 3, 4, 5].map((number) => `home.support.howto.ideas.item${number}`),
   "home.support.howto.ideas.outro",
+  "home.support.howto.extension.title",
+  "home.support.howto.extension.body",
+  ...[1, 2, 3, 4].map((number) => `home.support.howto.extension.step${number}`),
+  "home.support.howto.extension.note",
+  "home.support.howto.extension.cta",
   "home.support.howto.ai.title",
   ...[1, 2, 3, 4].map((number) => `home.support.howto.ai.item${number}`),
   "home.support.howto.ai.warning",
@@ -81,12 +87,12 @@ test("Product Info keeps its sheet contract and binds every visible string", () 
   assert.match(section, /aria-labelledby="productInfoSheetTitle"/);
   assert.match(section, /id="productInfoSheetTitle" data-i18n="home\.support\.product"/);
   assert.match(section, /data-close="productInfo"[^>]*data-i18n-aria-label="home\.support\.close"/);
-  assert.equal((section.match(/<p data-i18n="home\.support\.product\.body\.[^"]+"/g) || []).length, 4);
+  assert.equal((section.match(/<p data-i18n="home\.support\.product\.body\.[^"]+"/g) || []).length, 5);
   assert.match(section, /<p id="productVersionInfo"><\/p>/);
-  assert.equal((section.match(/<p/g) || []).length, 5);
+  assert.equal((section.match(/<p/g) || []).length, 6);
 });
 
-test("How-to keeps nine sections, two defaults open, and binds all copy", () => {
+test("How-to keeps ten sections, two defaults open, and binds all copy", () => {
   const index = read("index.html");
   const section = sectionBetween(index, '<div class="sheet" id="howToSheet"', '<div class="sheet" id="homeShareSheet"');
 
@@ -94,17 +100,18 @@ test("How-to keeps nine sections, two defaults open, and binds all copy", () => 
   assert.match(section, /aria-labelledby="howToSheetTitle"/);
   assert.match(section, /id="howToSheetTitle" data-i18n="home\.support\.howto"/);
   assert.match(section, /data-close="howTo"[^>]*data-i18n-aria-label="home\.support\.close"/);
-  assert.equal((section.match(/<details(?:\s|>)/g) || []).length, 9);
+  assert.equal((section.match(/<details(?:\s|>)/g) || []).length, 10);
   assert.equal((section.match(/<details open>/g) || []).length, 2);
-  assert.equal((section.match(/<summary data-i18n=/g) || []).length, 9);
-  assert.equal((section.match(/<p data-i18n=/g) || []).length, 15);
-  assert.equal((section.match(/<li data-i18n=/g) || []).length, 19);
+  assert.equal((section.match(/<summary data-i18n=/g) || []).length, 10);
+  assert.equal((section.match(/<p data-i18n=/g) || []).length, 17);
+  assert.equal((section.match(/<li data-i18n=/g) || []).length, 23);
   assert.equal((section.match(/<button[^>]*data-i18n="home\.trainer\.settings\.hide"/g) || []).length, 1);
+  assert.equal((section.match(/<a[^>]*data-i18n="home\.support\.howto\.extension\.cta"/g) || []).length, 1);
   assert.doesNotMatch(section, /<(?:summary|p|li)(?![^>]*data-i18n=)[^>]*>/);
 });
 
 test("RU and EN dictionaries contain the complete support-sheet contract", () => {
-  assert.equal(new Set(supportKeys).size, 53);
+  assert.equal(new Set(supportKeys).size, 62);
   for (const key of supportKeys) {
     assert.equal(typeof dictionaries.ru[key], "string", `missing RU ${key}`);
     assert.ok(dictionaries.ru[key].trim(), `empty RU ${key}`);

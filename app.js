@@ -43,6 +43,7 @@ const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
 const APP_VERSION = "1.1.2.83";
 const APP_RELEASE_SUMMARY = "P0 завершает EN-локализацию разделов «О продукте» и How-to на главной.";
+const CHROME_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/backpacker-travel-capture/okpfmpplfciccfddgibkcoliemfimifc";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -1977,6 +1978,13 @@ function renderIdeasStateCard(kind) {
           <button class="ghost-button" type="button" data-open-idea-collection-form>${escapeHtml(window.t("ideas.collection.create"))}</button>
         </div>
       </article>
+      <aside class="ideas-state-card ideas-extension-promo" aria-label="${escapeAttr(window.t("ideas.extension.title"))}">
+        <strong>${escapeHtml(window.t("ideas.extension.title"))}</strong>
+        <p>${escapeHtml(window.t("ideas.extension.body"))}</p>
+        <p class="ideas-extension-secondary">${escapeHtml(window.t("ideas.extension.secondary"))}</p>
+        <p class="ideas-extension-device">${escapeHtml(window.t("ideas.extension.device"))}</p>
+        <a class="ghost-button ideas-extension-cta" href="${CHROME_EXTENSION_STORE_URL}" target="_blank" rel="noopener noreferrer">${escapeHtml(window.t("ideas.extension.cta"))}</a>
+      </aside>
     `;
   }
   return `
