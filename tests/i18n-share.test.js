@@ -70,7 +70,7 @@ test("Share, proposal, received, and profile sheets use the shared locale layer"
     "share.app.title",
     "share.sheet.title",
     "share.text.action",
-    "share.link.open",
+    "share.ordinary.action",
     "share.link.include.budget",
     "share.link.input.aria",
     "share.link.revoke",
@@ -167,9 +167,9 @@ test("Share translations interpolate author, link, and proposal UI", async () =>
 
 test("Share release uses a fresh versioned app asset and PWA cache", () => {
   const serviceWorker = read("service-worker.js");
-  assert.match(index, /\.\/app\.js\?v=p0-support-info-en-20260830/);
-  assert.match(serviceWorker, /backpacker-pwa-v131/);
-  assert.match(serviceWorker, /\.\/app\.js\?v=p0-support-info-en-20260830/);
+  assert.match(index, /\.\/app\.js\?v=organizer-mode-20260904/);
+  assert.match(serviceWorker, /backpacker-pwa-v132/);
+  assert.match(serviceWorker, /\.\/app\.js\?v=organizer-mode-20260904/);
 });
 
 test("Share copy and proposal edge errors use locale keys", () => {

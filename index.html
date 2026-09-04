@@ -13,7 +13,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icons/backpacker-192.png?v=logo-beige-20260808" type="image/png" />
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png?v=logo-beige-20260808" />
-    <link rel="stylesheet" href="./styles.css?v=p0-support-info-en-20260830" />
+    <link rel="stylesheet" href="./styles.css?v=organizer-mode-20260904" />
     <script src="./analytics-config.js?v=2"></script>
   </head>
   <body>
@@ -381,6 +381,7 @@
             </a>
           </div>
         </div>
+        <button class="save-received-button group-trip-join-button hidden" id="joinGroupTripButton" type="button" data-i18n="share.group.join">Присоединиться к поездке</button>
         <button class="save-received-button hidden" id="saveReceivedTripButton" type="button" data-i18n="share.received.save">Добавить в «Со мной поделились»</button>
         <button class="trip-meta" id="tripMeta" type="button">Казань · 12 июля-15 июля · 4 дня</button>
         <div class="trip-summary-row">
@@ -971,7 +972,7 @@
           <details>
             <summary data-i18n="home.support.howto.sharing.title">Путешествуйте с друзьями</summary>
             <ul>
-              <li data-i18n="home.support.howto.sharing.item1">Откройте поездку, нажмите «Поделиться», затем «Открыть доступ по ссылке» и скопируйте ссылку.</li>
+              <li data-i18n="home.support.howto.sharing.item1">Откройте поездку, нажмите «Поделиться», затем «Пригласить по ссылке» и скопируйте ссылку.</li>
               <li data-i18n="home.support.howto.sharing.item2">Гость увидит поездку в режиме просмотра, сможет сохранить её в «Со мной поделились» и открыть позже с главной.</li>
               <li data-i18n="home.support.howto.sharing.item3">Если включена смета, гость может предложить взять на себя часть расхода или добавить новую идею.</li>
               <li data-i18n="home.support.howto.sharing.item4">Поездка изменится только после решения автора: автор принимает или отклоняет предложения в блоке «Предложения» внутри поездки.</li>
@@ -1047,19 +1048,48 @@
         </header>
         <div class="share-actions">
           <button class="primary-button" id="shareTripTextButton" type="button" data-i18n="share.text.action">Отправить поездку текстом</button>
-          <button class="primary-button" id="openTripLinkButton" type="button" data-i18n="share.link.open">Открыть доступ по ссылке</button>
-          <div class="trip-link-options hidden" id="tripLinkOptions">
-            <label class="trip-pdf-toggle">
-              <input id="tripLinkIncludeBudget" type="checkbox" checked />
-              <span data-i18n="share.link.include.budget">Показывать смету</span>
-            </label>
-            <div class="share-link-box">
-              <input id="tripShareLinkInput" readonly placeholder="Ссылка появится после публикации" data-i18n-placeholder="share.link.placeholder" aria-label="Ссылка на поездку" data-i18n-aria-label="share.link.input.aria" />
-              <button class="ghost-button compact" id="copyTripLinkButton" type="button" data-i18n="share.link.copy">Скопировать</button>
+          <section class="share-mode-card" id="friendsTripShareCard">
+            <h3 data-i18n="share.ordinary.title">Поделиться с попутчиками</h3>
+            <p class="field-hint" data-i18n="share.ordinary.hint">Для совместной поездки: можно показать смету и распределять расходы.</p>
+            <button class="primary-button" id="openTripLinkButton" type="button" data-i18n="share.ordinary.action">Пригласить по ссылке</button>
+            <div class="share-mode-panel hidden" id="friendsTripManagementPanel">
+              <div class="share-mode-link-slot" id="friendsTripLinkSlot">
+                <div class="trip-link-options hidden" id="tripLinkOptions">
+                  <label class="trip-pdf-toggle" id="tripLinkIncludeBudgetToggle">
+                    <input id="tripLinkIncludeBudget" type="checkbox" checked />
+                    <span data-i18n="share.link.include.budget">Показывать смету</span>
+                  </label>
+                  <div class="share-link-box">
+                    <input id="tripShareLinkInput" readonly placeholder="Ссылка появится после публикации" data-i18n-placeholder="share.link.placeholder" aria-label="Ссылка на поездку" data-i18n-aria-label="share.link.input.aria" />
+                    <button class="ghost-button compact" id="copyTripLinkButton" type="button" data-i18n="share.link.copy">Скопировать</button>
+                  </div>
+                  <p class="share-link-status" id="tripShareLinkStatus"></p>
+                  <p class="share-link-hint" data-i18n="share.link.hint">Управление поездкой - только у автора, гостям доступен просмотр.</p>
+                  <button class="danger-button" id="revokeTripLinkButton" type="button" data-i18n="share.link.revoke">Отозвать доступ</button>
+                </div>
+              </div>
             </div>
-            <p class="share-link-status" id="tripShareLinkStatus"></p>
-            <p class="share-link-hint" data-i18n="share.link.hint">Управление поездкой - только у автора, гостям доступен просмотр.</p>
-            <button class="danger-button" id="revokeTripLinkButton" type="button" data-i18n="share.link.revoke">Отозвать доступ</button>
+          </section>
+          <section class="share-mode-card" id="groupTripShareCard">
+            <h3 data-i18n="share.organizer.title">Для организатора</h3>
+            <p class="field-hint" id="groupTripPublishHint" data-i18n="share.organizer.hint">Участники присоединяются к одной программе и всегда видят её актуальную версию.</p>
+            <button class="primary-button" id="groupTripPublishButton" type="button" data-i18n="share.organizer.activate">Вести поездку для группы</button>
+            <div class="share-mode-panel hidden" id="groupTripManagementPanel">
+              <h3 data-i18n="share.organizer.panel.title">Ссылка для участников</h3>
+              <div class="group-trip-participants" id="groupTripParticipants">
+                <strong id="groupTripParticipantCount">Участники · 0</strong>
+                <ul id="groupTripParticipantList"></ul>
+              </div>
+              <div class="share-mode-link-slot" id="groupTripLinkSlot"></div>
+              <p class="share-mode-explanation" data-i18n="share.organizer.panel.hint">Участники будут видеть актуальную программу поездки.</p>
+            </div>
+          </section>
+          <div class="share-mode-switch-confirm hidden" id="shareModeSwitchConfirm" role="alertdialog" aria-live="polite">
+            <p id="shareModeSwitchMessage"></p>
+            <div class="share-mode-switch-actions">
+              <button class="primary-button" id="confirmShareModeSwitchButton" type="button"></button>
+              <button class="ghost-button" id="cancelShareModeSwitchButton" type="button" data-i18n="share.mode.switch.cancel">Отмена</button>
+            </div>
           </div>
           <button class="primary-button" id="openTripPdfOptionsButton" type="button" data-i18n="share.pdf.open">Отправить поездку в PDF</button>
         </div>
@@ -1150,6 +1180,7 @@
     <script src="./recoverable-auth-core.js"></script>
     <script src="./extension-connect-ui-core.js"></script>
     <script src="./identity-bridge-core.js"></script>
+    <script src="./group-trip-core.js"></script>
     <script src="./travel-idea-core.js"></script>
     <script src="./travel-ideas-client.js"></script>
     <script src="./trip-item-attachments-core.js"></script>
@@ -1157,7 +1188,7 @@
     <script src="./platform-file-boundary-core.js"></script>
     <script src="./private-trip-sync-core.js"></script>
     <script src="./private-trip-sync-client.js"></script>
-    <script src="./i18n.js?v=p0-support-info-en-20260830"></script>
-    <script src="./app.js?v=p0-support-info-en-20260830"></script>
+    <script src="./i18n.js?v=organizer-mode-20260904"></script>
+    <script src="./app.js?v=organizer-mode-20260904"></script>
   </body>
 </html>

@@ -12,6 +12,7 @@ const ATTACHMENT_DELETE_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><pat
 const ACTIVE_TRIP_STORAGE_KEY = "backpacker.activeTrip.v1";
 const VIEW_STORAGE_KEY = "backpacker.currentView.v1";
 const SHARE_RECORDS_STORAGE_KEY = "backpacker.shareRecords.v1";
+const GROUP_TRIP_PENDING_INTENT_KEY = "backpacker.groupTrips.pending.v1";
 const ONBOARDING_STORAGE_KEY = "backpacker.onboarding.v1";
 const HOME_TRAINER_VISIBILITY_KEY = "backpacker.home.trainer.hidden.v1";
 const ANALYTICS_USER_KEY = "backpacker.analytics.user.v1";
@@ -41,8 +42,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.83";
-const APP_RELEASE_SUMMARY = "P0 завершает EN-локализацию разделов «О продукте» и How-to на главной.";
+const APP_VERSION = "1.1.2.84";
+const APP_RELEASE_SUMMARY = "Добавлен режим организатора с отдельной ссылкой для участников.";
 const CHROME_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/backpacker-travel-capture/okpfmpplfciccfddgibkcoliemfimifc";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -121,6 +122,10 @@ let extensionConnectState = {
   status: "idle",
   error: "",
 };
+let groupTripContext = { loading: false, participants: [] };
+let groupTripJoinBusy = false;
+let openShareModePanel = null;
+let pendingShareModeSwitch = "";
 const IDENTITY_BRIDGE_PENDING_EXTENSION_CONNECT_KEY = "backpacker.identityBridge.pendingExtensionConnect.v1";
 let ideasState = {
   activeCollectionKey: "all",
@@ -776,6 +781,10 @@ function getIdentityBridgeCore() {
   return window.BackpackerIdentityBridge;
 }
 
+function getGroupTripCore() {
+  return window.BackpackerGroupTrips;
+}
+
 function getRecoverableAuthRedirectUrl() {
   const config = getSupabaseConfig();
   const core = getRecoverableAuthCore();
@@ -882,6 +891,7 @@ async function handleRecoverableAuthCallback() {
 
 function closeRecoverableAuthSheetAfterSuccess(user) {
   if (!user?.hasEmailIdentity) return;
+  if (readPendingGroupTripIntent()) return;
   const sheet = $("#profileSheet");
   if (!sheet?.classList.contains("open")) return;
   window.setTimeout(() => {
@@ -2317,8 +2327,13 @@ function getHomeProfileLabel() {
 }
 
 function getHomeTripStatusLabel(tripId) {
+  const trip = tripStore.trips.find((entry) => entry.id === tripId);
   const record = shareRecords[tripId];
-  if (record?.shareId && !record.revoked) return window.t("home.trip.status.shared.owner");
+  if (record?.shareId && !record.revoked) {
+    return window.t(trip?.state?.trip?.isGroupTrip === true
+      ? "home.trip.status.group.owner"
+      : "home.trip.status.shared.owner");
+  }
   return window.t("home.trip.status.personal");
 }
 
@@ -2422,6 +2437,14 @@ async function submitRecoverableAuthUpgradeForm(event) {
   renderProfileSheet();
   try {
     await ensureSupabaseOwnerSession();
+    const currentUser = await refreshRecoverableAuthSession();
+    const pendingGroupIntent = readPendingGroupTripIntent();
+    if (pendingGroupIntent?.authFlow === "upgrade" && pendingGroupIntent.expectedUserId !== currentUser?.id) {
+      clearPendingGroupTripIntent();
+      recoverableAuthState.error = window.t("share.group.identity.mismatch");
+      showToast(recoverableAuthState.error);
+      return;
+    }
     const result = await client.auth.updateUser({ email }, { emailRedirectTo: getRecoverableAuthRedirectUrl() });
     if (result.error) throw result.error;
     recoverableAuthState.status = window.t("share.profile.email.sent");
@@ -2457,6 +2480,7 @@ async function submitRecoverableAuthLoginForm(event) {
   recoverableAuthState.status = "";
   renderProfileSheet();
   try {
+    if (readPendingGroupTripIntent()) updatePendingGroupTripAuthFlow("login");
     const result = await client.auth.signInWithOtp({
       email,
       options: {
@@ -2543,6 +2567,8 @@ async function loadReadOnlyShareFromUrl() {
       isOwner: Boolean(payload.isOwner),
       isAuthor: Boolean(payload.isAuthor ?? payload.isOwner),
       isSaved: Boolean(payload.isSaved),
+      isJoined: Boolean(payload.isJoined),
+      isGroupTrip: Boolean(payload.isGroupTrip),
       authorDisplayName: payload.authorDisplayName || "",
       currentUserDisplayName: payload.currentUserDisplayName || "",
       profileRequired: Boolean(payload.profileRequired),
@@ -2566,6 +2592,14 @@ async function loadReadOnlyShareFromUrl() {
 
 function isReadOnlyMode() {
   return Boolean(readOnlyShare);
+}
+
+function isCurrentGroupTrip() {
+  return state?.trip?.isGroupTrip === true;
+}
+
+function isReadOnlyGroupTrip() {
+  return isReadOnlyMode() && isCurrentGroupTrip();
 }
 
 function canShowBudget() {
@@ -2626,6 +2660,11 @@ function normalizeState(nextState) {
   const normalized = nextState?.trip && Array.isArray(nextState.items) ? nextState : structuredClone(seedState);
   const tripId = normalized.trip.id || `trip-${Date.now()}`;
   normalized.trip.id = tripId;
+  // Absence is the backwards-compatible personal-trip default.
+  normalized.trip.isGroupTrip = normalized.trip.isGroupTrip === true;
+  const shareModeEpochValue = String(normalized.trip.shareModeEpoch || "");
+  const shareModeEpoch = new Date(shareModeEpochValue);
+  normalized.trip.shareModeEpoch = shareModeEpochValue && Number.isFinite(shareModeEpoch.getTime()) ? shareModeEpoch.toISOString() : "";
   normalized.trip.dayCount = normalized.trip.startDate || normalized.trip.endDate
     ? getTripDayCount(normalized.trip)
     : normalizeTripDayCount(normalized.trip.dayCount, 1);
@@ -3519,6 +3558,61 @@ function renderProductVersionInfo() {
   });
 }
 
+function storePendingGroupTripIntent(intent) {
+  const core = getGroupTripCore();
+  if (!core?.serializePendingGroupTripIntent) return null;
+  const serialized = core.serializePendingGroupTripIntent(intent);
+  let stored = false;
+  [window.sessionStorage, window.localStorage].forEach((storage) => {
+    try {
+      storage?.setItem(GROUP_TRIP_PENDING_INTENT_KEY, serialized);
+      stored = true;
+    } catch {
+      // A pending Group action can still be retried manually if browser storage is unavailable.
+    }
+  });
+  return stored ? serialized : null;
+}
+
+function clearPendingGroupTripIntent() {
+  [window.sessionStorage, window.localStorage].forEach((storage) => {
+    try {
+      storage?.removeItem(GROUP_TRIP_PENDING_INTENT_KEY);
+    } catch {
+      // Nothing to clear in restricted storage.
+    }
+  });
+}
+
+function readPendingGroupTripIntent() {
+  const core = getGroupTripCore();
+  if (!core?.restorePendingGroupTripIntent) return null;
+  let sawStoredIntent = false;
+  for (const storage of [window.sessionStorage, window.localStorage]) {
+    let serialized = "";
+    try {
+      serialized = storage?.getItem(GROUP_TRIP_PENDING_INTENT_KEY) || "";
+    } catch {
+      serialized = "";
+    }
+    if (!serialized) continue;
+    sawStoredIntent = true;
+    const restored = core.restorePendingGroupTripIntent(serialized);
+    if (restored) return restored;
+  }
+  if (sawStoredIntent) clearPendingGroupTripIntent();
+  return null;
+}
+
+function updatePendingGroupTripAuthFlow(authFlow, userId = "") {
+  const intent = readPendingGroupTripIntent();
+  const core = getGroupTripCore();
+  if (!intent || !core?.withPendingGroupTripAuthFlow) return null;
+  const updated = core.withPendingGroupTripAuthFlow(intent, authFlow, userId);
+  storePendingGroupTripIntent(updated);
+  return updated;
+}
+
 function toggleHomeSupportPanel(panelName) {
   const sheetMap = {
     product: "productInfoSheet",
@@ -3741,7 +3835,11 @@ function renderReceivedTrips() {
       ? formatHomeTripDayCount({ startDate: entry.startDate, endDate: entry.endDate })
       : entry.dayCount ? window.t("home.trip.days", { count: Number(entry.dayCount) }) : window.t("home.trip.days.missing");
     const coverStyle = entry.coverDataUrl ? ` style="--trip-cover: url('${escapeAttr(entry.coverDataUrl)}')"` : "";
-    const statusBadge = window.t(entry.revoked ? "home.received.access.closed" : "home.received.shared.guest");
+    const statusBadge = window.t(entry.revoked
+      ? "home.received.access.closed"
+      : entry.isGroupTrip && entry.isJoined
+        ? "home.received.group.participant"
+        : "home.received.shared.viewer");
     const authorBadge = entry.authorDisplayName
       ? window.t("home.received.author.named", { name: entry.authorDisplayName })
       : window.t("home.received.author");
@@ -3764,7 +3862,7 @@ function renderReceivedTrips() {
             <span>${entry.includeBudget === false ? escapeHtml(window.t("home.received.budget.hidden")) : escapeHtml(formatHomeCurrencyAmount(entry.budgetLimit || 0, entry.currency || "RUB"))}</span>
           </div>
         </button>
-        <button class="delete-trip-button received-trip-remove-button" data-remove-received-trip="${escapeAttr(entry.shareId)}" type="button">${escapeHtml(window.t("home.received.remove"))}</button>
+        ${entry.isGroupTrip ? "" : `<button class="delete-trip-button received-trip-remove-button" data-remove-received-trip="${escapeAttr(entry.shareId)}" type="button">${escapeHtml(window.t("home.received.remove"))}</button>`}
       </article>
     `;
   }).join("");
@@ -3801,7 +3899,7 @@ async function refreshReceivedTrips({ silent = true } = {}) {
 function renderSaveReceivedTripButton() {
   const button = $("#saveReceivedTripButton");
   if (!button) return;
-  const canSave = Boolean(readOnlyShare?.shareId && !readOnlyShare.invalid && !readOnlyShare.isOwner && !readOnlyShare.isSaved && readOnlyShare.source === "public_link");
+  const canSave = Boolean(!isReadOnlyGroupTrip() && readOnlyShare?.shareId && !readOnlyShare.invalid && !readOnlyShare.isOwner && !readOnlyShare.isSaved && readOnlyShare.source === "public_link");
   button.classList.toggle("hidden", !canSave);
   button.disabled = !canSave;
 }
@@ -3837,6 +3935,374 @@ async function saveReceivedTrip(profileReady = false) {
   }
 }
 
+function createPendingGroupTripIntent(action, user = getCurrentRecoverableAuthUser(), { switchFrom = "" } = {}) {
+  const core = getGroupTripCore();
+  if (!core?.createPendingGroupTripIntent) return null;
+  const durable = core.hasDurableEmailIdentity(user);
+  return core.createPendingGroupTripIntent({
+    action,
+    ...(action === "join" ? { shareId: readOnlyShare?.shareId } : { tripId: state?.trip?.id }),
+    authFlow: durable ? "login" : "upgrade",
+    ...(durable ? {} : { expectedUserId: user?.id || "" }),
+    ...(switchFrom ? { switchFrom } : {}),
+  });
+}
+
+function openGroupTripIdentitySheet(intent, { profileRequired = false } = {}) {
+  if (intent) storePendingGroupTripIntent(intent);
+  openProfileSheet({
+    entryPoint: `group_trip_${intent?.action || "resume"}`,
+    action: () => resumePendingGroupTripIntent(),
+  });
+  showToast(window.t(profileRequired ? "share.group.profile.required" : "share.group.identity.required"));
+}
+
+function renderGroupTripJoinButton() {
+  const button = $("#joinGroupTripButton");
+  if (!button) return;
+  const canJoin = Boolean(
+    isReadOnlyGroupTrip()
+    && readOnlyShare?.shareId
+    && !readOnlyShare.invalid
+    && !readOnlyShare.isOwner
+    && !readOnlyShare.isJoined
+    && readOnlyShare.source === "public_link"
+  );
+  button.classList.toggle("hidden", !canJoin);
+  button.disabled = !canJoin || groupTripJoinBusy;
+  button.textContent = window.t(groupTripJoinBusy ? "share.group.joining" : "share.group.join");
+}
+
+async function joinGroupTripByShareId(shareId) {
+  groupTripJoinBusy = true;
+  renderGroupTripJoinButton();
+  try {
+    const isCurrentPreview = readOnlyShare?.shareId === shareId;
+    const payload = await callTripShareFunction("join_group", { shareId }, { requireOwner: true });
+    clearPendingGroupTripIntent();
+    if (readOnlyShare?.shareId === shareId) {
+      readOnlyShare.isJoined = true;
+      readOnlyShare.isSaved = true;
+      readOnlyShare.currentUserDisplayName = payload.displayName || userProfile.displayName || "";
+    }
+    await refreshReceivedTrips({ silent: true });
+    if (!isCurrentPreview) await openReceivedTrip(shareId);
+    renderSaveReceivedTripButton();
+    renderGroupTripJoinButton();
+    renderShareRoleBanner();
+    showToast(window.t("share.group.joined"));
+    return true;
+  } catch (error) {
+    const key = {
+      durable_identity_required: "share.group.identity.required",
+      profile_required: "share.group.profile.required",
+      owner_cannot_join: "share.group.join.owner",
+      share_revoked: "share.group.join.closed",
+      group_trip_required: "share.group.join.not.group",
+    }[String(error?.message || "")] || "share.group.join.error";
+    showToast(window.t(key));
+    return false;
+  } finally {
+    groupTripJoinBusy = false;
+    renderGroupTripJoinButton();
+  }
+}
+
+async function startGroupTripJoin() {
+  if (!isReadOnlyGroupTrip() || !readOnlyShare?.shareId || readOnlyShare.isJoined) return;
+  try {
+    await ensureSupabaseOwnerSession();
+    const user = await refreshRecoverableAuthSession();
+    const intent = createPendingGroupTripIntent("join", user);
+    if (!getGroupTripCore()?.hasDurableEmailIdentity(user)) {
+      openGroupTripIdentitySheet(intent);
+      return;
+    }
+    const profile = await loadMyProfile({ createSession: false });
+    if (!profile?.displayName) {
+      openGroupTripIdentitySheet(intent, { profileRequired: true });
+      return;
+    }
+    await joinGroupTripByShareId(readOnlyShare.shareId);
+  } catch {
+    showToast(window.t(isSupabaseConfigured() ? "share.group.join.error" : "share.link.supabase.missing"));
+  }
+}
+
+async function refreshGroupTripContext() {
+  const record = getTripShareRecord();
+  if (isReadOnlyMode() || !isCurrentGroupTrip() || !record?.shareId || record.revoked) {
+    groupTripContext = { loading: false, participants: [] };
+    renderGroupTripShareSurface();
+    return;
+  }
+  groupTripContext = { ...groupTripContext, loading: true };
+  renderGroupTripShareSurface();
+  try {
+    const payload = await callTripShareFunction("get_group_context", { tripId: state.trip.id }, { requireOwner: true });
+    groupTripContext = {
+      loading: false,
+      participants: Array.isArray(payload.participants) ? payload.participants : [],
+    };
+  } catch {
+    groupTripContext = { loading: false, participants: [] };
+  }
+  renderGroupTripShareSurface();
+}
+
+function renderGroupTripShareSurface() {
+  const card = $("#groupTripShareCard");
+  const button = $("#groupTripPublishButton");
+  const ordinaryCard = $("#friendsTripShareCard");
+  const ordinaryButton = $("#openTripLinkButton");
+  const organizerPanel = $("#groupTripManagementPanel");
+  const ordinaryPanel = $("#friendsTripManagementPanel");
+  const organizerSlot = $("#groupTripLinkSlot");
+  const ordinarySlot = $("#friendsTripLinkSlot");
+  const linkOptions = $("#tripLinkOptions");
+  const count = $("#groupTripParticipantCount");
+  const list = $("#groupTripParticipantList");
+  const budgetToggle = $("#tripLinkIncludeBudgetToggle");
+  const budgetInput = $("#tripLinkIncludeBudget");
+  if (!card || !button) return;
+  card.classList.toggle("hidden", isReadOnlyMode());
+  ordinaryCard?.classList.toggle("hidden", isReadOnlyMode());
+  const activeMode = isReadOnlyMode() ? null : getActiveTripShareMode();
+  const organizerActive = activeMode === "organizer";
+  const ordinaryActive = activeMode === "ordinary";
+  const organizerOpen = organizerActive && openShareModePanel === "organizer";
+  const ordinaryOpen = ordinaryActive && openShareModePanel === "ordinary";
+  button.disabled = false;
+  button.textContent = window.t(organizerActive ? "share.organizer.manage" : "share.organizer.activate");
+  button.classList.toggle("is-active", organizerActive);
+  button.setAttribute("aria-expanded", String(organizerOpen));
+  if (ordinaryButton) {
+    ordinaryButton.textContent = window.t("share.ordinary.action");
+    ordinaryButton.classList.toggle("is-active", ordinaryActive);
+    ordinaryButton.setAttribute("aria-expanded", String(ordinaryOpen));
+  }
+  organizerPanel?.classList.toggle("hidden", !organizerOpen);
+  ordinaryPanel?.classList.toggle("hidden", !ordinaryOpen);
+  const linkTarget = organizerActive ? organizerSlot : ordinarySlot;
+  if (linkOptions && linkTarget && linkOptions.parentElement !== linkTarget) linkTarget.appendChild(linkOptions);
+  linkOptions?.classList.toggle("hidden", !(organizerOpen || ordinaryOpen));
+  if (budgetInput) {
+    if (organizerActive) budgetInput.checked = false;
+    budgetInput.disabled = organizerActive;
+  }
+  budgetToggle?.classList.toggle("hidden", organizerActive);
+  renderShareModeSwitchConfirm();
+  if (!organizerActive) return;
+  const participants = groupTripContext.participants || [];
+  if (count) count.textContent = window.t(groupTripContext.loading
+    ? "share.group.participants.loading"
+    : "share.group.participants.count", { count: participants.length });
+  if (list) {
+    list.innerHTML = participants.length
+      ? participants.map((participant) => `<li>${escapeHtml(participant.displayName || window.t("share.group.participant.fallback"))}</li>`).join("")
+      : `<li class="group-trip-participant-empty">${escapeHtml(window.t("share.group.participants.empty"))}</li>`;
+  }
+}
+
+function getActiveTripShareMode(record = getTripShareRecord()) {
+  if (!record?.shareId || record.revoked) return null;
+  return isCurrentGroupTrip() ? "organizer" : "ordinary";
+}
+
+function renderShareModeSwitchConfirm() {
+  const panel = $("#shareModeSwitchConfirm");
+  const message = $("#shareModeSwitchMessage");
+  const confirmButton = $("#confirmShareModeSwitchButton");
+  if (!panel || !message || !confirmButton) return;
+  panel.classList.toggle("hidden", !pendingShareModeSwitch);
+  if (!pendingShareModeSwitch) return;
+  const toOrganizer = pendingShareModeSwitch === "organizer";
+  message.textContent = window.t(toOrganizer
+    ? "share.mode.switch.ordinary.to.organizer"
+    : "share.mode.switch.organizer.to.ordinary");
+  confirmButton.textContent = window.t(toOrganizer
+    ? "share.mode.switch.confirm.organizer"
+    : "share.mode.switch.confirm.ordinary");
+}
+
+function requestShareModeSwitch(targetMode) {
+  pendingShareModeSwitch = targetMode;
+  openShareModePanel = null;
+  renderGroupTripShareSurface();
+}
+
+function cancelShareModeSwitch() {
+  pendingShareModeSwitch = "";
+  renderGroupTripShareSurface();
+}
+
+async function confirmShareModeSwitch() {
+  const targetMode = pendingShareModeSwitch;
+  pendingShareModeSwitch = "";
+  renderShareModeSwitchConfirm();
+  if (targetMode === "organizer") {
+    await activateOrganizerMode({ switchFrom: "ordinary" });
+  } else if (targetMode === "ordinary") {
+    await switchTripShareMode("ordinary");
+  }
+}
+
+async function switchTripShareMode(targetMode) {
+  const record = getTripShareRecord();
+  const previousIsGroupTrip = isCurrentGroupTrip();
+  const previousShareModeEpoch = state.trip.shareModeEpoch || "";
+  if (!record?.shareId || record.revoked) return false;
+  try {
+    state.trip.isGroupTrip = targetMode === "organizer";
+    state.trip.shareModeEpoch = new Date().toISOString();
+    if (targetMode === "ordinary") {
+      const budgetInput = $("#tripLinkIncludeBudget");
+      if (budgetInput) budgetInput.checked = true;
+    }
+    const nextRecord = await publishTripShare({
+      includeBudget: targetMode === "ordinary",
+      rotateToken: true,
+    });
+    saveState();
+    groupTripContext = { loading: false, participants: [] };
+    openShareModePanel = targetMode;
+    renderTripLinkOptions(nextRecord);
+    if (targetMode === "organizer") await refreshGroupTripContext();
+    showToast(window.t(targetMode === "organizer"
+      ? "share.mode.switch.done.organizer"
+      : "share.mode.switch.done.ordinary"));
+    return true;
+  } catch {
+    state.trip.isGroupTrip = previousIsGroupTrip;
+    state.trip.shareModeEpoch = previousShareModeEpoch;
+    saveState();
+    openShareModePanel = null;
+    renderGroupTripShareSurface();
+    showToast(window.t("share.mode.switch.error"));
+    return false;
+  }
+}
+
+async function completeGroupTripPublish(tripId = state?.trip?.id, { rotateToken = false } = {}) {
+  if (isReadOnlyMode() || !tripId) return false;
+  if (state?.trip?.id !== tripId) {
+    const trip = tripStore.trips.find((entry) => entry.id === tripId);
+    if (!trip) {
+      clearPendingGroupTripIntent();
+      showToast(window.t("share.group.intent.invalid"));
+      return false;
+    }
+    openTrip(tripId, { refreshProposals: false });
+  }
+  const wasGroupTrip = isCurrentGroupTrip();
+  const previousShareModeEpoch = state.trip.shareModeEpoch || "";
+  if (!getActiveTripShareMode()) state.trip.shareModeEpoch = new Date().toISOString();
+  state.trip.isGroupTrip = true;
+  try {
+    const record = rotateToken
+      ? await publishTripShare({ includeBudget: false, rotateToken: true })
+      : await ensureTripSharePublished({ includeBudget: false });
+    saveState();
+    authorExpenseProposals = [];
+    authorItemProposals = [];
+    renderProposalInbox();
+    renderEstimateProposalControls();
+    clearPendingGroupTripIntent();
+    if (!$("#shareSheet")?.classList.contains("open")) openShareSheet();
+    openShareModePanel = "organizer";
+    renderTripLinkOptions(record);
+    await refreshGroupTripContext();
+    showToast(window.t("share.group.published"));
+    return true;
+  } catch {
+    state.trip.isGroupTrip = wasGroupTrip;
+    state.trip.shareModeEpoch = previousShareModeEpoch;
+    renderGroupTripShareSurface();
+    showToast(window.t(isSupabaseConfigured() ? "share.group.publish.error" : "share.link.supabase.missing"));
+    return false;
+  }
+}
+
+async function startGroupTripPublish() {
+  if (isReadOnlyMode()) return;
+  const activeMode = getActiveTripShareMode();
+  if (activeMode === "organizer") {
+    openShareModePanel = openShareModePanel === "organizer" ? null : "organizer";
+    if (openShareModePanel === "organizer") {
+      renderTripLinkOptions();
+      await refreshGroupTripContext();
+    } else {
+      renderGroupTripShareSurface();
+    }
+    return;
+  }
+  if (activeMode === "ordinary") {
+    requestShareModeSwitch("organizer");
+    return;
+  }
+  await activateOrganizerMode();
+}
+
+async function activateOrganizerMode({ switchFrom = "" } = {}) {
+  try {
+    await ensureSupabaseOwnerSession();
+    const user = await refreshRecoverableAuthSession();
+    const intent = createPendingGroupTripIntent("publish_group", user, { switchFrom });
+    if (!getGroupTripCore()?.hasDurableEmailIdentity(user)) {
+      openGroupTripIdentitySheet(intent);
+      return;
+    }
+    const profile = await loadMyProfile({ createSession: false });
+    if (!profile?.displayName) {
+      openGroupTripIdentitySheet(intent, { profileRequired: true });
+      return;
+    }
+    if (switchFrom === "ordinary" && getActiveTripShareMode() === "ordinary") {
+      await switchTripShareMode("organizer");
+    } else {
+      await completeGroupTripPublish(state.trip.id);
+    }
+  } catch {
+    showToast(window.t(isSupabaseConfigured() ? "share.group.publish.error" : "share.link.supabase.missing"));
+  }
+}
+
+async function resumePendingGroupTripIntent(user = null) {
+  const intent = readPendingGroupTripIntent();
+  if (!intent) return { handled: false, status: "no_intent" };
+  if (intent.action === "publish_group" && state?.trip?.id !== intent.tripId) {
+    const pendingTrip = tripStore.trips.find((entry) => entry.id === intent.tripId);
+    if (pendingTrip) openTrip(intent.tripId, { refreshProposals: false });
+  }
+  const authUser = user || await refreshRecoverableAuthSession();
+  const decision = getGroupTripCore()?.getPendingGroupTripResumeDecision(intent, authUser);
+  if (decision?.status === "uid_mismatch") {
+    clearPendingGroupTripIntent();
+    showToast(window.t("share.group.identity.mismatch"));
+    return { handled: true, status: decision.status };
+  }
+  if (!decision?.resumeAllowed) {
+    openGroupTripIdentitySheet(intent);
+    return { handled: true, status: decision?.status || "identity_required" };
+  }
+  const profile = await loadMyProfile({ createSession: false });
+  if (!profile?.displayName) {
+    openGroupTripIdentitySheet(intent, { profileRequired: true });
+    return { handled: true, status: "profile_required" };
+  }
+  pendingProfileAction = null;
+  closeSheet("profileSheet");
+  if (intent.action === "join") {
+    return { handled: await joinGroupTripByShareId(intent.shareId), status: "join" };
+  }
+  return {
+    handled: intent.switchFrom === "ordinary" && getActiveTripShareMode() === "ordinary"
+      ? await switchTripShareMode("organizer")
+      : await completeGroupTripPublish(intent.tripId),
+    status: "publish_group",
+  };
+}
+
 async function openReceivedTrip(shareId) {
   if (!shareId) return;
   try {
@@ -3853,6 +4319,10 @@ async function openReceivedTrip(shareId) {
       },
       isOwner: false,
       isSaved: true,
+      isJoined: Boolean(payload.isJoined),
+      isGroupTrip: Boolean(payload.isGroupTrip),
+      authorDisplayName: payload.authorDisplayName || "",
+      currentUserDisplayName: payload.currentUserDisplayName || "",
       source: "received_list",
       state: nextState,
     };
@@ -3933,6 +4403,7 @@ function resetExpenseProposalDraft(itemId = "") {
 
 async function openExpenseProposalSheet(itemId, profileReady = false) {
   if (!isReadOnlyMode()) return;
+  if (isReadOnlyGroupTrip()) return;
   if (readOnlyShare?.isOwner || readOnlyShare?.isAuthor) {
     showToast(window.t("share.proposal.expense.own.trip"));
     return;
@@ -4251,6 +4722,7 @@ async function refreshItemProposalContext() {
 }
 
 async function openItemProposalSheet(profileReady = false) {
+  if (isReadOnlyGroupTrip()) return;
   if (!isReadOnlyMode() || readOnlyShare?.invalid || readOnlyShare?.isOwner || readOnlyShare?.isAuthor) return;
   if (!profileReady) {
     await requireProfileForSharedAction("item_proposal", () => openItemProposalSheet(true));
@@ -4416,13 +4888,19 @@ function renderShareRoleBanner() {
     banner.textContent = "";
     return;
   }
-  const authorName = readOnlyShare.authorDisplayName || window.t("share.role.author.fallback");
   banner.classList.remove("hidden");
+  if (isReadOnlyGroupTrip()) {
+    banner.textContent = window.t(readOnlyShare.isJoined
+      ? "share.group.role.participant"
+      : "share.group.role.preview");
+    return;
+  }
+  const authorName = readOnlyShare.authorDisplayName || window.t("share.role.author.fallback");
   banner.textContent = window.t("share.role.author", { name: authorName });
 }
 
 async function refreshAuthorExpenseProposals() {
-  if (isReadOnlyMode() || !state?.trip?.id) {
+  if (isReadOnlyMode() || isCurrentGroupTrip() || !state?.trip?.id) {
     authorExpenseProposals = [];
     authorItemProposals = [];
     renderProposalInbox();
@@ -5523,16 +6001,23 @@ function validateItemDateInput(input = $("#itemForm")?.elements?.date) {
 }
 
 function openItemSheet(itemId = null, options = {}) {
+  const viewOnly = options.readOnly === true;
   fillSelects();
   updateItemEditorContextLabels();
   renderParticipantOwnerField();
-  $("#deleteItemButton").style.display = itemId ? "inline-flex" : "none";
-  $("#resetItemButton").style.display = itemId ? "inline-flex" : "none";
-  $("#copyItemButton").hidden = !itemId;
-  $("#itemSheetTitle").textContent = window.t(itemId ? "item.editor.title.edit" : "item.editor.title.create");
+  $("#deleteItemButton").style.display = itemId && !viewOnly ? "inline-flex" : "none";
+  $("#resetItemButton").style.display = itemId && !viewOnly ? "inline-flex" : "none";
+  $("#copyItemButton").hidden = !itemId || viewOnly;
+  $("#itemSaveButton").hidden = viewOnly;
+  $("#itemSheetTitle").textContent = window.t(viewOnly
+    ? "share.group.item.view.title"
+    : itemId ? "item.editor.title.edit" : "item.editor.title.create");
   const trackedItem = itemId ? state.items.find((entry) => entry.id === itemId) : null;
   resetItemCreateContext();
   fillItemForm(trackedItem);
+  [...$("#itemForm").elements].forEach((control) => {
+    control.disabled = viewOnly;
+  });
   validateItemTitleInput();
   validateItemDateInput();
   resetTripItemAttachmentsState(trackedItem);
@@ -5548,18 +6033,26 @@ function openItemSheet(itemId = null, options = {}) {
     renderItemDraftWarning(options.inlineWarning || "");
   }
   renderItemAllocationSummary(trackedItem);
-  renderAcceptedExpenseControls(trackedItem);
+  if (viewOnly) {
+    $("#participantOwnerField").hidden = true;
+    $("#acceptedExpenseControls")?.classList.add("hidden");
+    $("#itemAttachmentsSection")?.classList.add("hidden");
+  } else {
+    renderAcceptedExpenseControls(trackedItem);
+  }
   updateOpenLinkButton();
   resetLinkIntakeState();
   renderLinkIntakePanel({ visible: !itemId && !isReadOnlyMode() });
   openSheet("itemSheet");
-  if (trackedItem) loadTripItemAttachments();
+  if (!viewOnly) {
+    if (trackedItem) loadTripItemAttachments();
+  }
   if (!itemId && itemCreateContext.returnScreenOnCancel && !itemSheetHistoryArmed) {
     history.pushState({ backpackerItemSheet: true }, "");
     itemSheetHistoryArmed = true;
   }
   itemFormOpenedAt = Date.now();
-  if (trackedItem) {
+  if (trackedItem && !viewOnly) {
     refreshAuthorExpenseProposals().then(() => {
       const currentItem = state.items.find((entry) => entry.id === trackedItem.id);
       renderAcceptedExpenseControls(currentItem);
@@ -6779,6 +7272,8 @@ function openHomeShareSheet() {
 }
 
 function openShareSheet() {
+  openShareModePanel = null;
+  pendingShareModeSwitch = "";
   renderSharePreview();
   $("#tripPdfOptions")?.classList.add("hidden");
   $("#tripLinkOptions")?.classList.add("hidden");
@@ -6786,6 +7281,7 @@ function openShareSheet() {
   $("#shareTripTextButton").hidden = isReadOnlyMode();
   $("#downloadEstimateButton").hidden = isReadOnlyMode() && !canShowBudget();
   $("#openTripPdfOptionsButton").hidden = isReadOnlyMode() && !canShowBudget();
+  renderGroupTripShareSurface();
   openSheet("shareSheet");
   trackEvent("share_opened", { ...getTripAnalyticsContext(), share_context: "trip" });
 }
@@ -6822,6 +7318,7 @@ function buildTripShareUrl(token) {
 }
 
 function buildPublishedTripState({ includeBudget = true } = {}) {
+  if (isCurrentGroupTrip()) includeBudget = false;
   const published = normalizeState(structuredClone(state));
   const entry = tripStore.trips.find((trip) => trip.id === published.trip.id);
   if (entry?.coverDataUrl) published.trip.coverDataUrl = entry.coverDataUrl;
@@ -6834,8 +7331,9 @@ function buildPublishedTripState({ includeBudget = true } = {}) {
 
 async function publishTripShare(options = {}) {
   const existing = getTripShareRecord();
-  const includeBudget = options.includeBudget !== false;
+  const includeBudget = isCurrentGroupTrip() ? false : options.includeBudget !== false;
   const mustRotateToken = Boolean(existing?.shareId && !existing?.token);
+  const rotateToken = options.rotateToken === true || mustRotateToken;
   if (mustRotateToken) {
     await callTripShareFunction("revoke", { tripId: state.trip.id }, { requireOwner: true }).catch(() => {});
     removeTripShareRecord();
@@ -6843,7 +7341,7 @@ async function publishTripShare(options = {}) {
   const payload = await callTripShareFunction("publish", {
     tripId: state.trip.id,
     includeBudget,
-    rotateToken: mustRotateToken,
+    rotateToken,
     schemaVersion: TRIP_SHARE_SCHEMA_VERSION,
     state: buildPublishedTripState({ includeBudget }),
   }, { requireOwner: true });
@@ -6872,7 +7370,7 @@ async function updatePublishedTripShare(options = {}) {
   const existing = getTripShareRecord();
   if (!existing?.shareId || existing.revoked) return null;
   if (!existing.token) return publishTripShare({ includeBudget: options.includeBudget ?? existing.includeBudget });
-  const includeBudget = options.includeBudget ?? (existing.includeBudget !== false);
+  const includeBudget = isCurrentGroupTrip() ? false : (options.includeBudget ?? (existing.includeBudget !== false));
   const payload = await callTripShareFunction("update", {
     tripId: state.trip.id,
     includeBudget,
@@ -6980,7 +7478,8 @@ function renderTripLinkOptions(record = getTripShareRecord()) {
   const panel = $("#tripLinkOptions");
   if (!panel) return;
   const includeInput = $("#tripLinkIncludeBudget");
-  if (includeInput && record) includeInput.checked = record.includeBudget !== false;
+  if (includeInput && record) includeInput.checked = isCurrentGroupTrip() ? false : record.includeBudget !== false;
+  renderGroupTripShareSurface();
   const input = $("#tripShareLinkInput");
   const status = $("#tripShareLinkStatus");
   const copyButton = $("#copyTripLinkButton");
@@ -7007,17 +7506,24 @@ function renderTripLinkOptions(record = getTripShareRecord()) {
 
 async function showTripLinkOptions(profileReady = false) {
   if (isReadOnlyMode()) return;
+  const activeMode = getActiveTripShareMode();
+  if (activeMode === "organizer") {
+    requestShareModeSwitch("ordinary");
+    return;
+  }
+  if (activeMode === "ordinary") {
+    pendingShareModeSwitch = "";
+    openShareModePanel = openShareModePanel === "ordinary" ? null : "ordinary";
+    renderTripLinkOptions();
+    return;
+  }
   if (!profileReady) {
     await requireProfileForSharedAction("publish_link", () => showTripLinkOptions(true));
     return;
   }
-  const panel = $("#tripLinkOptions");
-  if (panel && !panel.classList.contains("hidden")) {
-    panel.classList.add("hidden");
-    return;
-  }
   $("#tripPdfOptions")?.classList.add("hidden");
-  panel?.classList.remove("hidden");
+  openShareModePanel = "ordinary";
+  state.trip.shareModeEpoch = new Date().toISOString();
   renderTripLinkOptions();
   try {
     const record = await ensureTripSharePublished({ includeBudget: $("#tripLinkIncludeBudget")?.checked ?? true });
@@ -7082,8 +7588,12 @@ async function revokeTripShareLink(profileReady = false) {
     ...record,
     revoked: true,
   });
+  openShareModePanel = null;
+  pendingShareModeSwitch = "";
+  groupTripContext = { loading: false, participants: [] };
   const input = $("#tripShareLinkInput");
   if (input) input.value = "";
+  renderTripLinkOptions();
   showToast(window.t("share.link.revoked"));
 }
 
@@ -8643,11 +9153,17 @@ async function startApp() {
     state = readOnlyShare.state;
     hideAppSplash();
     showTripScreen();
+    await resumePendingGroupTripIntent(recoverableUser);
     return;
   }
   privateTripSyncState.ready = true;
   if (recoverableUser?.hasEmailIdentity) {
     await syncPrivateTripsWithCloud({ silent: true }).catch(() => null);
+  }
+  const groupResume = await resumePendingGroupTripIntent(recoverableUser);
+  if (groupResume.handled) {
+    hideAppSplash();
+    return;
   }
   hideAppSplash();
   const params = new URLSearchParams(window.location.search);
@@ -8701,14 +9217,19 @@ function showTripScreen(options = {}) {
   $("#editTripButton").hidden = isReadOnlyMode();
   $("#shareButton").hidden = false;
   $$("[data-action='add']").forEach((button) => {
-    button.hidden = Boolean(isReadOnlyMode() && (readOnlyShare?.invalid || readOnlyShare?.isOwner || readOnlyShare?.isAuthor));
+    button.hidden = Boolean(isReadOnlyGroupTrip() || (isReadOnlyMode() && (readOnlyShare?.invalid || readOnlyShare?.isOwner || readOnlyShare?.isAuthor)));
   });
   renderSaveReceivedTripButton();
+  renderGroupTripJoinButton();
   render();
   if (options.refreshProposals !== false) refreshAuthorExpenseProposals();
-  if (isReadOnlyMode()) {
+  if (isReadOnlyMode() && !isReadOnlyGroupTrip()) {
     refreshShareProposalContext();
     refreshItemProposalContext();
+  } else if (isReadOnlyGroupTrip()) {
+    shareProposalContext = null;
+    renderEstimateProposalControls();
+    renderMyItemProposals();
   }
 }
 
@@ -10483,6 +11004,7 @@ function bindEvents() {
     if (addButton) {
       event.preventDefault();
       event.stopPropagation();
+      if (isReadOnlyGroupTrip()) return;
       if (isReadOnlyMode()) openItemProposalSheet().catch(() => showToast(window.t("share.proposal.item.open.error")));
       else openItemSheet();
       return;
@@ -10514,6 +11036,10 @@ function bindEvents() {
     }
 
     const editButton = event.target.closest("[data-edit]");
+    if (editButton && isReadOnlyGroupTrip()) {
+      openItemSheet(editButton.dataset.edit, { readOnly: true });
+      return;
+    }
     if (editButton && isReadOnlyMode()) {
       openExpenseProposalSheet(editButton.dataset.edit);
       return;
@@ -10842,6 +11368,7 @@ function bindEvents() {
   $("#homeInstallAppButton").addEventListener("click", installPwa);
   $("#iosInstallCloseButton")?.addEventListener("click", dismissIosInstallOnboarding);
   $("#saveReceivedTripButton")?.addEventListener("click", saveReceivedTrip);
+  $("#joinGroupTripButton")?.addEventListener("click", startGroupTripJoin);
   $("#shareAppButton").addEventListener("click", shareApp);
   $("#donationPigButton")?.addEventListener("click", () => {
     if (!DONATION_FLOW_ENABLED) return;
@@ -10935,7 +11462,10 @@ function bindEvents() {
   $("#resetDemoButton").addEventListener("click", resetDemo);
   $("#shareButton").addEventListener("click", openShareSheet);
   $("#shareTripTextButton").addEventListener("click", shareTrip);
+  $("#groupTripPublishButton")?.addEventListener("click", startGroupTripPublish);
   $("#openTripLinkButton").addEventListener("click", showTripLinkOptions);
+  $("#confirmShareModeSwitchButton")?.addEventListener("click", () => confirmShareModeSwitch().catch(() => {}));
+  $("#cancelShareModeSwitchButton")?.addEventListener("click", cancelShareModeSwitch);
   $("#tripLinkIncludeBudget").addEventListener("change", updateTripShareBudgetVisibility);
   $("#copyTripLinkButton").addEventListener("click", copyTripShareLink);
   $("#revokeTripLinkButton").addEventListener("click", revokeTripShareLink);

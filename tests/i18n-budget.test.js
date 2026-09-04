@@ -167,7 +167,7 @@ test("Budget translations interpolate days, rates, and participant UI", async ()
 
 test("Budget release uses a fresh versioned app asset and PWA cache", () => {
   const serviceWorker = read("service-worker.js");
-  assert.match(index, /\.\/app\.js\?v=p0-support-info-en-20260830/);
-  assert.match(serviceWorker, /backpacker-pwa-v131/);
-  assert.match(serviceWorker, /\.\/app\.js\?v=p0-support-info-en-20260830/);
+  assert.match(index, /\.\/app\.js\?v=organizer-mode-20260904/);
+  assert.match(serviceWorker, /backpacker-pwa-v132/);
+  assert.match(serviceWorker, /\.\/app\.js\?v=organizer-mode-20260904/);
 });

@@ -41,7 +41,7 @@
 
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 0;
   padding-top: env(safe-area-inset-top);
   background: #fff;
   color: var(--ink);
@@ -4603,6 +4603,105 @@ textarea:focus {
   margin-bottom: 12px;
 }
 
+.share-mode-card {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.share-mode-card.hidden,
+.group-trip-participants.hidden {
+  display: none;
+}
+
+.share-mode-card > h3,
+.share-mode-panel > h3 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.share-mode-card > .field-hint,
+.share-mode-panel > .share-mode-explanation {
+  margin: 0;
+}
+
+.share-mode-card > .primary-button {
+  width: 100%;
+}
+
+.share-mode-card > .primary-button.is-active {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.42);
+}
+
+.share-mode-panel {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.share-mode-panel.hidden,
+.share-mode-switch-confirm.hidden {
+  display: none;
+}
+
+.share-mode-switch-confirm {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: rgba(47, 101, 92, 0.08);
+}
+
+.share-mode-switch-confirm p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.share-mode-switch-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.share-mode-switch-actions button {
+  width: 100%;
+}
+
+.group-trip-participants {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.group-trip-participants strong {
+  font-weight: 700;
+}
+
+.group-trip-participants ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 20px;
+  font-weight: 400;
+}
+
+.group-trip-participant-empty {
+  color: var(--muted);
+  font-weight: 700;
+}
+
 .share-secondary-actions {
   margin-top: 8px;
 }
@@ -4619,6 +4718,7 @@ textarea:focus {
 
 .trip-link-options {
   display: grid;
+  min-width: 0;
   gap: 10px;
   margin: -2px 0 2px;
   padding: 10px;
@@ -4655,6 +4755,16 @@ textarea:focus {
   color: #fff;
   box-shadow: var(--active-button-shadow);
   font-weight: 900;
+}
+
+@media (max-width: 380px) {
+  .share-link-box {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #copyTripLinkButton {
+    width: 100%;
+  }
 }
 
 #copyTripLinkButton:disabled {

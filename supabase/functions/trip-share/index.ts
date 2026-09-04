@@ -1,5 +1,16 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getVisibleBudgetFields, stripBudget } from "./privacy.mjs";
+import {
+  GroupTripActionError,
+  getOrganizerGroupContext,
+  isGroupTripState,
+  joinGroupTrip,
+  prepareTripShareWrite,
+} from "./group-trips.mjs";
+// @ts-ignore shared UMD contract initializes the same source boundary as the PWA.
+import "../../../analytics-source-contract.js";
+// @ts-ignore shared ESM module is executed by Deno.
+import { writeSupabaseSignal } from "../_shared/analytics/supabase-source.mjs";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,6 +22,17 @@ const corsHeaders = {
 const SCHEMA_VERSION = "trip_share.v1";
 const PARTICIPANT_COLORS = ["orange", "yellow", "blue", "teal", "purple", "pink"];
 const ITEM_TYPES = new Set(["ticket", "stay", "transport", "excursion", "food", "place", "spa", "shopping", "idea", "other"]);
+type UserClient = ReturnType<typeof createClient<any>>;
+
+type AnalyticsContractGlobal = typeof globalThis & {
+  BackpackerAnalyticsSource?: {
+    sanitizeEventProperties: (eventName: string, input: unknown) => Record<string, unknown>;
+    getMissingRequiredProperties: (eventName: string, input: unknown) => string[];
+  };
+  EdgeRuntime?: { waitUntil: (promise: Promise<unknown>) => void };
+};
+
+const analyticsSourceContract = (globalThis as AnalyticsContractGlobal).BackpackerAnalyticsSource;
 
 function json(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -81,7 +103,7 @@ function normalizeProposalLink(value: unknown) {
   }
 }
 
-async function getProfileDisplayName(serviceClient: ReturnType<typeof createClient>, userId: string) {
+async function getProfileDisplayName(serviceClient: UserClient, userId: string) {
   if (!userId) return "";
   const { data } = await serviceClient
     .from("user_profiles")
@@ -91,7 +113,7 @@ async function getProfileDisplayName(serviceClient: ReturnType<typeof createClie
   return String(data?.display_name || "");
 }
 
-async function getProfileDisplayNames(serviceClient: ReturnType<typeof createClient>, userIds: string[]) {
+async function getProfileDisplayNames(serviceClient: UserClient, userIds: string[]) {
   const uniqueIds = Array.from(new Set(userIds.filter(Boolean)));
   if (!uniqueIds.length) return new Map<string, string>();
   const { data } = await serviceClient
@@ -106,6 +128,11 @@ async function getProfileDisplayNames(serviceClient: ReturnType<typeof createCli
 
 function getTrip(state: Record<string, unknown>) {
   return (state.trip || {}) as Record<string, unknown>;
+}
+
+function getShareModeEpoch(state: Record<string, unknown>, fallback = "") {
+  const value = String(getTrip(state).shareModeEpoch || fallback || "");
+  return Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : new Date(0).toISOString();
 }
 
 function getParticipants(state: Record<string, unknown>) {
@@ -142,19 +169,20 @@ function getItemAllocations(item: Record<string, unknown>) {
     : [];
 }
 
-async function getParticipantLinkUser(serviceClient: ReturnType<typeof createClient>, shareId: string, participantId: string) {
+async function getParticipantLinkUser(serviceClient: UserClient, shareId: string, participantId: string, activeSince = "") {
   if (!participantId) return "";
   const { data } = await serviceClient
     .from("trip_share_participant_links")
     .select("user_id")
     .eq("trip_share_id", shareId)
     .eq("participant_id", participantId)
+    .gte("updated_at", activeSince)
     .maybeSingle();
   return data?.user_id || "";
 }
 
 async function getFinancialVersion(
-  serviceClient: ReturnType<typeof createClient>,
+  serviceClient: UserClient,
   shareId: string,
   state: Record<string, unknown>,
   itemId: string,
@@ -211,6 +239,78 @@ function getAuthorProposalCard(proposal: Record<string, unknown>, share: Record<
     itemTitle: String(item?.title || "Расход"),
     itemPrice: parseMoney(item?.price),
     authorAmount: item ? getAuthorAllocation(state, item) : 0,
+  };
+}
+
+function createGroupTripStore(serviceClient: UserClient) {
+  return {
+    async getShare(shareId: string) {
+      const { data, error } = await serviceClient
+        .from("trip_shares")
+        .select("id, trip_id, owner_user_id, state, revoked_at, created_at")
+        .eq("id", shareId)
+        .maybeSingle();
+      if (error) throw error;
+      return data ? { ...data, mode_epoch: getShareModeEpoch(data.state, data.created_at) } : null;
+    },
+    async getOwnerShare(tripId: string, ownerUserId: string) {
+      const { data, error } = await serviceClient
+        .from("trip_shares")
+        .select("id, trip_id, owner_user_id, state, revoked_at, created_at")
+        .eq("trip_id", tripId)
+        .eq("owner_user_id", ownerUserId)
+        .maybeSingle();
+      if (error) throw error;
+      return data ? { ...data, mode_epoch: getShareModeEpoch(data.state, data.created_at) } : null;
+    },
+    getDisplayName(userId: string) {
+      return getProfileDisplayName(serviceClient, userId);
+    },
+    getDisplayNames(userIds: string[]) {
+      return getProfileDisplayNames(serviceClient, userIds);
+    },
+    async getParticipantLink(tripShareId: string, userId: string, activeSince = "") {
+      const { data, error } = await serviceClient
+        .from("trip_share_participant_links")
+        .select("participant_id")
+        .eq("trip_share_id", tripShareId)
+        .eq("user_id", userId)
+        .gte("updated_at", activeSince)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    async ensureParticipantLink({ tripShareId, participantId, userId }: { tripShareId: string; participantId: string; userId: string }) {
+      const { error } = await serviceClient
+        .from("trip_share_participant_links")
+        .upsert({
+          trip_share_id: tripShareId,
+          participant_id: participantId,
+          user_id: userId,
+        }, { onConflict: "trip_share_id,user_id" });
+      if (error) throw error;
+    },
+    async ensureReceivedRelation({ tripShareId, userId }: { tripShareId: string; userId: string }) {
+      const { error } = await serviceClient
+        .from("trip_share_recipients")
+        .upsert({
+          trip_share_id: tripShareId,
+          recipient_user_id: userId,
+          created_at: new Date().toISOString(),
+          removed_at: null,
+        }, { onConflict: "trip_share_id,recipient_user_id" });
+      if (error) throw error;
+    },
+    async listParticipantLinks(tripShareId: string, activeSince = "") {
+      const { data, error } = await serviceClient
+        .from("trip_share_participant_links")
+        .select("user_id")
+        .eq("trip_share_id", tripShareId)
+        .gte("updated_at", activeSince)
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
   };
 }
 
@@ -282,9 +382,72 @@ function getTripCard(share: Record<string, unknown>, revoked = false) {
     currency: String(trip.currency || "RUB"),
     coverDataUrl: String(trip.coverDataUrl || ""),
     includeBudget,
+    isGroupTrip: trip.isGroupTrip === true,
     updatedAt: share.updated_at,
     revoked,
   };
+}
+
+function getAnalyticsRequestContext(body: Record<string, unknown>) {
+  const input = body.analytics && typeof body.analytics === "object" && !Array.isArray(body.analytics)
+    ? body.analytics as Record<string, unknown>
+    : {};
+  const eventId = String(input.event_id || "").trim().toLowerCase();
+  return {
+    eventId: /^[a-f0-9-]{36}$/.test(eventId) ? eventId : crypto.randomUUID(),
+    appVersion: String(input.app_version || "").trim().slice(0, 80),
+    environment: ["production", "local", "preview"].includes(String(input.environment || ""))
+      ? String(input.environment)
+      : "production",
+    isInternalUser: input.is_internal_user === true,
+    isTestUser: input.is_test_user === true,
+  };
+}
+
+function scheduleSupabaseAnalyticsSignal({
+  serviceClient,
+  body,
+  eventName,
+  eventProperties,
+  analyticsIdentity,
+  identityType,
+  idempotencyKey,
+}: {
+  serviceClient: UserClient;
+  body: Record<string, unknown>;
+  eventName: string;
+  eventProperties: Record<string, unknown>;
+  analyticsIdentity: string;
+  identityType: "anonymous_browser" | "authenticated_account";
+  idempotencyKey?: string;
+}) {
+  const context = getAnalyticsRequestContext(body);
+  const sourceIdempotencyKey = idempotencyKey || `server:share_open:${analyticsIdentity}:${context.eventId}`;
+  const releaseId = Deno.env.get("DENO_DEPLOYMENT_ID") || "trip-share.local";
+  const occurredAt = new Date();
+  const task = writeSupabaseSignal({
+    client: serviceClient,
+    sourceContract: analyticsSourceContract,
+    eventName,
+    eventProperties,
+    analyticsIdentity,
+    identityType,
+    sourceProvenance: "live_supabase",
+    idempotencyKey: sourceIdempotencyKey,
+    appVersion: context.appVersion,
+    releaseId,
+    environment: context.environment,
+    isInternalUser: context.isInternalUser,
+    isTestUser: context.isTestUser,
+    occurredAt,
+  }).catch((error: { code?: string; message?: string }) => {
+    console.error("trip_share_supabase_analytics_failed", {
+      code: typeof error?.code === "string" ? error.code : (error?.message || "unexpected"),
+      event: eventName,
+    });
+  });
+  const edgeRuntime = (globalThis as AnalyticsContractGlobal).EdgeRuntime;
+  if (edgeRuntime?.waitUntil) edgeRuntime.waitUntil(task);
 }
 
 function formatDayCountText(count: number) {
@@ -316,12 +479,13 @@ Deno.serve(async (req) => {
     const tokenHash = await sha256Hex(token);
     const { data, error } = await serviceClient
       .from("trip_shares")
-      .select("id, schema_version, trip_id, owner_user_id, include_budget, state, revoked_at, updated_at")
+      .select("id, schema_version, trip_id, owner_user_id, include_budget, state, revoked_at, created_at, updated_at")
       .eq("token_hash", tokenHash)
       .maybeSingle();
     if (error) return json({ error: "read_failed" }, 500);
     if (!data) return json({ error: "share_not_found" }, 404);
     if (data.revoked_at) return json({ error: "share_revoked" }, 410);
+    const activeSince = getShareModeEpoch(data.state, data.created_at);
     const currentUser = await getRequestUser(req, supabaseUrl, anonKey);
     const isOwner = Boolean(currentUser && currentUser.id === data.owner_user_id);
     const profileNames = await getProfileDisplayNames(serviceClient, [
@@ -329,15 +493,41 @@ Deno.serve(async (req) => {
       ...(currentUser ? [currentUser.id] : []),
     ]);
     let isSaved = false;
+    let isJoined = false;
     if (currentUser && !isOwner) {
       const { data: recipient } = await serviceClient
         .from("trip_share_recipients")
         .select("id")
         .eq("trip_share_id", data.id)
         .eq("recipient_user_id", currentUser.id)
+        .gte("created_at", activeSince)
         .is("removed_at", null)
         .maybeSingle();
       isSaved = Boolean(recipient);
+      if (isGroupTripState(data.state)) {
+        const { data: participantLink } = await serviceClient
+          .from("trip_share_participant_links")
+          .select("id")
+          .eq("trip_share_id", data.id)
+          .eq("user_id", currentUser.id)
+          .gte("updated_at", activeSince)
+          .maybeSingle();
+        isJoined = Boolean(participantLink);
+      }
+      scheduleSupabaseAnalyticsSignal({
+        serviceClient,
+        body,
+        eventName: "shared_trip_opened",
+        eventProperties: {
+          trip_id: data.trip_id,
+          trip_origin: "user_created",
+          collaboration_id: data.id,
+          actor_role: "recipient",
+          access_mode: "view",
+        },
+        analyticsIdentity: currentUser.id,
+        identityType: currentUser.is_anonymous === true ? "anonymous_browser" : "authenticated_account",
+      });
     }
     return json({
       shareId: data.id,
@@ -348,6 +538,8 @@ Deno.serve(async (req) => {
       isOwner,
       isAuthor: isOwner,
       isSaved,
+      isGroupTrip: isGroupTripState(data.state),
+      isJoined,
       authorDisplayName: profileNames.get(String(data.owner_user_id || "")) || "",
       currentUserDisplayName: currentUser ? (profileNames.get(currentUser.id) || "") : "",
       profileRequired: Boolean(currentUser && !profileNames.get(currentUser.id)),
@@ -357,6 +549,34 @@ Deno.serve(async (req) => {
 
   const user = await getRequestUser(req, supabaseUrl, anonKey);
   if (!user) return json({ error: "owner_jwt_required" }, 401);
+
+  if (action === "join_group") {
+    try {
+      const result = await joinGroupTrip({
+        shareId: String(body.shareId || ""),
+        user,
+        store: createGroupTripStore(serviceClient),
+      });
+      return json(result);
+    } catch (error) {
+      if (error instanceof GroupTripActionError) return json({ error: error.code }, error.status);
+      return json({ error: "join_failed" }, 500);
+    }
+  }
+
+  if (action === "get_group_context") {
+    try {
+      const result = await getOrganizerGroupContext({
+        tripId: String(body.tripId || ""),
+        user,
+        store: createGroupTripStore(serviceClient),
+      });
+      return json(result);
+    } catch (error) {
+      if (error instanceof GroupTripActionError) return json({ error: error.code }, error.status);
+      return json({ error: "group_context_failed" }, 500);
+    }
+  }
 
   if (action === "get_my_profile") {
     const displayName = await getProfileDisplayName(serviceClient, user.id);
@@ -389,17 +609,19 @@ Deno.serve(async (req) => {
     if (!shareId) return json({ error: "share_id_required" }, 400);
     const { data: share, error: shareError } = await serviceClient
       .from("trip_shares")
-      .select("id, trip_id, owner_user_id, include_budget, state, revoked_at")
+      .select("id, trip_id, owner_user_id, include_budget, state, revoked_at, created_at, updated_at")
       .eq("id", shareId)
       .maybeSingle();
     if (shareError) return json({ error: "share_context_failed" }, 500);
     if (!share) return json({ error: "share_not_found" }, 404);
     if (share.revoked_at) return json({ error: "share_revoked" }, 410);
+    const activeSince = getShareModeEpoch(share.state, share.created_at);
 
     const { data: links } = await serviceClient
       .from("trip_share_participant_links")
       .select("participant_id, user_id")
-      .eq("trip_share_id", shareId);
+      .eq("trip_share_id", shareId)
+      .gte("updated_at", activeSince);
     const { data: proposals } = await serviceClient
       .from("trip_share_expense_proposals")
       .select("*")
@@ -452,14 +674,16 @@ Deno.serve(async (req) => {
 
     const { data: share, error: shareError } = await serviceClient
       .from("trip_shares")
-      .select("id, trip_id, owner_user_id, include_budget, state, revoked_at")
+      .select("id, trip_id, owner_user_id, include_budget, state, revoked_at, created_at, updated_at")
       .eq("id", shareId)
       .maybeSingle();
     if (shareError) return json({ error: "proposal_failed" }, 500);
     if (!share) return json({ error: "share_not_found" }, 404);
     if (share.revoked_at) return json({ error: "share_revoked" }, 410);
+    if (isGroupTripState(share.state)) return json({ error: "group_proposals_disabled" }, 409);
     if (share.owner_user_id === user.id) return json({ error: "owner_cannot_propose" }, 409);
     if (!share.include_budget) return json({ error: "budget_hidden" }, 403);
+    const activeSince = getShareModeEpoch(share.state, share.created_at);
 
     const state = (share.state || {}) as Record<string, unknown>;
     const item = getItem(state, itemId);
@@ -475,6 +699,7 @@ Deno.serve(async (req) => {
       .select("participant_id")
       .eq("trip_share_id", shareId)
       .eq("user_id", user.id)
+      .gte("updated_at", activeSince)
       .maybeSingle();
     if (participantMode === "existing") {
       participantId = requestedParticipantId;
@@ -483,7 +708,7 @@ Deno.serve(async (req) => {
       }
       const participant = getParticipant(state, participantId);
       if (!participant || Boolean(participant.isSelf)) return json({ error: "participant_not_available" }, 409);
-      const linkedUserId = await getParticipantLinkUser(serviceClient, shareId, participantId);
+      const linkedUserId = await getParticipantLinkUser(serviceClient, shareId, participantId, activeSince);
       if (linkedUserId && linkedUserId !== user.id) return json({ error: "participant_already_linked" }, 409);
     } else if (existingUserLink?.participant_id) {
       return json({ error: "account_already_linked" }, 409);
@@ -671,6 +896,7 @@ Deno.serve(async (req) => {
     if (!share) return json({ error: "share_not_found" }, 404);
     if (share.revoked_at) return json({ error: "share_revoked" }, 410);
     if (share.owner_user_id === user.id) return json({ error: "owner_cannot_propose" }, 409);
+    if (isGroupTripState(share.state)) return json({ error: "group_proposals_disabled" }, 409);
     const shareState = (share.state || {}) as Record<string, unknown>;
     const currency = String(getTrip(shareState).currency || "");
 
@@ -792,12 +1018,13 @@ Deno.serve(async (req) => {
     if (!shareId) return json({ error: "share_id_required" }, 400);
     const { data: share, error: shareError } = await serviceClient
       .from("trip_shares")
-      .select("id, owner_user_id, revoked_at")
+      .select("id, owner_user_id, state, revoked_at")
       .eq("id", shareId)
       .maybeSingle();
     if (shareError) return json({ error: "save_received_failed" }, 500);
     if (!share) return json({ error: "share_not_found" }, 404);
     if (share.revoked_at) return json({ error: "share_revoked" }, 410);
+    if (isGroupTripState(share.state)) return json({ error: "group_join_required" }, 409);
     if (share.owner_user_id === user.id) return json({ error: "owner_cannot_save_own_share" }, 409);
 
     const { data, error } = await serviceClient
@@ -805,6 +1032,7 @@ Deno.serve(async (req) => {
       .upsert({
         trip_share_id: shareId,
         recipient_user_id: user.id,
+        created_at: new Date().toISOString(),
         removed_at: null,
       }, { onConflict: "trip_share_id,recipient_user_id" })
       .select("id, created_at")
@@ -825,19 +1053,32 @@ Deno.serve(async (req) => {
     if (!shareIds.length) return json({ trips: [] });
     const { data: shares, error: sharesError } = await serviceClient
       .from("trip_shares")
-      .select("id, owner_user_id, include_budget, state, revoked_at, updated_at")
+      .select("id, owner_user_id, include_budget, state, revoked_at, created_at, updated_at")
       .in("id", shareIds);
     if (sharesError) return json({ error: "list_received_failed" }, 500);
+    const { data: participantLinks, error: participantLinksError } = await serviceClient
+      .from("trip_share_participant_links")
+      .select("trip_share_id, updated_at")
+      .eq("user_id", user.id)
+      .in("trip_share_id", shareIds);
+    if (participantLinksError) return json({ error: "list_received_failed" }, 500);
     const sharesById = new Map((shares || []).map((share) => [share.id, share]));
+    const joinedShareIds = new Set((participantLinks || [])
+      .filter((entry) => {
+        const share = sharesById.get(entry.trip_share_id);
+        return share && Date.parse(entry.updated_at) >= Date.parse(getShareModeEpoch(share.state, share.created_at));
+      })
+      .map((entry) => entry.trip_share_id));
     const profileNames = await getProfileDisplayNames(serviceClient, (shares || []).map((share) => String(share.owner_user_id || "")));
     return json({
       trips: (recipients || [])
         .map((entry) => {
           const share = sharesById.get(entry.trip_share_id);
-          if (!share) return null;
+          if (!share || Date.parse(entry.created_at) < Date.parse(getShareModeEpoch(share.state, share.created_at))) return null;
           return {
             ...getTripCard(share, Boolean(share.revoked_at)),
             authorDisplayName: profileNames.get(String(share.owner_user_id || "")) || "",
+            isJoined: joinedShareIds.has(entry.trip_share_id),
             savedAt: entry.created_at,
           };
         })
@@ -850,7 +1091,7 @@ Deno.serve(async (req) => {
     if (!shareId) return json({ error: "share_id_required" }, 400);
     const { data: recipient, error: recipientError } = await serviceClient
       .from("trip_share_recipients")
-      .select("id")
+      .select("id, created_at")
       .eq("trip_share_id", shareId)
       .eq("recipient_user_id", user.id)
       .is("removed_at", null)
@@ -859,18 +1100,46 @@ Deno.serve(async (req) => {
     if (!recipient) return json({ error: "received_share_not_found" }, 404);
     const { data: share, error: shareError } = await serviceClient
       .from("trip_shares")
-      .select("id, schema_version, trip_id, include_budget, state, revoked_at, updated_at")
+      .select("id, schema_version, trip_id, include_budget, state, revoked_at, created_at, updated_at")
       .eq("id", shareId)
       .maybeSingle();
     if (shareError) return json({ error: "read_received_failed" }, 500);
     if (!share) return json({ error: "share_not_found" }, 404);
     if (share.revoked_at) return json({ error: "share_revoked" }, 410);
+    const activeSince = getShareModeEpoch(share.state, share.created_at);
+    if (Date.parse(recipient.created_at) < Date.parse(activeSince)) {
+      return json({ error: "received_share_not_found" }, 404);
+    }
+    const { data: participantLink, error: participantLinkError } = await serviceClient
+      .from("trip_share_participant_links")
+      .select("id")
+      .eq("trip_share_id", shareId)
+      .eq("user_id", user.id)
+      .gte("updated_at", activeSince)
+      .maybeSingle();
+    if (participantLinkError) return json({ error: "read_received_failed" }, 500);
+    scheduleSupabaseAnalyticsSignal({
+      serviceClient,
+      body,
+      eventName: "shared_trip_opened",
+      eventProperties: {
+        trip_id: share.trip_id,
+        trip_origin: "user_created",
+        collaboration_id: share.id,
+        actor_role: "recipient",
+        access_mode: "view",
+      },
+      analyticsIdentity: user.id,
+      identityType: user.is_anonymous === true ? "anonymous_browser" : "authenticated_account",
+    });
     return json({
       shareId: share.id,
       schemaVersion: share.schema_version,
       tripId: share.trip_id,
       includeBudget: share.include_budget,
       updatedAt: share.updated_at,
+      isGroupTrip: isGroupTripState(share.state),
+      isJoined: Boolean(participantLink),
       state: share.include_budget ? share.state : stripBudget(share.state),
     });
   }
@@ -898,9 +1167,14 @@ Deno.serve(async (req) => {
     const token = createToken();
     const tokenHash = await sha256Hex(token);
     const state = body.state;
-    const includeBudget = body.includeBudget !== false;
     const schemaVersion = String(body.schemaVersion || SCHEMA_VERSION);
-    if (!state || typeof state !== "object") return json({ error: "state_required" }, 400);
+    let prepared;
+    try {
+      prepared = prepareTripShareWrite({ state, includeBudget: body.includeBudget !== false, user, stripBudget });
+    } catch (error) {
+      if (error instanceof GroupTripActionError) return json({ error: error.code }, error.status);
+      return json({ error: "publish_failed" }, 500);
+    }
 
     const { data, error } = await serviceClient
       .from("trip_shares")
@@ -908,28 +1182,49 @@ Deno.serve(async (req) => {
         owner_user_id: user.id,
         trip_id: tripId,
         token_hash: tokenHash,
-        include_budget: includeBudget,
+        include_budget: prepared.includeBudget,
         schema_version: schemaVersion,
-        state: includeBudget ? state : stripBudget(state),
+        state: prepared.state,
         revoked_at: null,
       }, { onConflict: "owner_user_id,trip_id" })
       .select("id, updated_at")
       .single();
     if (error) return json({ error: "publish_failed" }, 500);
+    scheduleSupabaseAnalyticsSignal({
+      serviceClient,
+      body,
+      eventName: "trip_share_created",
+      eventProperties: {
+        trip_id: tripId,
+        trip_origin: "user_created",
+        collaboration_id: data.id,
+        actor_role: "owner",
+        access_mode: "view",
+        share_source: "link",
+      },
+      analyticsIdentity: user.id,
+      identityType: user.is_anonymous === true ? "anonymous_browser" : "authenticated_account",
+      idempotencyKey: `server:share_created:${data.id}`,
+    });
     return json({ shareId: data.id, token, updatedAt: data.updated_at });
   }
 
   if (action === "update") {
     const state = body.state;
-    const includeBudget = body.includeBudget !== false;
     const schemaVersion = String(body.schemaVersion || SCHEMA_VERSION);
-    if (!state || typeof state !== "object") return json({ error: "state_required" }, 400);
+    let prepared;
+    try {
+      prepared = prepareTripShareWrite({ state, includeBudget: body.includeBudget !== false, user, stripBudget });
+    } catch (error) {
+      if (error instanceof GroupTripActionError) return json({ error: error.code }, error.status);
+      return json({ error: "update_failed" }, 500);
+    }
     const { data, error } = await serviceClient
       .from("trip_shares")
       .update({
-        include_budget: includeBudget,
+        include_budget: prepared.includeBudget,
         schema_version: schemaVersion,
-        state: includeBudget ? state : stripBudget(state),
+        state: prepared.state,
         revoked_at: null,
       })
       .eq("owner_user_id", user.id)

@@ -22,8 +22,8 @@ function functionSource(name) {
 test("source schema and event contract versions are independent and loaded before app", () => {
   assert.equal(sourceContract.ANALYTICS_SCHEMA_VERSION, "2026-08-29.1");
   assert.equal(sourceContract.EVENT_CONTRACT_VERSION, "0.3");
-  assert.ok(indexSource.indexOf("analytics-source-contract.js") < indexSource.indexOf("app.js?v=p0-support-info-en-20260830"));
-  assert.match(workerSource, /backpacker-pwa-v131/);
+  assert.ok(indexSource.indexOf("analytics-source-contract.js") < indexSource.indexOf("app.js?v=organizer-mode-20260904"));
+  assert.match(workerSource, /backpacker-pwa-v132/);
   assert.match(workerSource, /analytics-source-contract\.js\?v=referral-arrival-20260829/);
 });
 
