@@ -680,12 +680,6 @@ a {
   color: var(--brand);
 }
 
-/* The hide button sits in the bottom-right corner, so only the bottom row needs to make
-   room for it. Reserving on the card itself also narrowed the title and destination rows. */
-.trainer-card .home-card-meta {
-  padding-right: 126px;
-}
-
 .trainer-card .trip-card-title-block {
   width: 100%;
 }
@@ -5085,10 +5079,6 @@ textarea:focus {
 }
 
 @media (max-width: 520px) {
-  .trainer-card .home-card-meta {
-    padding-right: 118px;
-  }
-
   .trip-header {
     padding-inline: 12px;
   }
@@ -5490,12 +5480,30 @@ h4,
   background-repeat: repeat-x;
 }
 
-/* Подпись типа выровнена вправо и обрезается слева, а Inter шире прежнего
-   Roboto — «ТРАНСПОРТ» вылезал на 4,5 px и терял левую перекладину «Т».
-   Разрядка снята, кегль на пункт меньше: запас на длинные подписи. */
+/* Иконка и подпись типа занимают отдельные колонки. Раньше крупная
+   выровненная вправо подпись обрезалась слева и выглядела так, будто
+   начинается под иконкой. Фиксированная колонка и явный зазор сохраняют
+   весь label в одну строку, не меняя размер карточки или иконки. */
+.item-card .tile-icon {
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 8px;
+  padding: 4px 10px;
+}
+
+.item-card .tile-icon > span:first-child {
+  width: 34px;
+  min-width: 34px;
+}
+
 .item-card .tile-icon small {
-  font-size: 21px;
+  justify-content: flex-start;
+  overflow: visible;
+  font-size: 17px;
   letter-spacing: 0;
+  line-height: 1;
+  text-align: left;
+  text-overflow: clip;
+  white-space: nowrap;
 }
 
 /* Лёгкая фактура картона на шапке: продольное волокно и поперечный
@@ -5822,7 +5830,9 @@ h4,
 
 .home-screen .home-card-meta {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  width: 100%;
+  min-width: 0;
   gap: 4px 14px;
   margin-top: 6px;
   padding-top: 10px;
@@ -5837,6 +5847,19 @@ h4,
   font-size: 13px;
   font-weight: 500;
   color: var(--a-ink-soft);
+}
+
+/* Дни и бюджет — одна общая строка во всех карточках поездки: тренажёре,
+   личной и полученной. Дни забирают свободное место, сумма не сжимается
+   и поэтому не может перейти на вторую строку. */
+.home-screen .home-card-meta > *:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.home-screen .home-card-meta > *:last-child {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 /* ---------- Обложки поездок: та же обработка, что у тренажёра ----------

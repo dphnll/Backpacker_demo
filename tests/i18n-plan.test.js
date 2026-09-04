@@ -9,6 +9,7 @@ const root = path.join(__dirname, "..");
 const read = (name) => fs.readFileSync(path.join(root, name), "utf8").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
 const app = read("app.js");
 const index = read("index.html");
+const styles = read("styles.css");
 const dictionaries = {
   ru: JSON.parse(read("locales/ru.json")),
   en: JSON.parse(read("locales/en.json")),
@@ -144,6 +145,33 @@ test("Plan card, day order, copy, and drag contracts stay unchanged", () => {
   const preview = functionSource("previewDropPosition", "clearOriginSlot");
   assert.match(preview, /data\.beforeItemId/);
   assert.match(preview, /data\.zone\.appendChild\(card\)/);
+});
+
+test("category headers keep icon and one-line localized label in separate areas", () => {
+  const headerLayout = styles.slice(styles.indexOf("/* Иконка и подпись типа занимают отдельные колонки."));
+  const labelRule = headerLayout.slice(
+    headerLayout.indexOf(".item-card .tile-icon small {"),
+    headerLayout.indexOf("}", headerLayout.indexOf(".item-card .tile-icon small {")) + 1,
+  );
+  assert.match(headerLayout, /grid-template-columns: 34px minmax\(0, 1fr\)/);
+  assert.match(headerLayout, /gap: 8px/);
+  assert.match(headerLayout, /\.item-card \.tile-icon > span:first-child \{[\s\S]*min-width: 34px/);
+  assert.match(labelRule, /justify-content: flex-start/);
+  assert.match(labelRule, /font-size: 17px/);
+  assert.match(labelRule, /overflow: visible/);
+  assert.match(labelRule, /white-space: nowrap/);
+  assert.doesNotMatch(labelRule, /overflow: hidden|text-overflow: ellipsis/);
+
+  assert.deepEqual(
+    ["Билет", "Жильё", "Транспорт", "Активность", "Еда", "Место", "СПА", "Покупки", "Идея", "Другое"],
+    ["ticket", "stay", "transport", "excursion", "food", "place", "spa", "shopping", "idea", "other"]
+      .map((key) => dictionaries.ru[`item.editor.type.${key}`]),
+  );
+  assert.deepEqual(
+    ["Ticket", "Accommodation", "Transport", "Activity", "Food", "Place", "Spa", "Shopping", "Idea", "Other"],
+    ["ticket", "stay", "transport", "excursion", "food", "place", "spa", "shopping", "idea", "other"]
+      .map((key) => dictionaries.en[`item.editor.type.${key}`]),
+  );
 });
 
 test("Plan formatters do not leak into Budget or export paths", () => {

@@ -114,7 +114,7 @@ test("Ideas reuses the approved TripItem semantic type vocabulary", () => {
   assert.match(functionSource("renderIdeaFormSelects", "openIdeaSheet"), /getPlanTypeLabel\(key\)/);
   assert.match(functionSource("renderIdeaCard", "renderIdeasStateCard"), /getPlanTypeLabel\(viewModel\.semanticType\)/);
   assert.deepEqual(
-    ["Ticket", "Accommodation", "Transport", "Tour or activity", "Food", "Place", "Spa or wellness", "Shopping", "Idea", "Other"],
+    ["Ticket", "Accommodation", "Transport", "Activity", "Food", "Place", "Spa", "Shopping", "Idea", "Other"],
     ["ticket", "stay", "transport", "excursion", "food", "place", "spa", "shopping", "idea", "other"]
       .map((key) => dictionaries.en[`item.editor.type.${key}`]),
   );

@@ -134,7 +134,7 @@ test("Item editor enum terminology is stable while model values stay unchanged",
     [...app.match(/const priorities = \[([\s\S]*?)\];/)[1].matchAll(/\["([^"]+)"/g)].map((match) => match[1]),
   );
   assert.equal(dictionaries.en["item.editor.field.owner.label"], "Expense owner");
-  assert.equal(dictionaries.en["item.editor.type.excursion"], "Tour or activity");
+  assert.equal(dictionaries.en["item.editor.type.excursion"], "Activity");
   assert.equal(dictionaries.en["item.editor.status.fixed"], "Booked");
   assert.equal(dictionaries.en["item.editor.priority.must"], "Must-do");
 });
