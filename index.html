@@ -429,6 +429,13 @@
         </section>
 
         <section class="view active" id="planView" aria-label="План поездки" data-i18n-aria-label="plan.aria">
+          <section class="card participant-program-info hidden" id="participantProgramInfo" aria-labelledby="participantProgramInfoTitle">
+            <div class="participant-program-heading">
+              <h2 id="participantProgramInfoTitle" data-i18n="share.organizer.program.participant.title">О программе</h2>
+              <span id="participantProgramUpdatedAt"></span>
+            </div>
+            <div id="participantProgramInfoContent"></div>
+          </section>
           <div class="section-heading">
             <div>
               <h2 data-i18n="plan.title">План</h2>
@@ -1082,6 +1089,39 @@
               </div>
               <div class="share-mode-link-slot" id="groupTripLinkSlot"></div>
               <p class="share-mode-explanation" data-i18n="share.organizer.panel.hint">Участники будут видеть актуальную программу поездки.</p>
+              <form class="organizer-program-form" id="organizerProgramInfoForm">
+                <h3 data-i18n="share.organizer.program.editor.title">Информация для участников</h3>
+                <div class="organizer-program-price">
+                  <label class="field">
+                    <span data-i18n="share.organizer.program.price">Стоимость программы на человека</span>
+                    <input id="organizerProgramPriceAmount" inputmode="decimal" placeholder="0" />
+                  </label>
+                  <label class="field organizer-program-currency">
+                    <span data-i18n="share.organizer.program.currency">Валюта</span>
+                    <select id="organizerProgramPriceCurrency"></select>
+                  </label>
+                </div>
+                <label class="field">
+                  <span data-i18n="share.organizer.program.included">Включено</span>
+                  <textarea id="organizerProgramIncluded" rows="3"></textarea>
+                </label>
+                <label class="field">
+                  <span data-i18n="share.organizer.program.notincluded">Не включено</span>
+                  <textarea id="organizerProgramNotIncluded" rows="3"></textarea>
+                </label>
+                <label class="field">
+                  <span data-i18n="share.organizer.program.important">Важно знать</span>
+                  <textarea id="organizerProgramImportant" rows="3"></textarea>
+                </label>
+                <button class="primary-button" id="organizerProgramSaveButton" type="submit" data-i18n="share.organizer.program.save">Сохранить информацию</button>
+              </form>
+              <section class="organizer-group-materials" aria-labelledby="organizerGroupMaterialsTitle">
+                <h3 id="organizerGroupMaterialsTitle" data-i18n="share.organizer.materials.editor.title">Материалы для участников</h3>
+                <div class="organizer-group-materials-list" id="organizerGroupMaterialsList"></div>
+                <input id="organizerGroupMaterialInput" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" hidden />
+                <button class="ghost-button compact" id="organizerGroupMaterialAddButton" type="button" data-i18n="share.organizer.materials.add">+ Добавить материал</button>
+                <p class="share-link-status" id="organizerGroupMaterialsStatus" aria-live="polite"></p>
+              </section>
             </div>
           </section>
           <div class="share-mode-switch-confirm hidden" id="shareModeSwitchConfirm" role="alertdialog" aria-live="polite">

@@ -42,8 +42,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.84";
-const APP_RELEASE_SUMMARY = "Добавлен режим организатора с отдельной ссылкой для участников.";
+const APP_VERSION = "1.1.2.85";
+const APP_RELEASE_SUMMARY = "В режиме организатора добавлены информация о программе, актуальность и материалы для участников.";
 const CHROME_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/backpacker-travel-capture/okpfmpplfciccfddgibkcoliemfimifc";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -350,6 +350,14 @@ let tripItemAttachmentsState = {
   tripId: "",
   uploading: false,
   uploadingName: "",
+};
+let organizerGroupMaterialsState = {
+  attachments: [],
+  deletingId: "",
+  error: "",
+  loadedTripId: "",
+  loading: false,
+  uploading: false,
 };
 const analyticsSessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -2556,11 +2564,13 @@ async function loadReadOnlyShareFromUrl() {
     const payload = await callTripShareFunction("read", { token }, { ensureSession: true });
     const nextState = normalizeState(payload.state);
     const share = {
+      accessToken: token,
       shareId: payload.shareId || "",
       sourceTripId: payload.tripId || nextState.trip.id,
       title: nextState.trip.title || window.t("share.received.trip.fallback"),
       destination: nextState.trip.destination || "",
       updatedAt: payload.updatedAt || new Date().toISOString(),
+      programUpdatedAt: payload.programUpdatedAt || nextState.trip.programUpdatedAt || "",
       options: {
         includeBudget: payload.includeBudget !== false,
       },
@@ -2665,6 +2675,7 @@ function normalizeState(nextState) {
   const shareModeEpochValue = String(normalized.trip.shareModeEpoch || "");
   const shareModeEpoch = new Date(shareModeEpochValue);
   normalized.trip.shareModeEpoch = shareModeEpochValue && Number.isFinite(shareModeEpoch.getTime()) ? shareModeEpoch.toISOString() : "";
+  getGroupTripCore()?.normalizeOrganizerTripFields(normalized.trip);
   normalized.trip.dayCount = normalized.trip.startDate || normalized.trip.endDate
     ? getTripDayCount(normalized.trip)
     : normalizeTripDayCount(normalized.trip.dayCount, 1);
@@ -4050,6 +4061,292 @@ async function refreshGroupTripContext() {
   renderGroupTripShareSurface();
 }
 
+function getOrganizerMaterialScope() {
+  return { tripId: state.trip.id, tripItemId: getGroupTripCore()?.GROUP_MATERIAL_SCOPE_ID || "group-materials" };
+}
+
+function getOrganizerProgramInfo() {
+  return getGroupTripCore()?.normalizeProgramInfo(state.trip.programInfo, state.trip.currency) || {
+    priceAmount: 0,
+    priceCurrency: state.trip.currency || "RUB",
+    includedText: "",
+    notIncludedText: "",
+    importantInfoText: "",
+  };
+}
+
+function getOrganizerGroupMaterials() {
+  return getGroupTripCore()?.normalizeGroupMaterials(state.trip.groupMaterials) || [];
+}
+
+function renderOrganizerProgramEditor() {
+  const form = $("#organizerProgramInfoForm");
+  if (!form) return;
+  const programInfo = getOrganizerProgramInfo();
+  const currency = $("#organizerProgramPriceCurrency");
+  if (currency && !currency.options.length) {
+    currency.innerHTML = getSupportedCurrencies()
+      .map((code) => `<option value="${escapeAttr(code)}">${escapeHtml(code)}</option>`)
+      .join("");
+  }
+  if (!form.contains(document.activeElement)) {
+    $("#organizerProgramPriceAmount").value = programInfo.priceAmount || "";
+    if (currency) currency.value = getSupportedCurrencies().includes(programInfo.priceCurrency)
+      ? programInfo.priceCurrency
+      : (state.trip.currency || "RUB");
+    $("#organizerProgramIncluded").value = programInfo.includedText;
+    $("#organizerProgramNotIncluded").value = programInfo.notIncludedText;
+    $("#organizerProgramImportant").value = programInfo.importantInfoText;
+  }
+}
+
+function getOrganizerAttachmentById(id) {
+  return organizerGroupMaterialsState.attachments.find((entry) => entry.id === id) || null;
+}
+
+function renderOrganizerGroupMaterials() {
+  const list = $("#organizerGroupMaterialsList");
+  const status = $("#organizerGroupMaterialsStatus");
+  const addButton = $("#organizerGroupMaterialAddButton");
+  if (!list || !status || !addButton) return;
+  const materials = getOrganizerGroupMaterials();
+  const busy = organizerGroupMaterialsState.loading || organizerGroupMaterialsState.uploading || Boolean(organizerGroupMaterialsState.deletingId);
+  addButton.disabled = busy;
+  addButton.textContent = window.t(organizerGroupMaterialsState.uploading
+    ? "share.organizer.materials.uploading"
+    : "share.organizer.materials.add");
+  status.textContent = organizerGroupMaterialsState.loading
+    ? window.t("share.organizer.materials.loading")
+    : organizerGroupMaterialsState.error;
+  status.classList.toggle("is-error", Boolean(organizerGroupMaterialsState.error));
+  list.innerHTML = materials.length
+    ? materials.map((material) => {
+      const deleting = organizerGroupMaterialsState.deletingId === material.id;
+      return `<div class="organizer-group-material-row">
+        <button class="organizer-group-material-name" type="button" data-organizer-material-open="${escapeAttr(material.id)}">📎 ${escapeHtml(material.fileName)}</button>
+        <button class="icon-button organizer-group-material-delete" type="button" data-organizer-material-delete="${escapeAttr(material.id)}" ${deleting ? "disabled" : ""} aria-label="${escapeAttr(window.t("share.organizer.materials.remove.file", { fileName: material.fileName }))}">×</button>
+      </div>`;
+    }).join("")
+    : `<p class="field-hint">${escapeHtml(window.t("share.organizer.materials.empty"))}</p>`;
+}
+
+async function loadOrganizerGroupMaterials() {
+  if (!isCurrentGroupTrip() || isReadOnlyMode() || organizerGroupMaterialsState.loading) return;
+  if (organizerGroupMaterialsState.loadedTripId === state.trip.id) {
+    renderOrganizerGroupMaterials();
+    return;
+  }
+  organizerGroupMaterialsState = { ...organizerGroupMaterialsState, error: "", loading: true };
+  renderOrganizerGroupMaterials();
+  try {
+    await ensureSupabaseOwnerSession();
+    const rows = await getTripItemAttachmentsClientApi().listTripItemAttachments(getSupabaseClient(), getOrganizerMaterialScope());
+    const sharedIds = new Set(getOrganizerGroupMaterials().map((entry) => entry.id));
+    organizerGroupMaterialsState = {
+      ...organizerGroupMaterialsState,
+      attachments: rows.filter((entry) => sharedIds.has(entry.id)),
+      loadedTripId: state.trip.id,
+      loading: false,
+    };
+  } catch (error) {
+    organizerGroupMaterialsState = {
+      ...organizerGroupMaterialsState,
+      error: getLocalizedTripItemAttachmentErrorMessage(error, "share.organizer.materials.error.list"),
+      loadedTripId: state.trip.id,
+      loading: false,
+    };
+  }
+  renderOrganizerGroupMaterials();
+}
+
+async function saveOrganizerProgramInfo(event) {
+  event.preventDefault();
+  if (!isCurrentGroupTrip() || isReadOnlyMode()) return;
+  const rawAmount = $("#organizerProgramPriceAmount").value.trim();
+  const amount = rawAmount ? window.BackpackerFinancial.parseMoney(rawAmount) : 0;
+  if (rawAmount && (!window.BackpackerFinancial.isValidMoney(rawAmount) || amount <= 0)) {
+    showToast(window.t("share.organizer.program.price.error"));
+    return;
+  }
+  state.trip.programInfo = getGroupTripCore().normalizeProgramInfo({
+    priceAmount: amount,
+    priceCurrency: $("#organizerProgramPriceCurrency").value,
+    includedText: $("#organizerProgramIncluded").value,
+    notIncludedText: $("#organizerProgramNotIncluded").value,
+    importantInfoText: $("#organizerProgramImportant").value,
+  }, state.trip.currency);
+  saveState();
+  try {
+    if (getActiveTripShareMode() === "organizer") await updatePublishedTripShare({ includeBudget: false });
+    showToast(window.t("share.organizer.program.saved"));
+  } catch {
+    showToast(window.t("share.organizer.program.save.error"));
+  }
+}
+
+async function uploadOrganizerGroupMaterial(file) {
+  if (!file || organizerGroupMaterialsState.uploading || isReadOnlyMode() || !isCurrentGroupTrip()) return;
+  organizerGroupMaterialsState = { ...organizerGroupMaterialsState, error: "", uploading: true };
+  renderOrganizerGroupMaterials();
+  try {
+    await ensureSupabaseOwnerSession();
+    const attachment = await getTripItemAttachmentsClientApi().uploadTripItemAttachment(
+      getSupabaseClient(),
+      getOrganizerMaterialScope(),
+      file,
+    );
+    const descriptor = getGroupTripCore().normalizeGroupMaterialDescriptor(attachment);
+    if (!descriptor) throw new Error("attachment_descriptor_invalid");
+    state.trip.groupMaterials = getGroupTripCore().normalizeGroupMaterials([...getOrganizerGroupMaterials(), descriptor]);
+    organizerGroupMaterialsState = {
+      ...organizerGroupMaterialsState,
+      attachments: [...organizerGroupMaterialsState.attachments, attachment],
+      loadedTripId: state.trip.id,
+    };
+    saveState();
+    try {
+      if (getActiveTripShareMode() === "organizer") await updatePublishedTripShare({ includeBudget: false });
+      showToast(window.t("share.organizer.materials.added"));
+    } catch {
+      organizerGroupMaterialsState = {
+        ...organizerGroupMaterialsState,
+        error: window.t("share.organizer.materials.sync.error"),
+      };
+    }
+  } catch (error) {
+    organizerGroupMaterialsState = {
+      ...organizerGroupMaterialsState,
+      error: getLocalizedTripItemAttachmentErrorMessage(error, "share.organizer.materials.error.add"),
+    };
+  } finally {
+    organizerGroupMaterialsState = { ...organizerGroupMaterialsState, uploading: false };
+    renderOrganizerGroupMaterials();
+  }
+}
+
+async function openOrganizerGroupMaterial(materialId) {
+  const attachment = getOrganizerAttachmentById(materialId);
+  if (!attachment) {
+    organizerGroupMaterialsState = { ...organizerGroupMaterialsState, error: window.t("share.organizer.materials.error.open") };
+    renderOrganizerGroupMaterials();
+    return;
+  }
+  if (hasPlatformFileAction("openRemoteDocument")) {
+    try {
+      const signedUrl = await getTripItemAttachmentsClientApi().createTripItemAttachmentSignedUrl(getSupabaseClient(), attachment, 120);
+      await runPlatformFileAction("openRemoteDocument", [signedUrl]);
+    } catch {
+      organizerGroupMaterialsState = { ...organizerGroupMaterialsState, error: window.t("share.organizer.materials.error.open") };
+      renderOrganizerGroupMaterials();
+    }
+    return;
+  }
+  const previewWindow = window.open("about:blank", "_blank");
+  if (previewWindow) previewWindow.opener = null;
+  try {
+    const signedUrl = await getTripItemAttachmentsClientApi().createTripItemAttachmentSignedUrl(getSupabaseClient(), attachment, 120);
+    if (!previewWindow) throw new Error("attachment_window_blocked");
+    previewWindow.location.replace(signedUrl);
+  } catch (error) {
+    previewWindow?.close();
+    organizerGroupMaterialsState = {
+      ...organizerGroupMaterialsState,
+      error: window.t(error?.message === "attachment_window_blocked"
+        ? "item.editor.attachments.error.popup"
+        : "share.organizer.materials.error.open"),
+    };
+    renderOrganizerGroupMaterials();
+  }
+}
+
+async function deleteOrganizerGroupMaterial(materialId) {
+  const material = getOrganizerGroupMaterials().find((entry) => entry.id === materialId);
+  const attachment = getOrganizerAttachmentById(materialId);
+  if (!material || !attachment || organizerGroupMaterialsState.deletingId) return;
+  if (!window.confirm(window.t("share.organizer.materials.remove.confirm", { fileName: material.fileName }))) return;
+  organizerGroupMaterialsState = { ...organizerGroupMaterialsState, deletingId: materialId, error: "" };
+  renderOrganizerGroupMaterials();
+  try {
+    await getTripItemAttachmentsClientApi().deleteTripItemAttachment(getSupabaseClient(), attachment);
+    state.trip.groupMaterials = getOrganizerGroupMaterials().filter((entry) => entry.id !== materialId);
+    organizerGroupMaterialsState = {
+      ...organizerGroupMaterialsState,
+      attachments: organizerGroupMaterialsState.attachments.filter((entry) => entry.id !== materialId),
+    };
+    saveState();
+    try {
+      if (getActiveTripShareMode() === "organizer") await updatePublishedTripShare({ includeBudget: false });
+      showToast(window.t("share.organizer.materials.removed"));
+    } catch {
+      organizerGroupMaterialsState = {
+        ...organizerGroupMaterialsState,
+        error: window.t("share.organizer.materials.sync.error"),
+      };
+    }
+  } catch (error) {
+    organizerGroupMaterialsState = {
+      ...organizerGroupMaterialsState,
+      error: getLocalizedTripItemAttachmentErrorMessage(error, "share.organizer.materials.error.remove"),
+    };
+  } finally {
+    organizerGroupMaterialsState = { ...organizerGroupMaterialsState, deletingId: "" };
+    renderOrganizerGroupMaterials();
+  }
+}
+
+function formatProgramUpdatedAt(value) {
+  const date = new Date(value || "");
+  if (!Number.isFinite(date.getTime())) return "";
+  return window.t("share.organizer.program.updated", {
+    date: window.BackpackerI18n.formatDate(date, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
+  });
+}
+
+function renderParticipantProgramInfo() {
+  const section = $("#participantProgramInfo");
+  const content = $("#participantProgramInfoContent");
+  const updated = $("#participantProgramUpdatedAt");
+  if (!section || !content || !updated) return;
+  const visible = isReadOnlyGroupTrip();
+  section.classList.toggle("hidden", !visible);
+  if (!visible) return;
+  const programInfo = getOrganizerProgramInfo();
+  const materials = getOrganizerGroupMaterials();
+  const rows = [];
+  if (programInfo.priceAmount) rows.push(`<div><strong>${escapeHtml(window.t("share.organizer.program.participant.price"))}</strong><p>${escapeHtml(window.t("share.organizer.program.participant.price.value", { amount: formatCurrencyAmount(programInfo.priceAmount, programInfo.priceCurrency) }))}</p></div>`);
+  if (programInfo.includedText) rows.push(`<div><strong>${escapeHtml(window.t("share.organizer.program.included"))}</strong><p>${escapeHtml(programInfo.includedText).replaceAll("\n", "<br>")}</p></div>`);
+  if (programInfo.notIncludedText) rows.push(`<div><strong>${escapeHtml(window.t("share.organizer.program.notincluded"))}</strong><p>${escapeHtml(programInfo.notIncludedText).replaceAll("\n", "<br>")}</p></div>`);
+  if (programInfo.importantInfoText) rows.push(`<div><strong>${escapeHtml(window.t("share.organizer.program.important"))}</strong><p>${escapeHtml(programInfo.importantInfoText).replaceAll("\n", "<br>")}</p></div>`);
+  if (materials.length) rows.push(`<div class="participant-program-materials"><strong>${escapeHtml(window.t("share.organizer.materials.participant.title"))}</strong>${materials.map((material) => `<button type="button" data-participant-material-open="${escapeAttr(material.id)}">📎 ${escapeHtml(material.fileName)}</button>`).join("")}</div>`);
+  content.innerHTML = rows.join("");
+  updated.textContent = formatProgramUpdatedAt(readOnlyShare?.programUpdatedAt || state.trip.programUpdatedAt);
+}
+
+async function openParticipantGroupMaterial(materialId) {
+  if (!isReadOnlyGroupTrip() || !readOnlyShare?.shareId) return;
+  const previewWindow = hasPlatformFileAction("openRemoteDocument") ? null : window.open("about:blank", "_blank");
+  if (previewWindow) previewWindow.opener = null;
+  try {
+    const payload = await callTripShareFunction("open_group_material", {
+      materialId,
+      ...(readOnlyShare.accessToken ? { token: readOnlyShare.accessToken } : { shareId: readOnlyShare.shareId }),
+    }, readOnlyShare.accessToken ? {} : { useExistingSession: true });
+    if (!payload.signedUrl) throw new Error("material_open_failed");
+    if (hasPlatformFileAction("openRemoteDocument")) {
+      await runPlatformFileAction("openRemoteDocument", [payload.signedUrl]);
+    } else if (previewWindow) {
+      previewWindow.location.replace(payload.signedUrl);
+    } else {
+      throw new Error("attachment_window_blocked");
+    }
+  } catch (error) {
+    previewWindow?.close();
+    showToast(window.t(error?.message === "attachment_window_blocked"
+      ? "item.editor.attachments.error.popup"
+      : "share.organizer.materials.error.open"));
+  }
+}
+
 function renderGroupTripShareSurface() {
   const card = $("#groupTripShareCard");
   const button = $("#groupTripPublishButton");
@@ -4093,6 +4390,8 @@ function renderGroupTripShareSurface() {
   budgetToggle?.classList.toggle("hidden", organizerActive);
   renderShareModeSwitchConfirm();
   if (!organizerActive) return;
+  renderOrganizerProgramEditor();
+  renderOrganizerGroupMaterials();
   const participants = groupTripContext.participants || [];
   if (count) count.textContent = window.t(groupTripContext.loading
     ? "share.group.participants.loading"
@@ -4167,7 +4466,10 @@ async function switchTripShareMode(targetMode) {
     groupTripContext = { loading: false, participants: [] };
     openShareModePanel = targetMode;
     renderTripLinkOptions(nextRecord);
-    if (targetMode === "organizer") await refreshGroupTripContext();
+    if (targetMode === "organizer") {
+      await refreshGroupTripContext();
+      await loadOrganizerGroupMaterials();
+    }
     showToast(window.t(targetMode === "organizer"
       ? "share.mode.switch.done.organizer"
       : "share.mode.switch.done.ordinary"));
@@ -4212,6 +4514,7 @@ async function completeGroupTripPublish(tripId = state?.trip?.id, { rotateToken 
     openShareModePanel = "organizer";
     renderTripLinkOptions(record);
     await refreshGroupTripContext();
+    await loadOrganizerGroupMaterials();
     showToast(window.t("share.group.published"));
     return true;
   } catch {
@@ -4231,6 +4534,7 @@ async function startGroupTripPublish() {
     if (openShareModePanel === "organizer") {
       renderTripLinkOptions();
       await refreshGroupTripContext();
+      await loadOrganizerGroupMaterials();
     } else {
       renderGroupTripShareSurface();
     }
@@ -4314,6 +4618,7 @@ async function openReceivedTrip(shareId) {
       title: nextState.trip.title || window.t("share.received.trip.fallback"),
       destination: nextState.trip.destination || "",
       updatedAt: payload.updatedAt || new Date().toISOString(),
+      programUpdatedAt: payload.programUpdatedAt || nextState.trip.programUpdatedAt || "",
       options: {
         includeBudget: payload.includeBudget !== false,
       },
@@ -5024,6 +5329,7 @@ function renderHeader() {
 }
 
 function renderPlan() {
+  renderParticipantProgramInfo();
   const dates = getTripDates();
   const daysList = $("#daysList");
   daysList.innerHTML = "";
@@ -7326,6 +7632,7 @@ function buildPublishedTripState({ includeBudget = true } = {}) {
   delete published.trip.preferencesText;
   delete published.trip.datePrecision;
   delete published.trip.dateSourceText;
+  if (!isCurrentGroupTrip()) getGroupTripCore()?.stripOrganizerFields(published);
   return includeBudget ? published : window.BackpackerFinancial.stripFinancialFields(published);
 }
 
@@ -11000,6 +11307,27 @@ function bindEvents() {
       return;
     }
 
+    const participantMaterialButton = event.target.closest("[data-participant-material-open]");
+    if (participantMaterialButton) {
+      event.preventDefault();
+      openParticipantGroupMaterial(participantMaterialButton.dataset.participantMaterialOpen);
+      return;
+    }
+
+    const organizerMaterialOpenButton = event.target.closest("[data-organizer-material-open]");
+    if (organizerMaterialOpenButton) {
+      event.preventDefault();
+      openOrganizerGroupMaterial(organizerMaterialOpenButton.dataset.organizerMaterialOpen);
+      return;
+    }
+
+    const organizerMaterialDeleteButton = event.target.closest("[data-organizer-material-delete]");
+    if (organizerMaterialDeleteButton) {
+      event.preventDefault();
+      deleteOrganizerGroupMaterial(organizerMaterialDeleteButton.dataset.organizerMaterialDelete);
+      return;
+    }
+
     const addButton = event.target.closest("[data-action='add']");
     if (addButton) {
       event.preventDefault();
@@ -11463,6 +11791,18 @@ function bindEvents() {
   $("#shareButton").addEventListener("click", openShareSheet);
   $("#shareTripTextButton").addEventListener("click", shareTrip);
   $("#groupTripPublishButton")?.addEventListener("click", startGroupTripPublish);
+  $("#organizerProgramInfoForm")?.addEventListener("submit", saveOrganizerProgramInfo);
+  $("#organizerGroupMaterialAddButton")?.addEventListener("click", () => {
+    const input = $("#organizerGroupMaterialInput");
+    input.value = "";
+    input.click();
+  });
+  $("#organizerGroupMaterialInput")?.addEventListener("change", (event) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0] || null;
+    input.value = "";
+    if (file) uploadOrganizerGroupMaterial(file);
+  });
   $("#openTripLinkButton").addEventListener("click", showTripLinkOptions);
   $("#confirmShareModeSwitchButton")?.addEventListener("click", () => confirmShareModeSwitch().catch(() => {}));
   $("#cancelShareModeSwitchButton")?.addEventListener("click", cancelShareModeSwitch);

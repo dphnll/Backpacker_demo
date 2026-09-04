@@ -169,6 +169,6 @@ test("Ideas translations interpolate collection and accessible card labels", asy
 test("Ideas release uses a fresh versioned app asset and PWA cache", () => {
   const serviceWorker = read("service-worker.js");
   assert.match(index, /\.\/app\.js\?v=organizer-mode-20260904/);
-  assert.match(serviceWorker, /backpacker-pwa-v132/);
+  assert.match(serviceWorker, /backpacker-pwa-v133/);
   assert.match(serviceWorker, /\.\/app\.js\?v=organizer-mode-20260904/);
 });

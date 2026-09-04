@@ -121,7 +121,7 @@ test("RU and EN dictionaries contain the complete support-sheet contract", () =>
 
   assert.equal(dictionaries.ru["home.support.product.version"], "Версия {version}: {summary}");
   assert.equal(dictionaries.en["home.support.product.version"], "Version {version}: {summary}");
-  assert.equal(dictionaries.en["home.support.product.release"], "Organizer Mode now has a dedicated participant link and roster.");
+  assert.equal(dictionaries.en["home.support.product.release"], "Organizer Mode now includes program information, freshness, and participant materials.");
   for (const key of supportKeys.filter((key) => key !== "home.support.howto")) {
     assert.doesNotMatch(dictionaries.en[key], /[А-ЯЁа-яё]/, key);
   }
@@ -166,5 +166,5 @@ test("Product Info version and release summary render through the active locale"
     window: { t: english.t },
   });
 
-  assert.equal(target.textContent, "Version 1.1.2.84: Organizer Mode now has a dedicated participant link and roster.");
+  assert.equal(target.textContent, "Version 1.1.2.85: Organizer Mode now includes program information, freshness, and participant materials.");
 });

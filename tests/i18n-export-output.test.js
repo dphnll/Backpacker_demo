@@ -294,10 +294,10 @@ test("Legacy text and CSV builders plus formatters follow active export locale",
 });
 
 test("Export localization ships through a fresh app asset and cache", () => {
-  assert.match(app, /const APP_VERSION = "1\.1\.2\.84"/);
+  assert.match(app, /const APP_VERSION = "1\.1\.2\.85"/);
   assert.match(index, /\.\/styles\.css\?v=organizer-mode-20260904/);
   assert.match(index, /\.\/app\.js\?v=organizer-mode-20260904/);
-  assert.match(serviceWorker, /backpacker-pwa-v132/);
+  assert.match(serviceWorker, /backpacker-pwa-v133/);
   assert.match(serviceWorker, /\.\/styles\.css\?v=organizer-mode-20260904/);
   assert.match(serviceWorker, /\.\/app\.js\?v=organizer-mode-20260904/);
 });

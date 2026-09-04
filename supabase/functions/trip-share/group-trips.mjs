@@ -1,4 +1,6 @@
 const GROUP_PARTICIPANT_PREFIX = "group-participant-";
+const MATERIAL_MIME_TYPES = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp"]);
+const MATERIAL_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 class GroupTripActionError extends Error {
   constructor(code, status) {
@@ -26,15 +28,88 @@ function hasDurableEmailIdentity(user = null) {
   );
 }
 
-function prepareTripShareWrite({ state, includeBudget = true, user, stripBudget }) {
+function normalizeProgramText(value) {
+  return String(value || "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .trim()
+    .slice(0, 4000);
+}
+
+function normalizeProgramInfo(value = {}, fallbackCurrency = "RUB") {
+  const input = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const amount = ["", null, undefined].includes(input.priceAmount) ? 0 : Number(input.priceAmount);
+  const fallback = /^[A-Z]{3}$/.test(String(fallbackCurrency || "").toUpperCase())
+    ? String(fallbackCurrency).toUpperCase()
+    : "RUB";
+  const currency = String(input.priceCurrency || fallback).trim().toUpperCase();
+  return {
+    priceAmount: Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) / 100 : 0,
+    priceCurrency: /^[A-Z]{3}$/.test(currency) ? currency : fallback,
+    includedText: normalizeProgramText(input.includedText),
+    notIncludedText: normalizeProgramText(input.notIncludedText),
+    importantInfoText: normalizeProgramText(input.importantInfoText),
+  };
+}
+
+function normalizeGroupMaterials(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  return value.slice(0, 40).reduce((materials, entry) => {
+    const input = entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {};
+    const id = String(input.id || "").trim().toLowerCase();
+    const fileName = String(input.fileName || input.file_name || "").trim();
+    const mimeType = String(input.mimeType || input.mime_type || "").trim().toLowerCase();
+    const fileSizeBytes = Number(input.fileSizeBytes ?? input.file_size_bytes);
+    const createdAt = new Date(String(input.createdAt || input.created_at || ""));
+    if (!MATERIAL_UUID_PATTERN.test(id) || !fileName || fileName.length > 255 || /[\u0000-\u001F\u007F]/.test(fileName)) return materials;
+    if (!MATERIAL_MIME_TYPES.has(mimeType)) return materials;
+    if (!Number.isSafeInteger(fileSizeBytes) || fileSizeBytes < 1 || fileSizeBytes > 10 * 1024 * 1024) return materials;
+    if (!Number.isFinite(createdAt.getTime()) || seen.has(id)) return materials;
+    seen.add(id);
+    materials.push({ id, fileName, mimeType, fileSizeBytes, createdAt: createdAt.toISOString() });
+    return materials;
+  }, []);
+}
+
+function stripOrganizerFields(state) {
+  if (!state?.trip) return state;
+  delete state.trip.programInfo;
+  delete state.trip.groupMaterials;
+  delete state.trip.programUpdatedAt;
+  return state;
+}
+
+function getComparableProgramState(state) {
+  const comparable = JSON.parse(JSON.stringify(state || {}));
+  if (comparable?.trip) delete comparable.trip.programUpdatedAt;
+  return comparable;
+}
+
+function stampPublishedProgramState(state, previousState = null, now = new Date()) {
+  if (!state?.trip) return state;
+  if (!isGroupTripState(state)) return stripOrganizerFields(state);
+  state.trip.programInfo = normalizeProgramInfo(state.trip.programInfo, state.trip.currency);
+  state.trip.groupMaterials = normalizeGroupMaterials(state.trip.groupMaterials);
+  const previousTimestamp = String(previousState?.trip?.programUpdatedAt || "");
+  const unchanged = isGroupTripState(previousState)
+    && JSON.stringify(getComparableProgramState(previousState)) === JSON.stringify(getComparableProgramState(state));
+  state.trip.programUpdatedAt = unchanged && Number.isFinite(Date.parse(previousTimestamp))
+    ? new Date(previousTimestamp).toISOString()
+    : new Date(now).toISOString();
+  return state;
+}
+
+function prepareTripShareWrite({ state, includeBudget = true, user, stripBudget, previousState = null, now = new Date() }) {
   if (!state || typeof state !== "object" || Array.isArray(state)) actionError("state_required", 400);
   const isGroupTrip = isGroupTripState(state);
   if (isGroupTrip && !hasDurableEmailIdentity(user)) actionError("durable_identity_required", 403);
   const effectiveIncludeBudget = isGroupTrip ? false : includeBudget !== false;
+  const preparedState = effectiveIncludeBudget ? structuredClone(state) : stripBudget(state);
+  stampPublishedProgramState(preparedState, previousState, now);
   return {
     includeBudget: effectiveIncludeBudget,
     isGroupTrip,
-    state: effectiveIncludeBudget ? state : stripBudget(state),
+    state: preparedState,
   };
 }
 
@@ -96,5 +171,9 @@ export {
   hasDurableEmailIdentity,
   isGroupTripState,
   joinGroupTrip,
+  normalizeGroupMaterials,
+  normalizeProgramInfo,
   prepareTripShareWrite,
+  stampPublishedProgramState,
+  stripOrganizerFields,
 };

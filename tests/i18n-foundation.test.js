@@ -171,7 +171,7 @@ test("index, app bootstrap, and PWA cache are wired to the same foundation", () 
   assert.equal((index.match(/data-language-preference="(?:auto|ru|en)"/g) || []).length, 3);
   assert.ok(index.indexOf("./i18n.js?v=organizer-mode-20260904") < index.indexOf("./app.js?"));
   assert.ok(app.indexOf("await window.BackpackerI18n?.init()") < app.indexOf("bindEvents();", app.indexOf("async function bootstrapApp")));
-  assert.match(serviceWorker, /backpacker-pwa-v132/);
+  assert.match(serviceWorker, /backpacker-pwa-v133/);
   assert.match(index, /\.\/styles\.css\?v=organizer-mode-20260904/);
   assert.match(serviceWorker, /\.\/styles\.css\?v=organizer-mode-20260904/);
   assert.match(index, /\.\/app\.js\?v=organizer-mode-20260904/);

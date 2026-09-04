@@ -20,6 +20,8 @@ const corsHeaders = {
 };
 
 const SCHEMA_VERSION = "trip_share.v1";
+const GROUP_MATERIAL_SCOPE_ID = "group-materials";
+const GROUP_MATERIAL_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const PARTICIPANT_COLORS = ["orange", "yellow", "blue", "teal", "purple", "pink"];
 const ITEM_TYPES = new Set(["ticket", "stay", "transport", "excursion", "food", "place", "spa", "shopping", "idea", "other"]);
 type UserClient = ReturnType<typeof createClient<any>>;
@@ -535,6 +537,7 @@ Deno.serve(async (req) => {
       tripId: data.trip_id,
       includeBudget: data.include_budget,
       updatedAt: data.updated_at,
+      programUpdatedAt: String(getTrip(data.state).programUpdatedAt || ""),
       isOwner,
       isAuthor: isOwner,
       isSaved,
@@ -545,6 +548,64 @@ Deno.serve(async (req) => {
       profileRequired: Boolean(currentUser && !profileNames.get(currentUser.id)),
       state: data.include_budget ? data.state : stripBudget(data.state),
     });
+  }
+
+  if (action === "open_group_material") {
+    const token = String(body.token || "");
+    const shareId = String(body.shareId || "");
+    const materialId = String(body.materialId || "").trim().toLowerCase();
+    if (!GROUP_MATERIAL_UUID_PATTERN.test(materialId)) return json({ error: "material_id_invalid" }, 400);
+    if (!token && !shareId) return json({ error: "material_access_required" }, 400);
+
+    const shareQuery = serviceClient
+      .from("trip_shares")
+      .select("id, trip_id, owner_user_id, state, revoked_at, created_at");
+    const { data: share, error: shareError } = token
+      ? await shareQuery.eq("token_hash", await sha256Hex(token)).maybeSingle()
+      : await shareQuery.eq("id", shareId).maybeSingle();
+    if (shareError) return json({ error: "material_open_failed" }, 500);
+    if (!share) return json({ error: "share_not_found" }, 404);
+    if (share.revoked_at) return json({ error: "share_revoked" }, 410);
+    if (!isGroupTripState(share.state)) return json({ error: "group_trip_required" }, 409);
+
+    if (!token) {
+      const currentUser = await getRequestUser(req, supabaseUrl, anonKey);
+      if (!currentUser) return json({ error: "owner_jwt_required" }, 401);
+      if (currentUser.id !== share.owner_user_id) {
+        const activeSince = getShareModeEpoch(share.state, share.created_at);
+        const { data: participantLink, error: participantError } = await serviceClient
+          .from("trip_share_participant_links")
+          .select("id")
+          .eq("trip_share_id", share.id)
+          .eq("user_id", currentUser.id)
+          .gte("updated_at", activeSince)
+          .maybeSingle();
+        if (participantError) return json({ error: "material_open_failed" }, 500);
+        if (!participantLink) return json({ error: "material_access_denied" }, 403);
+      }
+    }
+
+    const materials = Array.isArray(getTrip(share.state).groupMaterials)
+      ? getTrip(share.state).groupMaterials as Array<Record<string, unknown>>
+      : [];
+    if (!materials.some((entry) => String(entry.id || "").toLowerCase() === materialId)) {
+      return json({ error: "material_not_shared" }, 404);
+    }
+    const { data: attachment, error: attachmentError } = await serviceClient
+      .from("trip_item_attachments")
+      .select("id, storage_path")
+      .eq("id", materialId)
+      .eq("owner_user_id", share.owner_user_id)
+      .eq("trip_id", share.trip_id)
+      .eq("trip_item_id", GROUP_MATERIAL_SCOPE_ID)
+      .maybeSingle();
+    if (attachmentError) return json({ error: "material_open_failed" }, 500);
+    if (!attachment) return json({ error: "material_not_found" }, 404);
+    const { data: signed, error: signedError } = await serviceClient.storage
+      .from("trip-item-attachments")
+      .createSignedUrl(String(attachment.storage_path || ""), 120);
+    if (signedError || !signed?.signedUrl) return json({ error: "material_open_failed" }, 500);
+    return json({ signedUrl: signed.signedUrl });
   }
 
   const user = await getRequestUser(req, supabaseUrl, anonKey);
@@ -1138,6 +1199,7 @@ Deno.serve(async (req) => {
       tripId: share.trip_id,
       includeBudget: share.include_budget,
       updatedAt: share.updated_at,
+      programUpdatedAt: String(getTrip(share.state).programUpdatedAt || ""),
       isGroupTrip: isGroupTripState(share.state),
       isJoined: Boolean(participantLink),
       state: share.include_budget ? share.state : stripBudget(share.state),
@@ -1214,7 +1276,20 @@ Deno.serve(async (req) => {
     const schemaVersion = String(body.schemaVersion || SCHEMA_VERSION);
     let prepared;
     try {
-      prepared = prepareTripShareWrite({ state, includeBudget: body.includeBudget !== false, user, stripBudget });
+      const { data: previousShare, error: previousError } = await serviceClient
+        .from("trip_shares")
+        .select("state")
+        .eq("owner_user_id", user.id)
+        .eq("trip_id", tripId)
+        .maybeSingle();
+      if (previousError) return json({ error: "update_failed" }, 500);
+      prepared = prepareTripShareWrite({
+        state,
+        includeBudget: body.includeBudget !== false,
+        user,
+        stripBudget,
+        previousState: previousShare?.state || null,
+      });
     } catch (error) {
       if (error instanceof GroupTripActionError) return json({ error: error.code }, error.status);
       return json({ error: "update_failed" }, 500);

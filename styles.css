@@ -4696,6 +4696,160 @@ textarea:focus {
   font-weight: 700;
 }
 
+.organizer-program-form,
+.organizer-group-materials {
+  display: grid;
+  gap: 9px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.organizer-program-form > h3,
+.organizer-group-materials > h3 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.organizer-program-price {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px;
+  gap: 8px;
+}
+
+.organizer-program-price > .field {
+  min-width: 0;
+}
+
+.organizer-program-price > .field > span {
+  min-height: 2.7em;
+}
+
+#organizerProgramPriceAmount,
+#organizerProgramPriceCurrency {
+  height: 42px;
+  min-height: 42px;
+}
+
+.organizer-program-form textarea {
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+}
+
+.organizer-program-currency select {
+  width: 100%;
+}
+
+.organizer-group-materials-list {
+  display: grid;
+  gap: 6px;
+}
+
+.organizer-group-material-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 6px;
+}
+
+.organizer-group-material-name {
+  min-width: 0;
+  padding: 7px 9px;
+  overflow: hidden;
+  border: 1px solid rgba(18, 54, 61, 0.16);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--brand);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.organizer-group-material-delete {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  color: var(--danger);
+}
+
+.participant-program-info {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.participant-program-info.hidden {
+  display: none;
+}
+
+.participant-program-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.participant-program-heading h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.participant-program-heading span {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: right;
+}
+
+#participantProgramInfoContent {
+  display: grid;
+  gap: 11px;
+}
+
+#participantProgramInfoContent > div {
+  display: grid;
+  gap: 3px;
+}
+
+#participantProgramInfoContent strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+#participantProgramInfoContent p {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.participant-program-materials button {
+  width: 100%;
+  padding: 8px 0;
+  overflow-wrap: anywhere;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--brand);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* The participant projection is truly read-only: the FAB's authored display
+   must not override the native hidden attribute set by showTripScreen(). */
+.fab[hidden] {
+  display: none;
+}
+
 .share-secondary-actions {
   margin-top: 8px;
 }
@@ -6171,15 +6325,21 @@ h4,
    Оплачено / Бронь / Свободно — это одна мысль в трёх долях. Заливки,
    рамки и тени превращали её в три равных объекта и забирали 70px. */
 .app-shell .budget-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--a-line);
 }
 
+.app-shell .budget-strip > div {
+  width: 100%;
+  min-width: 0;
+}
+
 .app-shell .budget-strip .paid-card,
 .app-shell .budget-strip .budget-allocation-card {
-  padding: 0 12px;
+  padding: 0 8px;
   border: 0;
   border-radius: 0;
   background: none;
@@ -6192,20 +6352,32 @@ h4,
 }
 
 .app-shell .budget-strip .paid-card {
-  padding-left: 0;
+  padding-left: 8px;
 }
 
 .app-shell .budget-strip span {
-  font-size: 11px;
+  display: flex;
+  align-items: center;
+  min-height: 15px;
+  font-size: clamp(9px, 2.8vw, 11px);
   font-weight: 500;
-  letter-spacing: 0.08em;
+  line-height: 1.15;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
+  white-space: nowrap;
   color: var(--a-ink-soft);
 }
 
+.app-shell .budget-strip .paid-card span::before {
+  flex: 0 0 15px;
+}
+
 .app-shell .budget-strip strong {
-  font-size: 17px;
+  min-width: 0;
+  font-size: clamp(15px, 4.3vw, 17px);
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   color: var(--a-ink);
 }
 
