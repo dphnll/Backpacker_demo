@@ -207,8 +207,10 @@ test("roster, panel and link actions do not stamp program freshness", () => {
 test("budget summaries and Organizer price controls stay aligned at narrow widths", () => {
   const styles = read("styles.css");
   assert.match(styles, /\.app-shell \.budget-strip \{[\s\S]*?grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
-  assert.match(styles, /\.app-shell \.budget-strip > div \{[\s\S]*?width: 100%;[\s\S]*?min-width: 0;/);
+  assert.match(styles, /\.app-shell \.budget-strip \{[\s\S]*?padding-block: 10px;/);
+  assert.match(styles, /\.app-shell \.budget-strip > div \{[\s\S]*?width: 100%;[\s\S]*?min-width: 0;[\s\S]*?min-height: 0;/);
   assert.match(styles, /\.app-shell \.budget-strip span \{[\s\S]*?display: flex;[\s\S]*?white-space: nowrap;/);
   assert.match(styles, /\.app-shell \.budget-strip strong \{[\s\S]*?white-space: nowrap;/);
+  assert.match(styles, /\.app-shell \.share-role-banner\.hidden \+ \.trip-budget-meta \{[\s\S]*?grid-column: 1 \/ -1;/);
   assert.match(styles, /#organizerProgramPriceAmount,[\s\S]*?#organizerProgramPriceCurrency \{[\s\S]*?height: 42px;[\s\S]*?min-height: 42px;/);
 });

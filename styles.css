@@ -2097,9 +2097,9 @@ button[aria-disabled="true"] .home-support-icon {
 .brand-row {
   display: grid;
   position: relative;
-  grid-template-columns: 50px minmax(0, 1fr) auto;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
   min-height: 46px;
-  gap: 10px;
+  gap: 16px;
 }
 
 .brand-lockup {
@@ -5238,8 +5238,8 @@ textarea:focus {
   }
 
   .brand-row {
-    grid-template-columns: 72px minmax(0, 1fr) auto;
-    gap: 8px;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    gap: 12px;
   }
 
   .brand-lockup > div {
@@ -6321,6 +6321,10 @@ h4,
   justify-content: flex-start;
 }
 
+.app-shell .share-role-banner.hidden + .trip-budget-meta {
+  grid-column: 1 / -1;
+}
+
 /* ---------- Полоса бюджета: три числа, а не три коробки ----------
    Оплачено / Бронь / Свободно — это одна мысль в трёх долях. Заливки,
    рамки и тени превращали её в три равных объекта и забирали 70px. */
@@ -6328,13 +6332,14 @@ h4,
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
   margin-top: 10px;
-  padding-top: 10px;
+  padding-block: 10px;
   border-top: 1px solid var(--a-line);
 }
 
 .app-shell .budget-strip > div {
   width: 100%;
   min-width: 0;
+  min-height: 0;
 }
 
 .app-shell .budget-strip .paid-card,

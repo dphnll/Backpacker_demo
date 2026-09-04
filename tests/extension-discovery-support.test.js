@@ -129,8 +129,8 @@ test("both Extension CTAs resolve to the exact safe Chrome Web Store listing", (
 });
 
 test("release and Extension integration boundaries remain unchanged", () => {
-  assert.match(app, /const APP_VERSION = "1\.1\.2\.85";/);
-  assert.match(serviceWorker, /const CACHE_NAME = "backpacker-pwa-v133";/);
+  assert.match(app, /const APP_VERSION = "1\.1\.2\.86";/);
+  assert.match(serviceWorker, /const CACHE_NAME = "backpacker-pwa-v134";/);
   assert.doesNotMatch(`${app}\n${index}`, /extension_(?:install|store)_clicked/);
   assert.doesNotMatch(app, /chrome\.management|chrome\.runtime\.getManifest|chromewebstore\.install/);
   assert.equal((app.match(/CHROME_EXTENSION_STORE_URL/g) || []).length, 2);

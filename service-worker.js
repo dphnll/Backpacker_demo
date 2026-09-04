@@ -1,4 +1,4 @@
-const CACHE_NAME = "backpacker-pwa-v133";
+const CACHE_NAME = "backpacker-pwa-v134";
 const APP_SHELL = [
   "./",
   "./index.html",

@@ -152,7 +152,7 @@ test("AI Draft ships in a fresh versioned app shell", () => {
   const serviceWorker = read("service-worker.js");
   assert.match(index, /\.\/trip-draft-ai-core\.js\?v=i18n-ai-draft-20260824/);
   assert.match(index, /\.\/app\.js\?v=organizer-mode-20260904/);
-  assert.match(serviceWorker, /backpacker-pwa-v133/);
+  assert.match(serviceWorker, /backpacker-pwa-v134/);
   assert.match(serviceWorker, /\.\/trip-draft-ai-core\.js\?v=i18n-ai-draft-20260824/);
   assert.match(serviceWorker, /\.\/app\.js\?v=organizer-mode-20260904/);
 });

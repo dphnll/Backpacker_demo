@@ -211,7 +211,7 @@ test("Plan translations interpolate days, dates, duration, and copy confirmation
 test("Plan remains included in the current versioned app asset and PWA cache", () => {
   const serviceWorker = read("service-worker.js");
   assert.match(index, /\.\/app\.js\?v=organizer-mode-20260904/);
-  assert.match(serviceWorker, /backpacker-pwa-v133/);
+  assert.match(serviceWorker, /backpacker-pwa-v134/);
   assert.match(serviceWorker, /\.\/app\.js\?v=organizer-mode-20260904/);
 });
 

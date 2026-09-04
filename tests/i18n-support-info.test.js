@@ -166,5 +166,5 @@ test("Product Info version and release summary render through the active locale"
     window: { t: english.t },
   });
 
-  assert.equal(target.textContent, "Version 1.1.2.85: Organizer Mode now includes program information, freshness, and participant materials.");
+  assert.equal(target.textContent, "Version 1.1.2.86: Organizer Mode now includes program information, freshness, and participant materials.");
 });
