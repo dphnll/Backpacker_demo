@@ -42,7 +42,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.86";
+const APP_VERSION = "1.1.2.87";
 const APP_RELEASE_SUMMARY = "В режиме организатора добавлены информация о программе, актуальность и материалы для участников.";
 const CHROME_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/backpacker-travel-capture/okpfmpplfciccfddgibkcoliemfimifc";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
@@ -446,7 +446,11 @@ function getDaysUntilTripBucket(trip = state?.trip, todayValue = new Date()) {
 
 function getAnalyticsEnvironment() {
   if (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost" || window.location.protocol === "file:") return "local";
-  if (window.location.hostname.includes("github.io")) return "production";
+  const productionOrigins = Object.values(window.BACKPACKER_PUBLIC_URLS || {})
+    .map((value) => {
+      try { return new URL(value).origin; } catch { return ""; }
+    });
+  if (productionOrigins.includes(window.location.origin)) return "production";
   return "preview";
 }
 
@@ -727,6 +731,10 @@ function getSupabaseConfig() {
   return window.BACKPACKER_SUPABASE || {};
 }
 
+function getCanonicalPublicAppUrl() {
+  return new URL(window.BACKPACKER_PUBLIC_URLS?.canonical || getSupabaseConfig().authRedirectUrl).toString();
+}
+
 function getTripShareFunctionUrl() {
   const config = getSupabaseConfig();
   if (config.tripShareFunctionUrl) return config.tripShareFunctionUrl;
@@ -799,7 +807,8 @@ function getRecoverableAuthRedirectUrl() {
   if (core?.resolveRecoverableAuthRedirectUrl) {
     return core.resolveRecoverableAuthRedirectUrl({
       href: window.location.href,
-      configuredUrl: config.authRedirectUrl,
+      configuredUrl: window.BACKPACKER_PUBLIC_URLS?.canonical || config.authRedirectUrl,
+      legacyUrl: window.BACKPACKER_PUBLIC_URLS?.legacy || config.legacyAuthRedirectUrl,
     });
   }
   const url = new URL(window.location.href);
@@ -964,10 +973,7 @@ async function hadExistingSupabaseSessionBeforeReferralLanding() {
 }
 
 function getCanonicalAppShareUrl() {
-  const base = window.location.origin && window.location.protocol !== "file:"
-    ? `${window.location.origin}${window.location.pathname}`
-    : "https://dphnll.github.io/Backpacker_demo/";
-  const url = new URL(base);
+  const url = new URL(getCanonicalPublicAppUrl());
   url.searchParams.set(APP_REFERRAL_PARAM, APP_REFERRAL_MARKER);
   return url.toString();
 }
@@ -7616,9 +7622,7 @@ function removeTripShareRecord() {
 }
 
 function buildTripShareUrl(token) {
-  const url = new URL(window.location.href);
-  url.search = "";
-  url.hash = "";
+  const url = new URL(getCanonicalPublicAppUrl());
   url.searchParams.set("share", token);
   return url.toString();
 }
@@ -9258,10 +9262,11 @@ async function shareTripPdf() {
 
 async function shareTrip() {
   const text = buildShareText(true);
+  const url = getCanonicalPublicAppUrl();
   const shareData = {
     title: `Backpacker: ${state.trip.title}`,
     text,
-    url: window.location.href,
+    url,
   };
   trackEvent("share_method_selected", {
     ...getTripAnalyticsContext(),
@@ -9278,7 +9283,7 @@ async function shareTrip() {
       if (error?.name === "AbortError") return;
     }
   }
-  await copyText(`${text}\n\n${window.location.href}`);
+  await copyText(`${text}\n\n${url}`);
   showToast(window.t("share.text.copied"));
   trackEvent("share_completed", { ...getTripAnalyticsContext(), share_context: "trip", share_format: "text", method: "clipboard" });
 }

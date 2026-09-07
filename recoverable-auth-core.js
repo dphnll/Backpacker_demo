@@ -3,7 +3,6 @@
 
   const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const AUTH_QUERY_PARAMS = new Set(["code", "error", "error_code", "error_description", "error_uri", "type"]);
-  const DEFAULT_PUBLIC_APP_URL = "https://dphnll.github.io/Backpacker_demo/";
 
   function normalizeEmail(value = "") {
     return String(value || "").trim().toLowerCase();
@@ -61,24 +60,28 @@
     return url.protocol === "file:" || url.hostname === "localhost" || url.hostname === "127.0.0.1";
   }
 
+  function isSameAppBaseUrl(current, expected) {
+    return Boolean(expected && current.origin === expected.origin && current.pathname === expected.pathname);
+  }
+
   function resolveRecoverableAuthRedirectUrl({
     href = "",
     configuredUrl = "",
-    defaultUrl = DEFAULT_PUBLIC_APP_URL,
+    legacyUrl = "",
   } = {}) {
-    const current = new URL(href || defaultUrl);
+    const configured = normalizeRedirectBaseUrl(configuredUrl);
+    const legacy = normalizeRedirectBaseUrl(legacyUrl);
+    const current = new URL(href || configured || legacy || "http://localhost/");
     current.search = "";
     current.hash = "";
     if (isLocalAppUrl(current)) return current.toString();
 
-    const configured = normalizeRedirectBaseUrl(configuredUrl);
-    if (configured) {
-      const configuredParsed = new URL(configured);
-      if (!isLocalAppUrl(configuredParsed)) return configured;
-    }
+    const legacyParsed = legacy ? new URL(legacy) : null;
+    if (isSameAppBaseUrl(current, legacyParsed)) return current.toString();
 
+    if (configured && !isLocalAppUrl(new URL(configured))) return configured;
     if (current.protocol === "http:" || current.protocol === "https:") return current.toString();
-    return normalizeRedirectBaseUrl(defaultUrl) || DEFAULT_PUBLIC_APP_URL;
+    return legacy;
   }
 
   function summarizeAuthUser(user = null) {
