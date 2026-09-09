@@ -1005,12 +1005,29 @@
         </header>
         <div class="share-actions">
           <button class="ghost-button" id="homeInstallAppButton" type="button" data-i18n="share.app.install">Установить Backpacker</button>
+          <button class="ghost-button" id="showAppQrButton" type="button" data-i18n="share.app.qr.action">Показать QR-код Backpacker</button>
           <button class="primary-button" id="shareAppButton" type="button" data-i18n="share.app.action">Поделиться Backpacker</button>
         </div>
         <p class="home-share-hint">
           <span data-i18n="share.app.install.hint">💡Скачайте мини-приложение - с мобильного будет удобнее пользоваться</span>
           <span data-i18n="share.app.invite.hint">💡 Чтобы пригласить друга в приложение - поделитесь ссылкой</span>
         </p>
+      </section>
+    </div>
+
+    <div class="sheet" id="appQrSheet" aria-hidden="true">
+      <div class="sheet-backdrop" data-close="appQr"></div>
+      <section class="sheet-panel app-qr-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="appQrSheetTitle">
+        <header class="sheet-header">
+          <h2 id="appQrSheetTitle" data-i18n="share.app.qr.title">QR-код Backpacker</h2>
+          <button class="icon-button" data-close="appQr" type="button" aria-label="Закрыть" data-i18n-aria-label="share.close">×</button>
+        </header>
+        <div class="app-qr-body">
+          <div class="app-qr-code" id="appQrCode" role="img" aria-label="QR-код для открытия Backpacker" data-i18n-aria-label="share.app.qr.image.aria"></div>
+          <strong class="app-qr-name">Backpacker</strong>
+          <p class="app-qr-copy" data-i18n="share.app.qr.scan">Отсканируйте, чтобы открыть Backpacker</p>
+          <p class="app-qr-url">app.backpackerapp.cc</p>
+        </div>
       </section>
     </div>
 
@@ -1211,6 +1228,7 @@
       }
     </script>
     <script src="./vendor/pdf-lib.min.js"></script>
+    <script src="./app-qr.js"></script>
     <script src="./analytics-source-contract.js?v=referral-arrival-20260829"></script>
     <script src="./financial-core.js"></script>
     <script src="./trip-date-core.js"></script>

@@ -42,8 +42,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.87";
-const APP_RELEASE_SUMMARY = "В режиме организатора добавлены информация о программе, актуальность и материалы для участников.";
+const APP_VERSION = "1.1.2.88";
+const APP_RELEASE_SUMMARY = "Backpacker теперь показывает QR-код для открытия приложения на другом устройстве.";
 const CHROME_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/backpacker-travel-capture/okpfmpplfciccfddgibkcoliemfimifc";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -7583,6 +7583,14 @@ function openHomeShareSheet() {
   trackEvent("share_opened", { share_target: "app" });
 }
 
+function openAppQrSheet() {
+  const appQr = window.BackpackerAppQr;
+  if (!appQr?.render) return;
+  appQr.render($("#appQrCode"));
+  closeSheet("homeShareSheet");
+  openSheet("appQrSheet");
+}
+
 function openShareSheet() {
   openShareModePanel = null;
   pendingShareModeSwitch = "";
@@ -11702,6 +11710,7 @@ function bindEvents() {
   $("#iosInstallCloseButton")?.addEventListener("click", dismissIosInstallOnboarding);
   $("#saveReceivedTripButton")?.addEventListener("click", saveReceivedTrip);
   $("#joinGroupTripButton")?.addEventListener("click", startGroupTripJoin);
+  $("#showAppQrButton")?.addEventListener("click", openAppQrSheet);
   $("#shareAppButton").addEventListener("click", shareApp);
   $("#donationPigButton")?.addEventListener("click", () => {
     if (!DONATION_FLOW_ENABLED) return;
