@@ -1,4 +1,4 @@
-const CACHE_NAME = "backpacker-pwa-v136";
+const CACHE_NAME = "backpacker-pwa-v137";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -22,6 +22,10 @@ const APP_SHELL = [
   "./i18n.js?v=organizer-mode-20260904",
   "./locales/ru.json",
   "./locales/en.json",
+  "./locales/fr.json",
+  "./locales/ka.json",
+  "./locales/de.json",
+  "./locales/hy.json",
   "./app.js?v=organizer-mode-20260904",
   "./analytics-config.js",
   "./supabase-config.public.js",
@@ -41,6 +45,9 @@ const APP_SHELL = [
   "./icons/piggy-bank.png",
   "./fonts/inter-cyrillic.woff2",
   "./fonts/inter-latin.woff2",
+  "./fonts/noto-sans-georgian.ttf",
+  "./fonts/noto-sans-armenian.ttf",
+  "./fonts/LICENSE-NOTO.txt",
   "./assets/map-home.jpg",
   "./icons/backpacker-logo-transparent.png",
   "./icons/backpacker-logo.svg?v=logo-beige-20260808"

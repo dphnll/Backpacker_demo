@@ -12,11 +12,18 @@
 })(typeof window !== "undefined" ? window : globalThis, function createBackpackerI18nModule() {
   "use strict";
 
-  const SUPPORTED_LOCALES = Object.freeze(["ru", "en"]);
-  const DEFAULT_LOCALE = "ru";
+  const SUPPORTED_LOCALES = Object.freeze(["ru", "en", "fr", "ka", "de", "hy"]);
+  const DEFAULT_LOCALE = "en";
   const AUTO_LOCALE = "auto";
   const LOCALE_STORAGE_KEY = "backpacker.locale.v1";
-  const LOCALE_TAGS = Object.freeze({ ru: "ru-RU", en: "en-GB" });
+  const LOCALE_TAGS = Object.freeze({
+    ru: "ru-RU",
+    en: "en-GB",
+    fr: "fr-FR",
+    ka: "ka-GE",
+    de: "de-DE",
+    hy: "hy-AM",
+  });
 
   function normalizeLocale(value) {
     const locale = String(value || "").trim().toLowerCase().split(/[-_]/)[0];
@@ -33,6 +40,14 @@
       if (locale) return locale;
     }
     return "en";
+  }
+
+  function getLanguageHint(locationLike = {}) {
+    try {
+      return normalizeLocale(new URLSearchParams(String(locationLike.search || "")).get("lang"));
+    } catch {
+      return "";
+    }
   }
 
   function getScriptBaseUrl(documentLike) {
@@ -53,6 +68,7 @@
     const environmentRoot = options.root || globalThis;
     const documentLike = options.documentLike || environmentRoot?.document || null;
     const navigatorLike = options.navigatorLike || environmentRoot?.navigator || {};
+    const locationLike = options.locationLike || environmentRoot?.location || {};
     const fetchImpl = options.fetchImpl || environmentRoot?.fetch?.bind(environmentRoot);
     const baseUrl = options.baseUrl || getScriptBaseUrl(documentLike);
     let storage = options.storage;
@@ -139,10 +155,11 @@
 
     async function init() {
       preference = readPreference();
-      locale = preference === AUTO_LOCALE ? detectLocale(navigatorLike) : preference;
+      const languageHint = preference === AUTO_LOCALE ? getLanguageHint(locationLike) : "";
+      locale = preference === AUTO_LOCALE ? (languageHint || detectLocale(navigatorLike)) : preference;
 
       let activeMessages = null;
-      let russianMessages = null;
+      let englishMessages = null;
       try {
         activeMessages = await loadLocaleMessages(locale);
       } catch {
@@ -150,22 +167,22 @@
       }
 
       if (locale === DEFAULT_LOCALE) {
-        russianMessages = activeMessages;
+        englishMessages = activeMessages;
       } else {
         try {
-          russianMessages = await loadLocaleMessages(DEFAULT_LOCALE);
+          englishMessages = await loadLocaleMessages(DEFAULT_LOCALE);
         } catch {
-          russianMessages = null;
+          englishMessages = null;
         }
       }
 
       if (!activeMessages) {
         locale = DEFAULT_LOCALE;
-        activeMessages = russianMessages || {};
+        activeMessages = englishMessages || {};
       }
 
       messages = isMessagesObject(activeMessages) ? activeMessages : {};
-      fallbackMessages = isMessagesObject(russianMessages) ? russianMessages : messages;
+      fallbackMessages = isMessagesObject(englishMessages) ? englishMessages : messages;
       initialized = true;
 
       documentLike?.documentElement?.setAttribute?.("lang", locale);
@@ -217,6 +234,7 @@
     SUPPORTED_LOCALES,
     createI18n,
     detectLocale,
+    getLanguageHint,
     normalizeLocale,
   });
 });

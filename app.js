@@ -42,8 +42,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.88";
-const APP_RELEASE_SUMMARY = "Backpacker теперь показывает QR-код для открытия приложения на другом устройстве.";
+const APP_VERSION = "1.1.2.89";
+const APP_RELEASE_SUMMARY = "Backpacker теперь доступен на шести языках интерфейса: русском, английском, французском, грузинском, немецком и армянском.";
 const CHROME_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/backpacker-travel-capture/okpfmpplfciccfddgibkcoliemfimifc";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -1035,7 +1035,7 @@ async function callTripShareFunction(action, payload = {}, { requireOwner = fals
 }
 
 function getTripDraftLocale() {
-  return window.BackpackerI18n?.getLocale?.() === "en" ? "en" : "ru";
+  return window.BackpackerI18n?.getLocale?.() === "ru" ? "ru" : "en";
 }
 
 function tripDraftT(key, params = {}) {
@@ -2810,14 +2810,14 @@ function formatMoney(value = 0) {
   // Копейки и центы не показываем: в плашки они не помещаются, а решения
   // по ним никто не принимает. Округление только на выводе — в расчётах
   // и в хранении сумма остаётся точной.
-  return `${Math.round(amount).toLocaleString("ru-RU")} ${currencySymbol(state.trip.currency)}`;
+  return `${window.BackpackerI18n.formatNumber(Math.round(amount), { maximumFractionDigits: 0 })} ${currencySymbol(state.trip.currency)}`;
 }
 
 function formatBudgetMoney(value = 0) {
   if (!canShowBudget()) return window.t("budget.hidden");
   const amount = Math.round(Number(value) || 0);
   const currency = state.trip.currency || "";
-  const symbol = window.BackpackerI18n.getLocale() === "en" && currency === "RSD"
+  const symbol = window.BackpackerI18n.getLocale() !== "ru" && currency === "RSD"
     ? "RSD"
     : currencySymbol(currency);
   return `${window.BackpackerI18n.formatNumber(amount, { maximumFractionDigits: 0 })} ${symbol}`.trim();
@@ -2861,7 +2861,7 @@ function getSupportedCurrencies() {
 
 function formatCurrencyAmount(value, currency) {
   const amount = Number(value) || 0;
-  const symbol = window.BackpackerI18n.getLocale() === "en" && currency === "RSD"
+  const symbol = window.BackpackerI18n.getLocale() !== "ru" && currency === "RSD"
     ? "RSD"
     : currencySymbol(currency);
   return `${window.BackpackerI18n.formatNumber(amount, { maximumFractionDigits: 2 })} ${symbol}`.trim();
@@ -2986,10 +2986,10 @@ function createVirtualDayDate(index) {
 
 function formatDate(dateString, options = {}) {
   const virtualIndex = getVirtualDayIndex(dateString);
-  if (virtualIndex) return `День ${virtualIndex}`;
-  if (!dateString) return "без даты";
+  if (virtualIndex) return window.t("plan.day.label", { number: virtualIndex });
+  if (!dateString) return window.t("plan.unscheduled.title").toLowerCase();
   const date = new Date(`${dateString}T12:00:00`);
-  return date.toLocaleDateString("ru-RU", {
+  return window.BackpackerI18n.formatDate(date, {
     day: "numeric",
     month: "long",
     ...options,
@@ -2997,10 +2997,10 @@ function formatDate(dateString, options = {}) {
 }
 
 function formatTripCardDateRange(startDate, endDate) {
-  if (startDate && endDate) return `${formatDate(startDate)}-${formatDate(endDate)}`;
-  if (startDate) return `с ${formatDate(startDate)}`;
-  if (endDate) return `до ${formatDate(endDate)}`;
-  return "Даты не заданы";
+  if (startDate && endDate) return window.t("home.date.range", { start: formatDate(startDate), end: formatDate(endDate) });
+  if (startDate) return window.t("home.date.from", { date: formatDate(startDate) });
+  if (endDate) return window.t("home.date.until", { date: formatDate(endDate) });
+  return window.t("home.trip.dates.missing");
 }
 
 function formatHomeDate(dateString) {
@@ -3061,7 +3061,7 @@ function formatPlanDayCount(count) {
 function formatPlanMoney(value = 0) {
   const amount = Math.round(Number(value) || 0);
   const currency = state.trip.currency || "";
-  const symbol = window.BackpackerI18n.getLocale() === "en" && currency === "RSD"
+  const symbol = window.BackpackerI18n.getLocale() !== "ru" && currency === "RSD"
     ? "RSD"
     : currencySymbol(currency);
   return `${window.BackpackerI18n.formatNumber(amount, { maximumFractionDigits: 0 })} ${symbol}`.trim();
@@ -6280,7 +6280,7 @@ function getItemEditorParticipantDisplayName(participant) {
 function formatItemEditorMoney(value = 0) {
   const amount = Math.round(Number(value) || 0);
   const currency = state.trip.currency || "";
-  const symbol = window.BackpackerI18n.getLocale() === "en" && currency === "RSD"
+  const symbol = window.BackpackerI18n.getLocale() !== "ru" && currency === "RSD"
     ? "RSD"
     : currencySymbol(currency);
   return `${window.BackpackerI18n.formatNumber(amount, { maximumFractionDigits: 0 })} ${symbol}`.trim();
@@ -7958,7 +7958,7 @@ function buildShareText(compact = false) {
 }
 
 function getExportLocale() {
-  return window.BackpackerI18n?.getLocale?.() === "en" ? "en" : "ru";
+  return window.BackpackerI18n?.getLocale?.() || "en";
 }
 
 function exportT(key, params = {}) {
@@ -7981,7 +7981,7 @@ function formatExportDate(dateString, options = {}) {
 function formatExportMoney(value = 0) {
   const amount = Math.round(Number(value) || 0);
   const currency = state.trip.currency || "";
-  const symbol = getExportLocale() === "en" && currency === "RSD"
+  const symbol = getExportLocale() !== "ru" && currency === "RSD"
     ? "RSD"
     : currencySymbol(currency);
   return `${window.BackpackerI18n.formatNumber(amount, { maximumFractionDigits: 0 })} ${symbol}`.trim();
@@ -8296,6 +8296,14 @@ function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
   return lines.length * lineHeight;
 }
 
+async function ensurePdfFontsReady() {
+  if (!document.fonts?.load) return;
+  const sample = "Backpacker Русский ქართული Հայերեն";
+  await Promise.all([400, 500, 600, 700, 800, 900].map((weight) => (
+    document.fonts.load(`${weight} 16px "Backpacker Sans"`, sample)
+  )));
+}
+
 async function downloadPdfFile(fileName, title, table, previewWindow = null) {
   if (!window.PDFLib?.PDFDocument) {
     previewWindow?.close();
@@ -8303,6 +8311,7 @@ async function downloadPdfFile(fileName, title, table, previewWindow = null) {
     return;
   }
 
+  await ensurePdfFontsReady();
   const { PDFDocument } = window.PDFLib;
   const pdfDoc = await PDFDocument.create();
   const pageWidth = 595;
@@ -8339,8 +8348,8 @@ async function downloadPdfFile(fileName, title, table, previewWindow = null) {
   const columnWidths = columnWeights.map((weight) => maxWidth * weight / columnWeightTotal);
   const lineHeight = 14;
   const cellPadding = 5;
-  const rowFont = "400 10px Arial, sans-serif";
-  const headerFont = "700 10px Arial, sans-serif";
+  const rowFont = "400 10px 'Backpacker Sans', Arial, sans-serif";
+  const headerFont = "700 10px 'Backpacker Sans', Arial, sans-serif";
 
   function wrapCellText(text, width) {
     const words = String(text ?? "").split(/\s+/).filter(Boolean);
@@ -8412,11 +8421,11 @@ async function downloadPdfFile(fileName, title, table, previewWindow = null) {
   }
 
   function drawPageTitle() {
-    ctx.font = "700 22px Arial, sans-serif";
+    ctx.font = "700 22px 'Backpacker Sans', Arial, sans-serif";
     ctx.fillStyle = "#1f2423";
     ctx.fillText(title, x, y);
     y += 28;
-    ctx.font = "400 12px Arial, sans-serif";
+    ctx.font = "400 12px 'Backpacker Sans', Arial, sans-serif";
     ctx.fillStyle = "#66716f";
     ctx.fillText(`${state.trip.title} · ${formatExportTripDateRange(state.trip.startDate, state.trip.endDate)}`, x, y);
     y += 24;
@@ -8580,6 +8589,7 @@ function drawPdfWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines = In
 
 async function buildTripPdfBlob(options) {
   if (!window.PDFLib?.PDFDocument) throw new Error("pdf-lib unavailable");
+  await ensurePdfFontsReady();
   const { PDFDocument } = window.PDFLib;
   const pdfDoc = await PDFDocument.create();
   const pageWidth = 595;
@@ -8660,10 +8670,10 @@ async function buildTripPdfBlob(options) {
     roundRect(ctx, margin, y, contentWidth, 34, 8);
     ctx.fill();
     ctx.fillStyle = "#1f2423";
-    ctx.font = "700 15px Arial, sans-serif";
+    ctx.font = "700 15px 'Backpacker Sans', Arial, sans-serif";
     ctx.fillText(title, margin + 12, y + 22);
     if (meta) {
-      ctx.font = "700 11px Arial, sans-serif";
+      ctx.font = "700 11px 'Backpacker Sans', Arial, sans-serif";
       ctx.fillStyle = "#66716f";
       ctx.fillText(meta, margin + contentWidth - ctx.measureText(meta).width - 12, y + 22);
     }
@@ -8677,10 +8687,10 @@ async function buildTripPdfBlob(options) {
     ctx.strokeStyle = variant === "paid" ? "rgba(45, 123, 82, 0.3)" : "#ded8cc";
     ctx.stroke();
     ctx.fillStyle = variant === "paid" ? "#2d7b52" : "#66716f";
-    ctx.font = "800 11px Arial, sans-serif";
+    ctx.font = "800 11px 'Backpacker Sans', Arial, sans-serif";
     drawPdfWrappedText(ctx, label, x + 8, cardY + 17, width - 16, 13, 2);
     ctx.fillStyle = "#1f2423";
-    ctx.font = "800 16px Arial, sans-serif";
+    ctx.font = "800 16px 'Backpacker Sans', Arial, sans-serif";
     ctx.fillText(value, x + 8, cardY + height - 12);
   }
 
@@ -8703,9 +8713,9 @@ async function buildTripPdfBlob(options) {
       ctx.drawImage(logoImage, margin + 14, y + 16, 38, 38);
     }
     ctx.fillStyle = "#1f2423";
-    ctx.font = "800 22px Arial, sans-serif";
+    ctx.font = "800 22px 'Backpacker Sans', Arial, sans-serif";
     drawPdfWrappedText(ctx, state.trip.title || exportT("trip.title.fallback"), margin + 66, y + 31, contentWidth - 76, 25, 1);
-    ctx.font = "700 12px Arial, sans-serif";
+    ctx.font = "700 12px 'Backpacker Sans', Arial, sans-serif";
     ctx.fillStyle = "#66716f";
     const meta = `${state.trip.destination || exportT("trip.destination.missing")} · ${formatExportTripDateRange(state.trip.startDate, state.trip.endDate)} · ${formatExportTripDayCount(state.trip)}`;
     drawPdfWrappedText(ctx, meta, margin + 66, y + 56, contentWidth - 76, 15, 1);
@@ -8717,7 +8727,7 @@ async function buildTripPdfBlob(options) {
       ctx.strokeStyle = "rgba(18, 54, 61, 0.18)";
       ctx.stroke();
       ctx.fillStyle = "#12363d";
-      ctx.font = "800 13px Arial, sans-serif";
+      ctx.font = "800 13px 'Backpacker Sans', Arial, sans-serif";
       ctx.fillText(exportT("financial.summary", { amount: formatExportMoney(totals.budgetLimit) }), margin + 194, y + 94);
 
       const cardGap = 8;
@@ -8730,10 +8740,10 @@ async function buildTripPdfBlob(options) {
     if (hasGroupParticipants) {
       const participantsY = options.includeBudget ? y + 175 : y + 91;
       ctx.fillStyle = "#66716f";
-      ctx.font = "800 11px Arial, sans-serif";
+      ctx.font = "800 11px 'Backpacker Sans', Arial, sans-serif";
       ctx.fillText(exportT("participants"), margin + 8, participantsY);
       ctx.fillStyle = "#1f2423";
-      ctx.font = "700 11px Arial, sans-serif";
+      ctx.font = "700 11px 'Backpacker Sans', Arial, sans-serif";
       drawPdfWrappedText(
         ctx,
         state.trip.participants.map((participant) => participant.name).join(" · "),
@@ -8759,7 +8769,7 @@ async function buildTripPdfBlob(options) {
     ctx.strokeStyle = "#ded8cc";
     ctx.stroke();
     ctx.fillStyle = "#1f2423";
-    ctx.font = "800 15px Arial, sans-serif";
+    ctx.font = "800 15px 'Backpacker Sans', Arial, sans-serif";
     ctx.fillText(exportT("financial.title"), margin + 14, y + 24);
     const budgetRows = [
       [exportT("financial.limit"), formatExportMoney(totals.budgetLimit)],
@@ -8770,7 +8780,7 @@ async function buildTripPdfBlob(options) {
       [exportT("financial.possible"), formatExportMoney(totals.possibleTotal)],
       [exportT("financial.remaining"), formatExportMoney(totals.remainingAll)],
     ];
-    ctx.font = "700 11px Arial, sans-serif";
+    ctx.font = "700 11px 'Backpacker Sans', Arial, sans-serif";
     budgetRows.forEach((row, index) => {
       const rowY = y + 48 + index * 18;
       ctx.fillStyle = "#66716f";
@@ -8827,7 +8837,7 @@ async function buildTripPdfBlob(options) {
     ctx.fillStyle = fill;
     ctx.fill();
     ctx.fillStyle = textColor;
-    ctx.font = "900 12px Arial, sans-serif";
+    ctx.font = "900 12px 'Backpacker Sans', Arial, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text, cx, cy + 0.5);
@@ -8845,7 +8855,7 @@ async function buildTripPdfBlob(options) {
       return;
     }
     ctx.fillStyle = textColor;
-    ctx.font = `900 ${Math.max(8, radius * 0.7)}px Arial, sans-serif`;
+    ctx.font = `900 ${Math.max(8, radius * 0.7)}px 'Backpacker Sans', Arial, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(fallbackText, cx, cy + 0.5);
@@ -8858,7 +8868,7 @@ async function buildTripPdfBlob(options) {
     roundRect(ctx, x, slotY, width, 26, 4);
     ctx.fill();
     ctx.fillStyle = "#1f2423";
-    ctx.font = "500 14px Arial, sans-serif";
+    ctx.font = "500 14px 'Backpacker Sans', Arial, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text, x + width / 2, slotY + 13);
@@ -8874,7 +8884,7 @@ async function buildTripPdfBlob(options) {
     drawPdfSlot(x, slotY, slotWidth, start[0], fill);
     drawPdfSlot(x + slotWidth + gap, slotY, slotWidth, start[1], fill);
     ctx.fillStyle = getPdfTypeColor(item.type);
-    ctx.font = "500 16px Arial, sans-serif";
+    ctx.font = "500 16px 'Backpacker Sans', Arial, sans-serif";
     ctx.fillText("-", x + slotWidth * 2 + gap * 2 + 2, slotY + 18);
     drawPdfSlot(x + slotWidth * 2 + gap * 3 + 13, slotY, slotWidth, end[0], fill);
     drawPdfSlot(x + slotWidth * 3 + gap * 4 + 13, slotY, slotWidth, end[1], fill);
@@ -8884,7 +8894,7 @@ async function buildTripPdfBlob(options) {
     const [day, month, year] = getItemDateSlots(item.date);
     drawPdfSlot(x, slotY, 31, day, fill);
     ctx.fillStyle = getPdfTypeColor(item.type);
-    ctx.font = "500 16px Arial, sans-serif";
+    ctx.font = "500 16px 'Backpacker Sans', Arial, sans-serif";
     ctx.fillText(".", x + 36, slotY + 18);
     drawPdfSlot(x + 46, slotY, 31, month, fill);
     ctx.fillText(".", x + 82, slotY + 18);
@@ -8898,7 +8908,7 @@ async function buildTripPdfBlob(options) {
     ctx.strokeStyle = "#6f7877";
     ctx.stroke();
     ctx.fillStyle = "#1f2423";
-    ctx.font = "800 13px Arial, sans-serif";
+    ctx.font = "800 13px 'Backpacker Sans', Arial, sans-serif";
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
     ctx.fillText(text, x + width - 8, pillY + 14);
@@ -8941,16 +8951,16 @@ async function buildTripPdfBlob(options) {
       ctx.drawImage(typeImage, padding + 2, 8, 28, 28);
     } else {
       ctx.fillStyle = "#ffffff";
-      ctx.font = "800 23px Arial, sans-serif";
+      ctx.font = "800 23px 'Backpacker Sans', Arial, sans-serif";
       ctx.fillText(getPdfTypeMark(item.type), padding + 2, 29);
     }
     const typeLabel = getExportTypeLabel(item.type).toUpperCase();
     const maxTypeLabelWidth = baseWidth - padding * 2 - 38;
     let typeLabelFontSize = 18;
-    ctx.font = `800 ${typeLabelFontSize}px Arial, sans-serif`;
+    ctx.font = `800 ${typeLabelFontSize}px 'Backpacker Sans', Arial, sans-serif`;
     while (typeLabelFontSize > 11 && ctx.measureText(typeLabel).width > maxTypeLabelWidth) {
       typeLabelFontSize -= 1;
-      ctx.font = `800 ${typeLabelFontSize}px Arial, sans-serif`;
+      ctx.font = `800 ${typeLabelFontSize}px 'Backpacker Sans', Arial, sans-serif`;
     }
     ctx.fillStyle = "#ffffff";
     ctx.textAlign = "right";
@@ -8962,14 +8972,14 @@ async function buildTripPdfBlob(options) {
     drawPdfPricePill(price, baseWidth - padding - priceWidth, localBodyY + 17, priceWidth);
 
     ctx.fillStyle = "#1f2423";
-    ctx.font = "800 14px Arial, sans-serif";
+    ctx.font = "800 14px 'Backpacker Sans', Arial, sans-serif";
     drawPdfWrappedText(ctx, item.title, padding, localBodyY + 22, baseWidth - padding * 2 - priceWidth - 10, 17, 2);
     ctx.fillStyle = accent;
-    ctx.font = "900 italic 13px Arial, sans-serif";
+    ctx.font = "900 italic 13px 'Backpacker Sans', Arial, sans-serif";
     ctx.fillText(formatExportDuration(item.durationMinutes), padding, localBodyY + 64);
     drawPdfTimeSlots(item, padding, localBodyY + 73, slotFill);
     ctx.fillStyle = accent;
-    ctx.font = "900 italic 13px Arial, sans-serif";
+    ctx.font = "900 italic 13px 'Backpacker Sans', Arial, sans-serif";
     ctx.fillText(exportT("item.date"), padding, localBodyY + 124);
     drawPdfDateSlots(item, padding, localBodyY + 133, slotFill);
 
@@ -8980,7 +8990,7 @@ async function buildTripPdfBlob(options) {
       });
     }
     if (options.includeNotes && item.notes) {
-      ctx.font = "400 10px Arial, sans-serif";
+      ctx.font = "400 10px 'Backpacker Sans', Arial, sans-serif";
       ctx.fillStyle = "#1f2423";
       drawPdfWrappedText(ctx, item.notes, padding, localBodyY + 182, baseWidth - padding * 2, 13, 3);
     }
@@ -9015,7 +9025,7 @@ async function buildTripPdfBlob(options) {
     if (items.length) {
       await drawItemGrid(items);
     } else {
-      ctx.font = "700 12px Arial, sans-serif";
+      ctx.font = "700 12px 'Backpacker Sans', Arial, sans-serif";
       ctx.fillStyle = "#66716f";
       ctx.fillText(exportT("day.empty"), margin, y);
       y += 28;
@@ -11292,21 +11302,19 @@ function handleNativeDateTimeClear(event) {
 }
 
 function bindLanguageSelector() {
-  const buttons = [...document.querySelectorAll("[data-language-preference]")];
+  const select = document.querySelector("[data-language-preference-select]");
   const i18n = window.BackpackerI18n;
-  if (!buttons.length || !i18n) return;
+  if (!select || !i18n) return;
 
-  const preference = i18n.getPreference();
-  buttons.forEach((button) => {
-    const nextPreference = button.dataset.languagePreference;
-    const isSelected = nextPreference === preference;
-    button.classList.toggle("selected", isSelected);
-    button.setAttribute("aria-pressed", String(isSelected));
-    button.addEventListener("click", () => {
-      if (nextPreference === i18n.getPreference()) return;
-      if (!i18n.setLocalePreference(nextPreference)) return;
-      window.location.reload();
-    });
+  select.value = i18n.getPreference();
+  select.addEventListener("change", () => {
+    const nextPreference = select.value;
+    if (nextPreference === i18n.getPreference()) return;
+    if (!i18n.setLocalePreference(nextPreference)) {
+      select.value = i18n.getPreference();
+      return;
+    }
+    window.location.reload();
   });
 }
 
