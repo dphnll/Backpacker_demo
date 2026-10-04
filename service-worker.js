@@ -1,4 +1,4 @@
-const CACHE_NAME = "backpacker-pwa-v137";
+const CACHE_NAME = "backpacker-pwa-v138";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -26,6 +26,7 @@ const APP_SHELL = [
   "./locales/ka.json",
   "./locales/de.json",
   "./locales/hy.json",
+  "./locales/zh.json",
   "./app.js?v=organizer-mode-20260904",
   "./analytics-config.js",
   "./supabase-config.public.js",

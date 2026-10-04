@@ -12,7 +12,7 @@
 })(typeof window !== "undefined" ? window : globalThis, function createBackpackerI18nModule() {
   "use strict";
 
-  const SUPPORTED_LOCALES = Object.freeze(["ru", "en", "fr", "ka", "de", "hy"]);
+  const SUPPORTED_LOCALES = Object.freeze(["ru", "en", "fr", "ka", "de", "hy", "zh"]);
   const DEFAULT_LOCALE = "en";
   const AUTO_LOCALE = "auto";
   const LOCALE_STORAGE_KEY = "backpacker.locale.v1";
@@ -23,11 +23,22 @@
     ka: "ka-GE",
     de: "de-DE",
     hy: "hy-AM",
+    zh: "zh-Hans-CN",
   });
 
+  const HTML_LANGUAGE_TAGS = Object.freeze({ zh: "zh-Hans" });
+
   function normalizeLocale(value) {
-    const locale = String(value || "").trim().toLowerCase().split(/[-_]/)[0];
-    return SUPPORTED_LOCALES.includes(locale) ? locale : "";
+    const parts = String(value || "").trim().toLowerCase().replaceAll("_", "-").split("-").filter(Boolean);
+    const language = parts[0] || "";
+    if (language !== "zh") return SUPPORTED_LOCALES.includes(language) ? language : "";
+
+    const script = parts.find((part) => part === "hans" || part === "hant");
+    if (script) return script === "hans" ? "zh" : "";
+
+    const region = parts.find((part, index) => index > 0 && /^[a-z]{2}$/.test(part));
+    if (!region || region === "cn" || region === "sg") return "zh";
+    return "";
   }
 
   function detectLocale(navigatorLike = {}) {
@@ -185,7 +196,7 @@
       fallbackMessages = isMessagesObject(englishMessages) ? englishMessages : messages;
       initialized = true;
 
-      documentLike?.documentElement?.setAttribute?.("lang", locale);
+      documentLike?.documentElement?.setAttribute?.("lang", HTML_LANGUAGE_TAGS[locale] || locale);
       applyTranslations(documentLike);
       return locale;
     }

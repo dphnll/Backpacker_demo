@@ -48,6 +48,10 @@ body {
   font-family: Roboto, "Segoe UI", Arial, sans-serif;
 }
 
+html[lang="zh-Hans"] body {
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Segoe UI", Arial, sans-serif;
+}
+
 button,
 input,
 select,

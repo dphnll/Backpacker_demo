@@ -42,8 +42,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.89";
-const APP_RELEASE_SUMMARY = "Backpacker теперь доступен на шести языках интерфейса: русском, английском, французском, грузинском, немецком и армянском.";
+const APP_VERSION = "1.1.2.90";
+const APP_RELEASE_SUMMARY = "Backpacker теперь доступен на семи языках интерфейса: русском, английском, французском, грузинском, немецком, армянском и упрощённом китайском.";
 const CHROME_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/backpacker-travel-capture/okpfmpplfciccfddgibkcoliemfimifc";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -302,6 +302,71 @@ const seedState = {
     },
   ],
 };
+
+const TRAINER_TRIP_TRANSLATIONS = Object.freeze({
+  trip: Object.freeze({
+    title: "trainer.seed.trip.title",
+    destination: "trainer.seed.trip.destination",
+    preferencesText: "trainer.seed.trip.preferences",
+  }),
+  items: Object.freeze({
+    "item-1": Object.freeze({
+      title: "trainer.seed.item1.title",
+      locationText: "trainer.seed.item1.location",
+      notes: "trainer.seed.item1.notes",
+    }),
+    "item-2": Object.freeze({
+      title: "trainer.seed.item2.title",
+      locationText: "trainer.seed.item2.location",
+      notes: "trainer.seed.item2.notes",
+    }),
+    "item-3": Object.freeze({
+      title: "trainer.seed.item3.title",
+      locationText: "trainer.seed.item3.location",
+      notes: "trainer.seed.item3.notes",
+    }),
+    "item-4": Object.freeze({
+      title: "trainer.seed.item4.title",
+      notes: "trainer.seed.item4.notes",
+    }),
+    "item-5": Object.freeze({
+      title: "trainer.seed.item5.title",
+      notes: "trainer.seed.item5.notes",
+    }),
+    "item-6": Object.freeze({
+      title: "trainer.seed.item6.title",
+      notes: "trainer.seed.item6.notes",
+    }),
+  }),
+});
+
+function localizeTrainerState(inputState) {
+  const localized = normalizeState(structuredClone(inputState || seedState));
+  const i18n = window.BackpackerI18n;
+  if (!i18n?.isInitialized?.()) return localized;
+
+  Object.entries(TRAINER_TRIP_TRANSLATIONS.trip).forEach(([field, key]) => {
+    localized.trip[field] = window.t(key);
+  });
+  localized.items.forEach((item) => {
+    const fields = TRAINER_TRIP_TRANSLATIONS.items[item.id];
+    if (!fields) return;
+    Object.entries(fields).forEach(([field, key]) => {
+      item[field] = window.t(key);
+    });
+  });
+  return localized;
+}
+
+function localizeTrainerTripStore() {
+  tripStore.trips = tripStore.trips.map((entry) => {
+    if (!entry.isDemo || entry.id !== "trainer-kazan") return entry;
+    return { ...entry, state: localizeTrainerState(entry.state) };
+  });
+  if (state?.trip?.id === "trainer-kazan") {
+    state = localizeTrainerState(state);
+  }
+}
 
 var privateTripSyncState = {
   applyingRemote: false,
@@ -639,9 +704,8 @@ function createTripEntry(nextState, overrides = {}) {
 }
 
 function createDemoEntry() {
-  const demoState = normalizeState(structuredClone(seedState));
+  const demoState = localizeTrainerState(seedState);
   demoState.trip.id = "trainer-kazan";
-  demoState.trip.title = "Казань соло";
   return createTripEntry(demoState, {
     id: "trainer-kazan",
     isDemo: true,
@@ -681,9 +745,6 @@ function loadTripStore() {
         return {
           trips: parsed.trips.map((entry) => {
             const normalizedState = normalizeState(entry.state);
-            if (entry.id === "trainer-kazan") {
-              normalizedState.trip.title = "Казань соло";
-            }
             return {
               ...entry,
               state: normalizedState,
@@ -7568,10 +7629,8 @@ function saveTrip(event) {
 
 function resetDemo() {
   const currentId = state.trip.id;
-  const currentTitle = state.trip.title;
-  state = normalizeState(structuredClone(seedState));
+  state = localizeTrainerState(seedState);
   state.trip.id = currentId;
-  state.trip.title = currentTitle || state.trip.title;
   saveState();
   closeSheet("tripSheet");
   render();
@@ -8298,10 +8357,16 @@ function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
 
 async function ensurePdfFontsReady() {
   if (!document.fonts?.load) return;
-  const sample = "Backpacker Русский ქართული Հայերեն";
+  const sample = "Backpacker Русский ქართული Հայերեն 简体中文";
   await Promise.all([400, 500, 600, 700, 800, 900].map((weight) => (
-    document.fonts.load(`${weight} 16px "Backpacker Sans"`, sample)
+    document.fonts.load(`${weight} 16px ${getPdfFontFamily()}`, sample)
   )));
+}
+
+function getPdfFontFamily() {
+  return getExportLocale() === "zh"
+    ? '"Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif'
+    : '"Backpacker Sans", Arial, sans-serif';
 }
 
 async function downloadPdfFile(fileName, title, table, previewWindow = null) {
@@ -8348,8 +8413,8 @@ async function downloadPdfFile(fileName, title, table, previewWindow = null) {
   const columnWidths = columnWeights.map((weight) => maxWidth * weight / columnWeightTotal);
   const lineHeight = 14;
   const cellPadding = 5;
-  const rowFont = "400 10px 'Backpacker Sans', Arial, sans-serif";
-  const headerFont = "700 10px 'Backpacker Sans', Arial, sans-serif";
+  const rowFont = `400 10px ${getPdfFontFamily()}`;
+  const headerFont = `700 10px ${getPdfFontFamily()}`;
 
   function wrapCellText(text, width) {
     const words = String(text ?? "").split(/\s+/).filter(Boolean);
@@ -8421,11 +8486,11 @@ async function downloadPdfFile(fileName, title, table, previewWindow = null) {
   }
 
   function drawPageTitle() {
-    ctx.font = "700 22px 'Backpacker Sans', Arial, sans-serif";
+    ctx.font = `700 22px ${getPdfFontFamily()}`;
     ctx.fillStyle = "#1f2423";
     ctx.fillText(title, x, y);
     y += 28;
-    ctx.font = "400 12px 'Backpacker Sans', Arial, sans-serif";
+    ctx.font = `400 12px ${getPdfFontFamily()}`;
     ctx.fillStyle = "#66716f";
     ctx.fillText(`${state.trip.title} · ${formatExportTripDateRange(state.trip.startDate, state.trip.endDate)}`, x, y);
     y += 24;
@@ -8569,7 +8634,32 @@ function drawPdfWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines = In
   const words = String(text || "").split(/\s+/).filter(Boolean);
   const lines = [];
   let line = "";
+  const splitLongWord = (word) => {
+    const chunks = [];
+    let chunk = "";
+    Array.from(word).forEach((character) => {
+      const test = `${chunk}${character}`;
+      if (chunk && ctx.measureText(test).width > maxWidth) {
+        chunks.push(chunk);
+        chunk = character;
+      } else {
+        chunk = test;
+      }
+    });
+    if (chunk) chunks.push(chunk);
+    return chunks;
+  };
   words.forEach((word) => {
+    if (ctx.measureText(word).width > maxWidth) {
+      if (line) {
+        lines.push(line);
+        line = "";
+      }
+      const chunks = splitLongWord(word);
+      lines.push(...chunks.slice(0, -1));
+      line = chunks.at(-1) || "";
+      return;
+    }
     const test = line ? `${line} ${word}` : word;
     if (ctx.measureText(test).width > maxWidth && line) {
       lines.push(line);
@@ -8581,8 +8671,14 @@ function drawPdfWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines = In
   if (line) lines.push(line);
   const visibleLines = lines.slice(0, maxLines);
   visibleLines.forEach((item, index) => {
-    const suffix = index === maxLines - 1 && lines.length > maxLines ? "..." : "";
-    ctx.fillText(`${item}${suffix}`, x, y + index * lineHeight);
+    const isTruncated = index === maxLines - 1 && lines.length > maxLines;
+    let visibleText = item;
+    if (isTruncated) {
+      const characters = Array.from(visibleText);
+      while (characters.length && ctx.measureText(`${characters.join("")}…`).width > maxWidth) characters.pop();
+      visibleText = `${characters.join("")}…`;
+    }
+    ctx.fillText(visibleText, x, y + index * lineHeight);
   });
   return visibleLines.length * lineHeight;
 }
@@ -8670,10 +8766,10 @@ async function buildTripPdfBlob(options) {
     roundRect(ctx, margin, y, contentWidth, 34, 8);
     ctx.fill();
     ctx.fillStyle = "#1f2423";
-    ctx.font = "700 15px 'Backpacker Sans', Arial, sans-serif";
+    ctx.font = `700 15px ${getPdfFontFamily()}`;
     ctx.fillText(title, margin + 12, y + 22);
     if (meta) {
-      ctx.font = "700 11px 'Backpacker Sans', Arial, sans-serif";
+      ctx.font = `700 11px ${getPdfFontFamily()}`;
       ctx.fillStyle = "#66716f";
       ctx.fillText(meta, margin + contentWidth - ctx.measureText(meta).width - 12, y + 22);
     }
@@ -8687,10 +8783,10 @@ async function buildTripPdfBlob(options) {
     ctx.strokeStyle = variant === "paid" ? "rgba(45, 123, 82, 0.3)" : "#ded8cc";
     ctx.stroke();
     ctx.fillStyle = variant === "paid" ? "#2d7b52" : "#66716f";
-    ctx.font = "800 11px 'Backpacker Sans', Arial, sans-serif";
+    ctx.font = `800 11px ${getPdfFontFamily()}`;
     drawPdfWrappedText(ctx, label, x + 8, cardY + 17, width - 16, 13, 2);
     ctx.fillStyle = "#1f2423";
-    ctx.font = "800 16px 'Backpacker Sans', Arial, sans-serif";
+    ctx.font = `800 16px ${getPdfFontFamily()}`;
     ctx.fillText(value, x + 8, cardY + height - 12);
   }
 
@@ -8713,9 +8809,9 @@ async function buildTripPdfBlob(options) {
       ctx.drawImage(logoImage, margin + 14, y + 16, 38, 38);
     }
     ctx.fillStyle = "#1f2423";
-    ctx.font = "800 22px 'Backpacker Sans', Arial, sans-serif";
+    ctx.font = `800 22px ${getPdfFontFamily()}`;
     drawPdfWrappedText(ctx, state.trip.title || exportT("trip.title.fallback"), margin + 66, y + 31, contentWidth - 76, 25, 1);
-    ctx.font = "700 12px 'Backpacker Sans', Arial, sans-serif";
+    ctx.font = `700 12px ${getPdfFontFamily()}`;
     ctx.fillStyle = "#66716f";
     const meta = `${state.trip.destination || exportT("trip.destination.missing")} · ${formatExportTripDateRange(state.trip.startDate, state.trip.endDate)} · ${formatExportTripDayCount(state.trip)}`;
     drawPdfWrappedText(ctx, meta, margin + 66, y + 56, contentWidth - 76, 15, 1);
@@ -8727,7 +8823,7 @@ async function buildTripPdfBlob(options) {
       ctx.strokeStyle = "rgba(18, 54, 61, 0.18)";
       ctx.stroke();
       ctx.fillStyle = "#12363d";
-      ctx.font = "800 13px 'Backpacker Sans', Arial, sans-serif";
+      ctx.font = `800 13px ${getPdfFontFamily()}`;
       ctx.fillText(exportT("financial.summary", { amount: formatExportMoney(totals.budgetLimit) }), margin + 194, y + 94);
 
       const cardGap = 8;
@@ -8740,10 +8836,10 @@ async function buildTripPdfBlob(options) {
     if (hasGroupParticipants) {
       const participantsY = options.includeBudget ? y + 175 : y + 91;
       ctx.fillStyle = "#66716f";
-      ctx.font = "800 11px 'Backpacker Sans', Arial, sans-serif";
+      ctx.font = `800 11px ${getPdfFontFamily()}`;
       ctx.fillText(exportT("participants"), margin + 8, participantsY);
       ctx.fillStyle = "#1f2423";
-      ctx.font = "700 11px 'Backpacker Sans', Arial, sans-serif";
+      ctx.font = `700 11px ${getPdfFontFamily()}`;
       drawPdfWrappedText(
         ctx,
         state.trip.participants.map((participant) => participant.name).join(" · "),
@@ -8769,7 +8865,7 @@ async function buildTripPdfBlob(options) {
     ctx.strokeStyle = "#ded8cc";
     ctx.stroke();
     ctx.fillStyle = "#1f2423";
-    ctx.font = "800 15px 'Backpacker Sans', Arial, sans-serif";
+    ctx.font = `800 15px ${getPdfFontFamily()}`;
     ctx.fillText(exportT("financial.title"), margin + 14, y + 24);
     const budgetRows = [
       [exportT("financial.limit"), formatExportMoney(totals.budgetLimit)],
@@ -8780,7 +8876,7 @@ async function buildTripPdfBlob(options) {
       [exportT("financial.possible"), formatExportMoney(totals.possibleTotal)],
       [exportT("financial.remaining"), formatExportMoney(totals.remainingAll)],
     ];
-    ctx.font = "700 11px 'Backpacker Sans', Arial, sans-serif";
+    ctx.font = `700 11px ${getPdfFontFamily()}`;
     budgetRows.forEach((row, index) => {
       const rowY = y + 48 + index * 18;
       ctx.fillStyle = "#66716f";
@@ -8837,7 +8933,7 @@ async function buildTripPdfBlob(options) {
     ctx.fillStyle = fill;
     ctx.fill();
     ctx.fillStyle = textColor;
-    ctx.font = "900 12px 'Backpacker Sans', Arial, sans-serif";
+    ctx.font = `900 12px ${getPdfFontFamily()}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text, cx, cy + 0.5);
@@ -8855,7 +8951,7 @@ async function buildTripPdfBlob(options) {
       return;
     }
     ctx.fillStyle = textColor;
-    ctx.font = `900 ${Math.max(8, radius * 0.7)}px 'Backpacker Sans', Arial, sans-serif`;
+    ctx.font = `900 ${Math.max(8, radius * 0.7)}px ${getPdfFontFamily()}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(fallbackText, cx, cy + 0.5);
@@ -8868,7 +8964,7 @@ async function buildTripPdfBlob(options) {
     roundRect(ctx, x, slotY, width, 26, 4);
     ctx.fill();
     ctx.fillStyle = "#1f2423";
-    ctx.font = "500 14px 'Backpacker Sans', Arial, sans-serif";
+    ctx.font = `500 14px ${getPdfFontFamily()}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text, x + width / 2, slotY + 13);
@@ -8884,7 +8980,7 @@ async function buildTripPdfBlob(options) {
     drawPdfSlot(x, slotY, slotWidth, start[0], fill);
     drawPdfSlot(x + slotWidth + gap, slotY, slotWidth, start[1], fill);
     ctx.fillStyle = getPdfTypeColor(item.type);
-    ctx.font = "500 16px 'Backpacker Sans', Arial, sans-serif";
+    ctx.font = `500 16px ${getPdfFontFamily()}`;
     ctx.fillText("-", x + slotWidth * 2 + gap * 2 + 2, slotY + 18);
     drawPdfSlot(x + slotWidth * 2 + gap * 3 + 13, slotY, slotWidth, end[0], fill);
     drawPdfSlot(x + slotWidth * 3 + gap * 4 + 13, slotY, slotWidth, end[1], fill);
@@ -8894,7 +8990,7 @@ async function buildTripPdfBlob(options) {
     const [day, month, year] = getItemDateSlots(item.date);
     drawPdfSlot(x, slotY, 31, day, fill);
     ctx.fillStyle = getPdfTypeColor(item.type);
-    ctx.font = "500 16px 'Backpacker Sans', Arial, sans-serif";
+    ctx.font = `500 16px ${getPdfFontFamily()}`;
     ctx.fillText(".", x + 36, slotY + 18);
     drawPdfSlot(x + 46, slotY, 31, month, fill);
     ctx.fillText(".", x + 82, slotY + 18);
@@ -8908,7 +9004,7 @@ async function buildTripPdfBlob(options) {
     ctx.strokeStyle = "#6f7877";
     ctx.stroke();
     ctx.fillStyle = "#1f2423";
-    ctx.font = "800 13px 'Backpacker Sans', Arial, sans-serif";
+    ctx.font = `800 13px ${getPdfFontFamily()}`;
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
     ctx.fillText(text, x + width - 8, pillY + 14);
@@ -8951,16 +9047,16 @@ async function buildTripPdfBlob(options) {
       ctx.drawImage(typeImage, padding + 2, 8, 28, 28);
     } else {
       ctx.fillStyle = "#ffffff";
-      ctx.font = "800 23px 'Backpacker Sans', Arial, sans-serif";
+      ctx.font = `800 23px ${getPdfFontFamily()}`;
       ctx.fillText(getPdfTypeMark(item.type), padding + 2, 29);
     }
     const typeLabel = getExportTypeLabel(item.type).toUpperCase();
     const maxTypeLabelWidth = baseWidth - padding * 2 - 38;
     let typeLabelFontSize = 18;
-    ctx.font = `800 ${typeLabelFontSize}px 'Backpacker Sans', Arial, sans-serif`;
+    ctx.font = `800 ${typeLabelFontSize}px ${getPdfFontFamily()}`;
     while (typeLabelFontSize > 11 && ctx.measureText(typeLabel).width > maxTypeLabelWidth) {
       typeLabelFontSize -= 1;
-      ctx.font = `800 ${typeLabelFontSize}px 'Backpacker Sans', Arial, sans-serif`;
+      ctx.font = `800 ${typeLabelFontSize}px ${getPdfFontFamily()}`;
     }
     ctx.fillStyle = "#ffffff";
     ctx.textAlign = "right";
@@ -8972,14 +9068,14 @@ async function buildTripPdfBlob(options) {
     drawPdfPricePill(price, baseWidth - padding - priceWidth, localBodyY + 17, priceWidth);
 
     ctx.fillStyle = "#1f2423";
-    ctx.font = "800 14px 'Backpacker Sans', Arial, sans-serif";
+    ctx.font = `800 14px ${getPdfFontFamily()}`;
     drawPdfWrappedText(ctx, item.title, padding, localBodyY + 22, baseWidth - padding * 2 - priceWidth - 10, 17, 2);
     ctx.fillStyle = accent;
-    ctx.font = "900 italic 13px 'Backpacker Sans', Arial, sans-serif";
+    ctx.font = `900 italic 13px ${getPdfFontFamily()}`;
     ctx.fillText(formatExportDuration(item.durationMinutes), padding, localBodyY + 64);
     drawPdfTimeSlots(item, padding, localBodyY + 73, slotFill);
     ctx.fillStyle = accent;
-    ctx.font = "900 italic 13px 'Backpacker Sans', Arial, sans-serif";
+    ctx.font = `900 italic 13px ${getPdfFontFamily()}`;
     ctx.fillText(exportT("item.date"), padding, localBodyY + 124);
     drawPdfDateSlots(item, padding, localBodyY + 133, slotFill);
 
@@ -8990,7 +9086,7 @@ async function buildTripPdfBlob(options) {
       });
     }
     if (options.includeNotes && item.notes) {
-      ctx.font = "400 10px 'Backpacker Sans', Arial, sans-serif";
+      ctx.font = `400 10px ${getPdfFontFamily()}`;
       ctx.fillStyle = "#1f2423";
       drawPdfWrappedText(ctx, item.notes, padding, localBodyY + 182, baseWidth - padding * 2, 13, 3);
     }
@@ -9025,7 +9121,7 @@ async function buildTripPdfBlob(options) {
     if (items.length) {
       await drawItemGrid(items);
     } else {
-      ctx.font = "700 12px 'Backpacker Sans', Arial, sans-serif";
+      ctx.font = `700 12px ${getPdfFontFamily()}`;
       ctx.fillStyle = "#66716f";
       ctx.fillText(exportT("day.empty"), margin, y);
       y += 28;
@@ -11883,6 +11979,8 @@ async function bootstrapApp() {
   } catch {
     // The existing Russian DOM copy remains the safe startup fallback.
   }
+
+  localizeTrainerTripStore();
 
   bindEvents();
   setupDonationFlow();
