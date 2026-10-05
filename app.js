@@ -42,7 +42,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.90";
+const APP_VERSION = "1.1.2.91";
 const APP_RELEASE_SUMMARY = "Backpacker теперь доступен на семи языках интерфейса: русском, английском, французском, грузинском, немецком, армянском и упрощённом китайском.";
 const CHROME_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/backpacker-travel-capture/okpfmpplfciccfddgibkcoliemfimifc";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
@@ -2733,6 +2733,10 @@ function getSelfParticipant(nextState = state) {
   return nextState.trip.participants.find((participant) => participant.isSelf) || nextState.trip.participants[0];
 }
 
+function normalizeTripItemId(value, fallback = "item-invalid") {
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$/.test(value) ? value : fallback;
+}
+
 function normalizeState(nextState) {
   const normalized = nextState?.trip && Array.isArray(nextState.items) ? nextState : structuredClone(seedState);
   const tripId = normalized.trip.id || `trip-${Date.now()}`;
@@ -2779,7 +2783,17 @@ function normalizeState(nextState) {
   normalized.trip.participants = participants;
   const selfParticipant = getSelfParticipant(normalized);
   const participantIds = new Set(participants.map((participant) => participant.id));
+  const itemIds = new Set(normalized.items.map((item) => normalizeTripItemId(item.id, "")).filter(Boolean));
   normalized.items = normalized.items.map((item, index) => {
+    let id = normalizeTripItemId(item.id, "");
+    if (!id) {
+      // Stable replacements survive repeated reads without colliding with existing IDs.
+      const baseId = `item-imported-${index}`;
+      id = baseId;
+      let suffix = 0;
+      while (itemIds.has(id)) id = `${baseId}-${++suffix}`;
+      itemIds.add(id);
+    }
     const participantId = participantIds.has(item.participantId) ? item.participantId : selfParticipant.id;
     const price = parseMoney(item.price);
     const allocations = window.BackpackerFinancial.normalizeAllocations(item.allocations, {
@@ -2795,6 +2809,8 @@ function normalizeState(nextState) {
     return {
       order: index,
       ...item,
+      id,
+      type: normalizeTripDraftItemType(item.type),
       price,
       paidAmount: parseMoney(item.paidAmount),
       participantId,
@@ -5219,7 +5235,7 @@ function renderProposalInbox() {
         <strong>${escapeHtml(proposal.requesterDisplayName || proposal.requesterName || window.t("share.proposal.user.fallback"))}</strong>
         <p>${escapeHtml(window.t("share.proposal.item.suggests", { title: proposal.title || window.t("share.proposal.item.fallback") }))}</p>
         <p class="proposal-account-link">${escapeHtml(window.t("share.proposal.item.new", { type: getPlanTypeLabel(proposal.itemType || "idea") }))}${proposal.price ? ` · ${escapeHtml(formatBudgetMoney(proposal.price))}` : ""}</p>
-        ${proposal.link ? `<a class="item-link" href="${escapeAttr(proposal.link)}" target="_blank" rel="noreferrer" onclick="event.stopPropagation()">${escapeHtml(window.t("share.proposal.item.open.link"))}</a>` : ""}
+        ${proposal.link ? `<a class="item-link" href="${escapeAttr(proposal.link)}" target="_blank" rel="noreferrer">${escapeHtml(window.t("share.proposal.item.open.link"))}</a>` : ""}
         ${proposal.notes ? `<p class="item-note">${escapeHtml(proposal.notes)}</p>` : ""}
         <span>${formatProposalStatus(proposal.status)}</span>
       </div>
@@ -5577,20 +5593,22 @@ function renderEstimateTable() {
 }
 
 function renderItemCard(item) {
+  const type = normalizeTripDraftItemType(item.type);
+  const id = normalizeTripItemId(item.id);
   const price = canShowBudget() && parseMoney(item.price) ? formatPlanMoney(item.price) : "--";
   const participantBadges = renderItemParticipantBadges(item);
   const note = item.notes ? `<p class="item-note">${escapeHtml(item.notes)}</p>` : "";
   const link = item.link
-    ? `<a class="item-link" href="${escapeAttr(item.link)}" target="_blank" rel="noreferrer" onclick="event.stopPropagation()">${escapeHtml(window.t("plan.item.link.open"))}</a>`
+    ? `<a class="item-link" href="${escapeAttr(item.link)}" target="_blank" rel="noreferrer">${escapeHtml(window.t("plan.item.link.open"))}</a>`
     : "";
   const sourceMarker = item.creationSource === "accepted_proposal" && item.proposedByDisplayName
     ? `<p class="item-source-marker" title="${escapeAttr(window.t("plan.item.source.suggested", { name: item.proposedByDisplayName }))}">${escapeHtml(window.t("plan.item.source.suggested", { name: item.proposedByDisplayName }))}</p>`
     : "";
   return `
-    <button class="item-card type-${item.type}" data-edit="${item.id}" data-drag-id="${item.id}" draggable="false" type="button">
+    <button class="item-card type-${escapeAttr(type)}" data-edit="${escapeAttr(id)}" data-drag-id="${escapeAttr(id)}" draggable="false" type="button">
       <span class="tile-icon" aria-hidden="true">
-        <span>${typeIcons[item.type] || typeIcons.other}</span>
-        <small>${escapeHtml(getPlanTypeLabel(item.type))}</small>
+        <span>${typeIcons[type]}</span>
+        <small>${escapeHtml(getPlanTypeLabel(type))}</small>
       </span>
       <div class="item-body">
         <div class="item-top">
@@ -5606,7 +5624,7 @@ function renderItemCard(item) {
             <div class="item-date-slots" aria-label="${escapeAttr(window.t("plan.item.date.aria"))}">${renderItemDateSlots(item)}</div>
           </div>
           <div class="item-side-badges">
-            <span class="item-side-badge status-icon status-${item.status}" title="${escapeAttr(getPlanStatusLabel(item.status))}" aria-label="${escapeAttr(getPlanStatusLabel(item.status))}">${getStatusIcon(item.status)}</span>
+            <span class="item-side-badge status-icon status-${escapeAttr(item.status)}" title="${escapeAttr(getPlanStatusLabel(item.status))}" aria-label="${escapeAttr(getPlanStatusLabel(item.status))}">${getStatusIcon(item.status)}</span>
             ${participantBadges}
           </div>
         </div>
@@ -6610,9 +6628,9 @@ async function saveItem(event) {
     : getSelfParticipant().id;
   const price = parseMoney(data.price);
   const item = {
-    id: data.id || `item-${Date.now()}`,
+    id: normalizeTripItemId(data.id, `item-${Date.now()}`),
     title: data.title.trim(),
-    type: data.type || "idea",
+    type: normalizeTripDraftItemType(data.type),
     status: data.status || "want",
     priority: data.priority || "nice",
     date: itemDate,
@@ -11419,6 +11437,11 @@ function bindEvents() {
   document.addEventListener("keydown", handleNativeDateTimeClear);
 
   document.addEventListener("click", (event) => {
+    // Links keep their native navigation without opening the enclosing item card.
+    if (event.target.closest("a.item-link")) {
+      event.stopPropagation();
+      return;
+    }
     if (dragJustHappened) {
       event.preventDefault();
       return;
