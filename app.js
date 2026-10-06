@@ -42,7 +42,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.91";
+const APP_VERSION = "1.1.2.92";
 const APP_RELEASE_SUMMARY = "Backpacker теперь доступен на семи языках интерфейса: русском, английском, французском, грузинском, немецком, армянском и упрощённом китайском.";
 const CHROME_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/backpacker-travel-capture/okpfmpplfciccfddgibkcoliemfimifc";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
@@ -117,6 +117,7 @@ let recoverableAuthState = {
   upgradeSending: false,
   user: null,
 };
+let authStateVersion = 0;
 let extensionConnectState = {
   request: null,
   status: "idle",
@@ -894,6 +895,7 @@ function getCurrentRecoverableAuthUser() {
 }
 
 async function refreshRecoverableAuthSession({ refreshProfile = false } = {}) {
+  const version = authStateVersion;
   const client = getSupabaseClient();
   if (!client) {
     recoverableAuthState.user = null;
@@ -901,6 +903,7 @@ async function refreshRecoverableAuthSession({ refreshProfile = false } = {}) {
     return null;
   }
   const sessionResult = await client.auth.getSession();
+  if (version !== authStateVersion) return null;
   const session = sessionResult.data.session;
   if (!session?.access_token) {
     recoverableAuthState.user = null;
@@ -908,6 +911,7 @@ async function refreshRecoverableAuthSession({ refreshProfile = false } = {}) {
     return null;
   }
   const userResult = await client.auth.getUser();
+  if (version !== authStateVersion) return null;
   const user = userResult.data?.user || session.user || null;
   recoverableAuthState.user = getRecoverableAuthUserSummary(user);
   renderProfileSheet();
@@ -924,6 +928,7 @@ function cleanRecoverableAuthCallbackUrl() {
 }
 
 async function handleRecoverableAuthCallback() {
+  const version = authStateVersion;
   if (!isSupabaseConfigured()) return null;
   const core = getRecoverableAuthCore();
   const info = core?.getAuthCallbackInfo?.(window.location.href);
@@ -948,6 +953,7 @@ async function handleRecoverableAuthCallback() {
       }
     }
     const user = await refreshRecoverableAuthSession({ refreshProfile: true });
+    if (version !== authStateVersion) return null;
     recoverableAuthState.error = "";
     recoverableAuthState.status = user?.hasEmailIdentity
       ? window.t("share.profile.email.callback.saved")
@@ -957,6 +963,7 @@ async function handleRecoverableAuthCallback() {
     await resumePendingExtensionConnectAfterRecoverableAuth(user);
     return user;
   } catch {
+    if (version !== authStateVersion) return null;
     recoverableAuthState.error = window.t("share.profile.email.callback.restore.error");
     recoverableAuthState.status = "";
     showToast(window.t("share.profile.email.callback.restore.toast"));
@@ -979,10 +986,120 @@ function closeRecoverableAuthSheetAfterSuccess(user) {
   }, 900);
 }
 
+function assertCurrentAuthState(version) {
+  if (version !== authStateVersion) throw new Error("auth_state_changed");
+}
+
+function clearSignedOutAccountState() {
+  const previousUserId = recoverableAuthState.user?.id;
+  const editingCloudIdea = Boolean(itemCreateContext.sourceIdeaId || cardCopyState.sourceIdeaId);
+  const preserveLocalItemEditor = !readOnlyShare && !editingCloudIdea
+    && tripStore.trips.some((entry) => entry.id === state.trip.id);
+  authStateVersion += 1;
+  // Do not enumerate storage: only the safely known prior uid's resumable draft.
+  for (const storageName of ["sessionStorage", "localStorage"]) {
+    try {
+      const storage = window[storageName];
+      storage?.removeItem(IDENTITY_BRIDGE_PENDING_EXTENSION_CONNECT_KEY);
+      storage?.removeItem(GROUP_TRIP_PENDING_INTENT_KEY);
+      if (previousUserId) storage?.removeItem(`${TRIP_DRAFT_PENDING_KEY_PREFIX}:${previousUserId}`);
+    } catch {
+      // Restricted storage must not prevent the in-memory cleanup.
+    }
+  }
+  window.clearTimeout(tripDraftPendingSaveTimer);
+  window.clearTimeout(privateTripSyncState.timer);
+  window.clearTimeout(tripShareSyncTimer);
+  tripDraftPendingSaveTimer = null;
+  tripShareSyncTimer = null;
+  tripShareSyncReported = "";
+  supabaseAnalyticsSessionPromise = null;
+  // Invalidate voice callbacks before stopping, so sign-out cannot trigger transcription.
+  const recorder = tripDraftAiState.mediaRecorder;
+  cleanupTripDraftAiRecording();
+  try {
+    recorder?.stream?.getTracks().forEach((track) => track.stop());
+  } catch {
+    // A recorder already torn down by the browser must not interrupt sign-out.
+  }
+  tripDraftAiState = createEmptyTripDraftAiState();
+  bookingPackFailedUploads = [];
+  userProfile = { loaded: false, loading: false, displayName: "", error: "" };
+  recoverableAuthState = { error: "", loginSending: false, status: "", upgradeSending: false, user: null };
+  pendingProfileAction = null;
+  profileSaving = false;
+  extensionConnectState = { request: null, status: "idle", error: "" };
+  ideasState = { activeCollectionKey: "all", collections: [], editingIdeaId: "", error: "", ideas: [], loaded: false, loading: false, saving: false };
+  groupTripContext = { loading: false, participants: [] };
+  groupTripJoinBusy = false;
+  shareProposalContext = null;
+  expenseProposalDraft = { itemId: "", participantMode: "", participantId: "", proposedParticipantName: "", amount: 0 };
+  itemProposalDraft = { title: "", itemType: "idea", link: "", price: "", notes: "" };
+  authorExpenseProposals = [];
+  authorItemProposals = [];
+  resolvingExpenseProposalIds.clear();
+  resolvingItemProposalIds.clear();
+  itemProposalSubmitting = false;
+  pendingShareModeSwitch = "";
+  openShareModePanel = null;
+  receivedShareCards = [];
+  receivedSharesLoaded = false;
+  receivedSharesLoading = false;
+  // Retain persisted ownership metadata: deleting it could bind old local trips to a new uid.
+  privateTripSyncState = { applyingRemote: false, pending: false, ready: false, running: false, timer: null };
+  organizerGroupMaterialsState = { attachments: [], deletingId: "", error: "", loadedTripId: "", loading: false, uploading: false };
+  resetTripItemAttachmentsState();
+  linkIntakeState = { isLoading: false, draft: null, status: "", error: "", previewOnlyImageUrl: "", appliedSnapshot: null };
+  cardCopyState = { sourceKind: "trip_item", sourceItemId: "", sourceIdeaId: "", scope: "", targetTripId: "", targetDate: null, isSubmitting: false };
+  if (!preserveLocalItemEditor) itemCreateContext = { source: "", creationMethod: "manual", returnScreenOnCancel: "", sourceIdeaId: "", toastOnSave: "" };
+  for (const id of ["profileSheet", "ideaSheet", "ideaCollectionSheet", "expenseProposalSheet", "itemProposalSheet", "cardCopySheet", "tripDraftAiSheet", "shareSheet", "itemSheet"]) {
+    if (id === "itemSheet" && preserveLocalItemEditor) continue;
+    const sheet = $(`#${id}`);
+    sheet?.classList.remove("open");
+    sheet?.setAttribute("aria-hidden", "true");
+  }
+  for (const id of ["ideaForm", "ideaCollectionForm", "itemProposalForm"]) $(`#${id}`)?.reset();
+  if (editingCloudIdea) $("#itemForm")?.reset();
+  const collectionSelect = $("#ideaForm")?.elements?.collectionKey;
+  if (collectionSelect) collectionSelect.innerHTML = "";
+  for (const id of ["profileDisplayNameInput", "recoverableAuthEmailInput", "recoverableLoginEmailInput", "tripDraftTextInput", "tripDraftDocumentsInput", "tripDraftDocumentsComment"]) {
+    const input = $(`#${id}`);
+    if (input) input.value = "";
+  }
+  for (const id of ["tripDraftPreviewBox", "tripDraftDocumentsList", "tripDraftDocumentsMissing", "tripDraftStatus", "tripDraftDocumentsStatus", "expenseProposalBody", "linkIntakePreview", "organizerGroupMaterialsList", "groupTripParticipantList"]) {
+    const container = $(`#${id}`);
+    if (container) container.textContent = "";
+  }
+  if (readOnlyShare?.source === "public_link") {
+    // Public link content stays public; only the previous viewer's account flags go.
+    readOnlyShare = { ...readOnlyShare, isOwner: false, isAuthor: false, isSaved: false, isJoined: false, currentUserDisplayName: "", profileRequired: true };
+    renderSaveReceivedTripButton();
+    renderGroupTripJoinButton();
+  } else if (readOnlyShare) {
+    readOnlyShare = null;
+    state = loadState();
+    currentScreen = "home";
+    $("#homeScreen")?.classList.remove("hidden");
+    $("#ideasScreen")?.classList.add("hidden");
+    $(".app-shell")?.classList.add("hidden");
+  }
+  // Synchronous rendering only: never make Supabase calls inside its auth callback.
+  renderProfileSheet();
+  renderAcceptedExpenseControls(null);
+  renderLinkIntakePanel();
+  renderExtensionConnectCard();
+  renderIdeasScreen();
+  render();
+}
+
 function subscribeRecoverableAuthChanges() {
   const client = getSupabaseClient();
   if (!client?.auth?.onAuthStateChange) return;
   client.auth.onAuthStateChange((event, session) => {
+    if (event === "SIGNED_OUT") {
+      clearSignedOutAccountState();
+      return;
+    }
     recoverableAuthState.user = session?.user ? getRecoverableAuthUserSummary(session.user) : null;
     renderProfileSheet();
     renderHomeProfile();
@@ -991,12 +1108,12 @@ function subscribeRecoverableAuthChanges() {
       // Storage is keyed by uid, so anything typed before identity resolved was not written
       // yet. Persist it the moment the key becomes available.
       saveTripDraftPending();
+      const version = authStateVersion;
       window.setTimeout(() => {
+        if (version !== authStateVersion) return;
         loadMyProfile({ createSession: false }).catch(() => null);
         syncPrivateTripsWithCloud({ silent: true }).catch(() => null);
       }, 0);
-    } else if (event === "SIGNED_OUT") {
-      privateTripSyncState.ready = false;
     }
   });
 }
@@ -1011,11 +1128,14 @@ function getSharePayloadFromUrl() {
 }
 
 async function ensureSupabaseOwnerSession() {
+  const version = authStateVersion;
   const client = getSupabaseClient();
   if (!client) throw new Error("supabase_not_configured");
   const current = await client.auth.getSession();
+  assertCurrentAuthState(version);
   if (current.data.session?.access_token) return current.data.session.access_token;
   const created = await client.auth.signInAnonymously();
+  assertCurrentAuthState(version);
   if (created.error || !created.data.session?.access_token) throw created.error || new Error("anonymous_auth_failed");
   return created.data.session.access_token;
 }
@@ -1065,6 +1185,7 @@ async function captureAppReferralArrival({ hadExistingSession = true } = {}) {
 }
 
 async function callTripShareFunction(action, payload = {}, { requireOwner = false, useExistingSession = false, ensureSession = false } = {}) {
+  const version = authStateVersion;
   const config = getSupabaseConfig();
   const url = getTripShareFunctionUrl();
   if (!url || !config.anonKey) throw new Error("supabase_not_configured");
@@ -1080,6 +1201,7 @@ async function callTripShareFunction(action, payload = {}, { requireOwner = fals
     const token = await getExistingSupabaseAccessToken();
     if (token) headers.Authorization = `Bearer ${token}`;
   }
+  assertCurrentAuthState(version);
   const response = await fetch(url, {
     method: "POST",
     headers,
@@ -1087,6 +1209,7 @@ async function callTripShareFunction(action, payload = {}, { requireOwner = fals
     body: JSON.stringify({ action, ...payload, analytics: getAnalyticsServerContext() }),
   });
   const data = await response.json().catch(() => ({}));
+  assertCurrentAuthState(version);
   if (!response.ok) {
     const error = new Error(data.error || `trip_share_${action}_failed`);
     error.status = response.status;
@@ -1104,20 +1227,24 @@ function tripDraftT(key, params = {}) {
 }
 
 async function callTripDraftAiFunction(action, payload = {}) {
+  const version = authStateVersion;
   const config = getSupabaseConfig();
   const url = getTripDraftAiFunctionUrl();
   if (!url || !config.anonKey) throw new Error("supabase_not_configured");
+  const token = await ensureSupabaseOwnerSession();
+  assertCurrentAuthState(version);
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       apikey: config.anonKey,
-      Authorization: `Bearer ${await ensureSupabaseOwnerSession()}`,
+      Authorization: `Bearer ${token}`,
     },
     cache: "no-store",
     body: JSON.stringify({ action, ...payload, locale: getTripDraftLocale() }),
   });
   const data = await response.json().catch(() => ({}));
+  assertCurrentAuthState(version);
   if (!response.ok) {
     const error = new Error(data.error || `trip_draft_ai_${action}_failed`);
     error.status = response.status;
@@ -1127,20 +1254,24 @@ async function callTripDraftAiFunction(action, payload = {}) {
 }
 
 async function callLinkIntakeFunction(action, payload = {}) {
+  const version = authStateVersion;
   const config = getSupabaseConfig();
   const url = getLinkIntakeFunctionUrl();
   if (!url || !config.anonKey) throw new Error("supabase_not_configured");
+  const token = await ensureSupabaseOwnerSession();
+  assertCurrentAuthState(version);
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       apikey: config.anonKey,
-      Authorization: `Bearer ${await ensureSupabaseOwnerSession()}`,
+      Authorization: `Bearer ${token}`,
     },
     cache: "no-store",
     body: JSON.stringify({ action, ...payload }),
   });
   const data = await response.json().catch(() => ({}));
+  assertCurrentAuthState(version);
   if (!response.ok) {
     const error = new Error(data.error || `link_intake_${action}_failed`);
     error.status = response.status;
@@ -1150,20 +1281,24 @@ async function callLinkIntakeFunction(action, payload = {}) {
 }
 
 async function callExtensionConnectFunction(action, payload = {}) {
+  const version = authStateVersion;
   const config = getSupabaseConfig();
   const url = getExtensionConnectFunctionUrl();
   if (!url || !config.anonKey) throw new Error("supabase_not_configured");
+  const token = await ensureSupabaseOwnerSession();
+  assertCurrentAuthState(version);
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       apikey: config.anonKey,
-      Authorization: `Bearer ${await ensureSupabaseOwnerSession()}`,
+      Authorization: `Bearer ${token}`,
     },
     cache: "no-store",
     body: JSON.stringify({ action, ...payload }),
   });
   const data = await response.json().catch(() => ({}));
+  assertCurrentAuthState(version);
   if (!response.ok) {
     const error = new Error(data.error || `extension_connect_${action}_failed`);
     error.status = response.status;
@@ -1241,12 +1376,14 @@ async function resumePendingExtensionConnectAfterRecoverableAuth(user) {
 }
 
 async function requireRecoverableIdentityForExtensionConnect(request) {
+  const version = authStateVersion;
   const bridge = getIdentityBridgeCore();
   if (!bridge?.getIdentityBridgeState) {
     return { status: "connect_allowed", connectAllowed: true, identityRequired: false, request };
   }
   await ensureSupabaseOwnerSession();
   const user = await refreshRecoverableAuthSession();
+  assertCurrentAuthState(version);
   const state = bridge.getIdentityBridgeState({ user, extensionConnectRequest: request });
   if (state.identityRequired) {
     try {
@@ -1451,6 +1588,7 @@ async function writePrivateTripSnapshot(client, localEntry, remoteRow = null) {
 }
 
 async function syncPrivateTripsWithCloud({ silent = false } = {}) {
+  const version = authStateVersion;
   if (!canSyncPrivateTrips()) return { status: "identity_required" };
   if (privateTripSyncState.running) {
     privateTripSyncState.pending = true;
@@ -1467,6 +1605,7 @@ async function syncPrivateTripsWithCloud({ silent = false } = {}) {
   let conflictCount = 0;
   try {
     let remoteRows = await api.listPrivateTripSnapshots(client);
+    assertCurrentAuthState(version);
     const remoteById = new Map(remoteRows.map((row) => [row.tripId, row]));
 
     const remainingDeletes = [];
@@ -1488,6 +1627,7 @@ async function syncPrivateTripsWithCloud({ silent = false } = {}) {
           remote.syncToken,
           createPrivateTripSyncToken(),
         );
+        assertCurrentAuthState(version);
         remoteById.set(tripId, tombstone);
         rememberPrivateTripSyncRow(ownerMetadata, tombstone);
       } catch (error) {
@@ -1522,6 +1662,7 @@ async function syncPrivateTripsWithCloud({ silent = false } = {}) {
       const decision = core.decideTripReconciliation({ localEntry: local, remoteRow: remote, metadata });
       if (decision.action === "upload_local") {
         const saved = await writePrivateTripSnapshot(client, local, remote);
+        assertCurrentAuthState(version);
         remoteById.set(tripId, saved);
         rememberPrivateTripSyncRow(ownerMetadata, saved);
       } else if (decision.action === "import_remote") {
@@ -1535,6 +1676,7 @@ async function syncPrivateTripsWithCloud({ silent = false } = {}) {
       } else if (["fork_local_and_import", "fork_local_and_remove"].includes(decision.action)) {
         const copy = core.createConflictCopy(local, createPrivateTripConflictId());
         const savedCopy = await writePrivateTripSnapshot(client, copy);
+        assertCurrentAuthState(version);
         replacePrivateTripSyncEntry(copy);
         rememberPrivateTripSyncRow(ownerMetadata, savedCopy);
         if (decision.action === "fork_local_and_import") replacePrivateTripSyncEntry(remote.entry);
@@ -1561,12 +1703,15 @@ async function syncPrivateTripsWithCloud({ silent = false } = {}) {
     else if (nextTripCount > previousTripCount) showToast(window.t("home.sync.toast.merged"));
     return { conflictCount, status: "synced", tripCount: nextTripCount };
   } catch (error) {
+    if (version !== authStateVersion) return { status: "signed_out" };
     privateTripSyncState.applyingRemote = false;
     if (!silent) showToast(window.t("home.sync.toast.error"));
     throw error;
   } finally {
-    privateTripSyncState.running = false;
-    if (privateTripSyncState.pending) schedulePrivateTripSync(100);
+    if (version === authStateVersion) {
+      privateTripSyncState.running = false;
+      if (privateTripSyncState.pending) schedulePrivateTripSync(100);
+    }
   }
 }
 
@@ -1587,11 +1732,15 @@ function getCurrentIdeaCollectionTitle() {
 }
 
 async function getCurrentSupabaseUserForIdeas(client) {
+  const version = authStateVersion;
   await ensureSupabaseOwnerSession();
+  assertCurrentAuthState(version);
   const sessionResult = await client.auth.getSession();
+  assertCurrentAuthState(version);
   let user = sessionResult.data.session?.user || null;
   if (!user?.id && client.auth.getUser) {
     const userResult = await client.auth.getUser();
+    assertCurrentAuthState(version);
     user = userResult.data?.user || null;
   }
   if (!user?.id) throw new Error("anonymous_auth_failed");
@@ -1830,6 +1979,7 @@ function sendCredentialToExtension(extensionId, message) {
 }
 
 async function submitExtensionConnectIdentityForm(event) {
+  const version = authStateVersion;
   event.preventDefault();
   const request = extensionConnectState.request;
   if (!request || recoverableAuthState.upgradeSending) return;
@@ -1861,19 +2011,23 @@ async function submitExtensionConnectIdentityForm(event) {
   renderProfileSheet();
   try {
     await ensureSupabaseOwnerSession();
+    if (version !== authStateVersion) return;
     storePendingExtensionConnectIntent(request);
     const result = await client.auth.updateUser({ email }, { emailRedirectTo: getRecoverableAuthRedirectUrl() });
+    if (version !== authStateVersion) return;
     if (result.error) throw result.error;
     recoverableAuthState.status = window.t("share.profile.email.sent");
     showToast(window.t("share.profile.email.sent.toast"));
     await refreshRecoverableAuthSession();
   } catch (error) {
+    if (version !== authStateVersion) return;
     extensionConnectState = {
       ...extensionConnectState,
       status: "identity_required",
       error: getRecoverableAuthSendErrorMessage(error),
     };
   } finally {
+    if (version !== authStateVersion) return;
     recoverableAuthState.upgradeSending = false;
     renderProfileSheet();
     renderExtensionConnectCard();
@@ -1881,6 +2035,7 @@ async function submitExtensionConnectIdentityForm(event) {
 }
 
 async function connectBackpackerExtension() {
+  const version = authStateVersion;
   const request = extensionConnectState.request;
   const core = getExtensionConnectUiCore();
   if (!request || !core?.buildCredentialBridgeMessage || !core?.normalizeExtensionId) return;
@@ -1889,6 +2044,7 @@ async function connectBackpackerExtension() {
   try {
     const officialExtensionId = core.normalizeExtensionId(request.extensionId, window.location.href);
     const identityState = await requireRecoverableIdentityForExtensionConnect(request);
+    if (version !== authStateVersion) return;
     if (identityState.identityRequired) {
       extensionConnectState = { ...extensionConnectState, status: "identity_required", error: "" };
       renderExtensionConnectCard();
@@ -1902,12 +2058,14 @@ async function connectBackpackerExtension() {
       connection: payload.connection,
     });
     await sendCredentialToExtension(officialExtensionId, message);
+    if (version !== authStateVersion) return;
     extensionConnectState = { ...extensionConnectState, status: "connected", error: "" };
     if (core.stripExtensionConnectParams && window.history?.replaceState) {
       window.history.replaceState({}, document.title, core.stripExtensionConnectParams(window.location.href));
     }
     showToast(window.t("extension.connect.toast.connected"));
   } catch (error) {
+    if (version !== authStateVersion) return;
     extensionConnectState = { ...extensionConnectState, ...getExtensionConnectRuntimeErrorState(error) };
   }
   renderExtensionConnectCard();
@@ -1939,6 +2097,7 @@ function normalizeIdeasRows(rows) {
 }
 
 async function loadTravelIdeas({ silent = false } = {}) {
+  const version = authStateVersion;
   const client = getSupabaseClient();
   const api = getTravelIdeasClientApi();
   if (!client || !api) {
@@ -1955,10 +2114,12 @@ async function loadTravelIdeas({ silent = false } = {}) {
   renderIdeasScreen();
   try {
     await getCurrentSupabaseUserForIdeas(client);
+    if (version !== authStateVersion) return;
     const [collections, ideas] = await Promise.all([
       api.fetchTravelIdeaCollections(client),
       api.fetchInboxTravelIdeas(client),
     ]);
+    if (version !== authStateVersion) return;
     const nextCollections = normalizeIdeasRows(collections);
     const nextIdeas = normalizeIdeasRows(ideas);
     const activeCollectionId = getIdeaCollectionIdFromKey(ideasState.activeCollectionKey);
@@ -1973,6 +2134,7 @@ async function loadTravelIdeas({ silent = false } = {}) {
       loading: false,
     };
   } catch (error) {
+    if (version !== authStateVersion) return;
     ideasState = {
       ...ideasState,
       error: getTravelIdeasErrorCopy(error),
@@ -2142,9 +2304,14 @@ function renderIdeaFormSelects(selectedCollectionKey = "ungrouped", selectedType
     ...ideasState.collections.map((collection) => [`collection:${collection.id}`, collection.title || window.t("ideas.collection.fallback")]),
   ].map(([key, label]) => `<option value="${escapeAttr(key)}">${escapeHtml(label)}</option>`).join("");
   form.elements.collectionKey.value = selectedCollectionKey || "ungrouped";
+  // Keep a stored currency outside the selectable list (e.g. GBP from the Extension)
+  // so saving the form does not silently erase it.
+  const currencies = getSupportedCurrencies();
+  const storedCurrency = getTravelIdeaCore()?.normalizeTravelIdeaIsoCurrency?.(selectedCurrency) || "";
+  if (storedCurrency && !currencies.includes(storedCurrency)) currencies.push(storedCurrency);
   form.elements.priceCurrency.innerHTML = [
     ["", "—"],
-    ...getSupportedCurrencies().map((currency) => [currency, currency]),
+    ...currencies.map((currency) => [currency, currency]),
   ].map(([key, label]) => `<option value="${escapeAttr(key)}">${escapeHtml(label)}</option>`).join("");
   form.elements.priceCurrency.value = selectedCurrency || "";
 }
@@ -2192,6 +2359,7 @@ function readIdeaFormInput(form) {
 }
 
 async function submitIdeaForm(event) {
+  const version = authStateVersion;
   event.preventDefault();
   const form = event.currentTarget;
   if (ideasState.saving) return;
@@ -2222,16 +2390,19 @@ async function submitIdeaForm(event) {
         return;
       }
       saved = await api.updateTravelIdea(client, editingId, patch);
+      if (version !== authStateVersion) return;
       ideasState.ideas = ideasState.ideas.map((idea) => idea.id === editingId ? { ...idea, ...saved } : idea);
       showToast(window.t("ideas.toast.saved"));
     } else {
       const user = await getCurrentSupabaseUserForIdeas(client);
+      if (version !== authStateVersion) return;
       const payload = core.buildTravelIdeaInsertPayload({ ...input, source: "manual", status: "inbox" }, user.id);
       if (!payload) {
         $("#ideaFormError").textContent = window.t("ideas.form.validation.title");
         return;
       }
       saved = await api.insertTravelIdea(client, payload);
+      if (version !== authStateVersion) return;
       ideasState.ideas = [saved, ...ideasState.ideas];
       ideasState.activeCollectionKey = getIdeaCollectionKey(saved.collection_id);
       trackEvent("idea_saved", {
@@ -2244,8 +2415,10 @@ async function submitIdeaForm(event) {
     renderIdeasScreen();
     scrollIdeasScreenToTopAfterSave();
   } catch (error) {
+    if (version !== authStateVersion) return;
     $("#ideaFormError").textContent = getTravelIdeasErrorCopy(error);
   } finally {
+    if (version !== authStateVersion) return;
     ideasState.saving = false;
     $("#ideaSaveButton").disabled = false;
     $("#ideaAddToTripButton").disabled = false;
@@ -2254,6 +2427,7 @@ async function submitIdeaForm(event) {
 }
 
 async function archiveCurrentIdea() {
+  const version = authStateVersion;
   const ideaId = $("#ideaForm")?.elements.id.value || ideasState.editingIdeaId;
   if (!ideaId || ideasState.saving) return;
   const client = getSupabaseClient();
@@ -2265,13 +2439,16 @@ async function archiveCurrentIdea() {
   $("#ideaArchiveButton").disabled = true;
   try {
     const archived = await api.archiveTravelIdea(client, ideaId);
+    if (version !== authStateVersion) return;
     ideasState.ideas = ideasState.ideas.map((idea) => idea.id === ideaId ? { ...idea, ...archived, status: "archived" } : idea);
     closeSheet("ideaSheet");
     renderIdeasScreen();
     showToast(window.t("ideas.toast.archived"));
   } catch (error) {
+    if (version !== authStateVersion) return;
     $("#ideaFormError").textContent = getTravelIdeasErrorCopy(error);
   } finally {
+    if (version !== authStateVersion) return;
     ideasState.saving = false;
     $("#ideaSaveButton").disabled = false;
     $("#ideaAddToTripButton").disabled = false;
@@ -2290,6 +2467,7 @@ function openIdeaCollectionSheet() {
 }
 
 async function submitIdeaCollectionForm(event) {
+  const version = authStateVersion;
   event.preventDefault();
   if (ideasState.saving) return;
   const form = event.currentTarget;
@@ -2305,12 +2483,14 @@ async function submitIdeaCollectionForm(event) {
   $("#ideaCollectionSaveButton").disabled = true;
   try {
     const user = await getCurrentSupabaseUserForIdeas(client);
+    if (version !== authStateVersion) return;
     const payload = core.buildTravelIdeaCollectionInsertPayload({ title: form.elements.title.value }, user.id);
     if (!payload) {
       $("#ideaCollectionFormError").textContent = window.t("ideas.collection.form.validation.title");
       return;
     }
     const collection = await api.insertTravelIdeaCollection(client, payload);
+    if (version !== authStateVersion) return;
     ideasState.collections = [...ideasState.collections, collection]
       .sort((a, b) => (Number(a.sort_order) - Number(b.sort_order)) || String(a.created_at || "").localeCompare(String(b.created_at || "")));
     ideasState.activeCollectionKey = `collection:${collection.id}`;
@@ -2322,8 +2502,10 @@ async function submitIdeaCollectionForm(event) {
     renderIdeasScreen();
     showToast(window.t("ideas.collection.toast.created"));
   } catch (error) {
+    if (version !== authStateVersion) return;
     $("#ideaCollectionFormError").textContent = getTravelIdeasErrorCopy(error);
   } finally {
+    if (version !== authStateVersion) return;
     ideasState.saving = false;
     $("#ideaCollectionSaveButton").disabled = false;
   }
@@ -2344,11 +2526,13 @@ function getDisplayNameError(value = "") {
 }
 
 async function loadMyProfile({ createSession = false } = {}) {
+  const version = authStateVersion;
   if (!isSupabaseConfigured()) return null;
   if (userProfile.loading) return userProfile.displayName ? { displayName: userProfile.displayName } : null;
   userProfile.loading = true;
   try {
     const payload = await callTripShareFunction("get_my_profile", {}, createSession ? { requireOwner: true } : { useExistingSession: true });
+    if (version !== authStateVersion) return null;
     userProfile = {
       loaded: true,
       loading: false,
@@ -2359,6 +2543,7 @@ async function loadMyProfile({ createSession = false } = {}) {
     renderShareRoleBanner();
     return payload.profile || null;
   } catch {
+    if (version !== authStateVersion) return null;
     userProfile = { ...userProfile, loaded: false, loading: false, error: window.t("share.profile.loaded.error") };
     renderHomeProfile();
     return null;
@@ -2366,10 +2551,12 @@ async function loadMyProfile({ createSession = false } = {}) {
 }
 
 async function saveMyProfile(displayName) {
+  const version = authStateVersion;
   const normalized = normalizeDisplayName(displayName);
   const error = getDisplayNameError(normalized);
   if (error) throw new Error(error);
   const payload = await callTripShareFunction("upsert_my_profile", { displayName: normalized }, { requireOwner: true });
+  assertCurrentAuthState(version);
   userProfile = {
     loaded: true,
     loading: false,
@@ -2490,6 +2677,7 @@ function getRecoverableAuthSendErrorMessage(error, { login = false } = {}) {
 }
 
 async function submitRecoverableAuthUpgradeForm(event) {
+  const version = authStateVersion;
   event.preventDefault();
   if (recoverableAuthState.upgradeSending) return;
   const { email, error } = getRecoverableAuthEmailFromInput("#recoverableAuthEmailInput");
@@ -2513,6 +2701,7 @@ async function submitRecoverableAuthUpgradeForm(event) {
   try {
     await ensureSupabaseOwnerSession();
     const currentUser = await refreshRecoverableAuthSession();
+    if (version !== authStateVersion) return;
     const pendingGroupIntent = readPendingGroupTripIntent();
     if (pendingGroupIntent?.authFlow === "upgrade" && pendingGroupIntent.expectedUserId !== currentUser?.id) {
       clearPendingGroupTripIntent();
@@ -2521,19 +2710,23 @@ async function submitRecoverableAuthUpgradeForm(event) {
       return;
     }
     const result = await client.auth.updateUser({ email }, { emailRedirectTo: getRecoverableAuthRedirectUrl() });
+    if (version !== authStateVersion) return;
     if (result.error) throw result.error;
     recoverableAuthState.status = window.t("share.profile.email.sent");
     showToast(window.t("share.profile.email.sent.toast"));
     await refreshRecoverableAuthSession();
   } catch (error) {
+    if (version !== authStateVersion) return;
     recoverableAuthState.error = getRecoverableAuthSendErrorMessage(error);
   } finally {
+    if (version !== authStateVersion) return;
     recoverableAuthState.upgradeSending = false;
     renderProfileSheet();
   }
 }
 
 async function submitRecoverableAuthLoginForm(event) {
+  const version = authStateVersion;
   event.preventDefault();
   if (recoverableAuthState.loginSending) return;
   const { email, error } = getRecoverableAuthEmailFromInput("#recoverableLoginEmailInput");
@@ -2563,18 +2756,22 @@ async function submitRecoverableAuthLoginForm(event) {
         shouldCreateUser: false,
       },
     });
+    if (version !== authStateVersion) return;
     if (result.error) throw result.error;
     recoverableAuthState.status = window.t("share.profile.email.sent");
     showToast(window.t("share.profile.email.sent.toast"));
   } catch (error) {
+    if (version !== authStateVersion) return;
     recoverableAuthState.error = getRecoverableAuthSendErrorMessage(error, { login: true });
   } finally {
+    if (version !== authStateVersion) return;
     recoverableAuthState.loginSending = false;
     renderProfileSheet();
   }
 }
 
 async function requireProfileForSharedAction(entryPoint, action) {
+  const version = authStateVersion;
   if (!isSupabaseConfigured()) {
     await action();
     return;
@@ -2584,6 +2781,7 @@ async function requireProfileForSharedAction(entryPoint, action) {
     return;
   }
   const profile = await loadMyProfile({ createSession: true });
+  if (version !== authStateVersion) return;
   if (profile?.displayName) {
     await action();
     return;
@@ -2592,6 +2790,7 @@ async function requireProfileForSharedAction(entryPoint, action) {
 }
 
 async function submitProfileForm(event) {
+  const version = authStateVersion;
   event.preventDefault();
   if (profileSaving) return;
   const input = $("#profileDisplayNameInput");
@@ -2607,6 +2806,7 @@ async function submitProfileForm(event) {
   renderProfileSheet();
   try {
     await saveMyProfile(value);
+    if (version !== authStateVersion) return;
     closeSheet("profileSheet");
     showToast(window.t("share.profile.saved"));
     const action = pendingProfileAction?.action;
@@ -3963,6 +4163,7 @@ function renderReceivedTrips() {
 }
 
 async function refreshReceivedTrips({ silent = true } = {}) {
+  const version = authStateVersion;
   if (!isSupabaseConfigured()) {
     receivedShareCards = [];
     receivedSharesLoaded = true;
@@ -3970,6 +4171,7 @@ async function refreshReceivedTrips({ silent = true } = {}) {
     return;
   }
   const token = await getExistingSupabaseAccessToken().catch(() => "");
+  if (version !== authStateVersion) return;
   if (!token) {
     receivedShareCards = [];
     receivedSharesLoaded = true;
@@ -3980,6 +4182,7 @@ async function refreshReceivedTrips({ silent = true } = {}) {
   renderReceivedTrips();
   try {
     const payload = await callTripShareFunction("list_received", {}, { useExistingSession: true });
+    if (version !== authStateVersion) return;
     receivedShareCards = Array.isArray(payload.trips) ? payload.trips : [];
     receivedSharesLoaded = true;
   } catch {
@@ -4103,27 +4306,32 @@ async function joinGroupTripByShareId(shareId) {
 }
 
 async function startGroupTripJoin() {
+  const version = authStateVersion;
   if (!isReadOnlyGroupTrip() || !readOnlyShare?.shareId || readOnlyShare.isJoined) return;
   try {
     await ensureSupabaseOwnerSession();
     const user = await refreshRecoverableAuthSession();
+    if (version !== authStateVersion) return;
     const intent = createPendingGroupTripIntent("join", user);
     if (!getGroupTripCore()?.hasDurableEmailIdentity(user)) {
       openGroupTripIdentitySheet(intent);
       return;
     }
     const profile = await loadMyProfile({ createSession: false });
+    if (version !== authStateVersion) return;
     if (!profile?.displayName) {
       openGroupTripIdentitySheet(intent, { profileRequired: true });
       return;
     }
     await joinGroupTripByShareId(readOnlyShare.shareId);
   } catch {
+    if (version !== authStateVersion) return;
     showToast(window.t(isSupabaseConfigured() ? "share.group.join.error" : "share.link.supabase.missing"));
   }
 }
 
 async function refreshGroupTripContext() {
+  const version = authStateVersion;
   const record = getTripShareRecord();
   if (isReadOnlyMode() || !isCurrentGroupTrip() || !record?.shareId || record.revoked) {
     groupTripContext = { loading: false, participants: [] };
@@ -4134,11 +4342,13 @@ async function refreshGroupTripContext() {
   renderGroupTripShareSurface();
   try {
     const payload = await callTripShareFunction("get_group_context", { tripId: state.trip.id }, { requireOwner: true });
+    if (version !== authStateVersion) return;
     groupTripContext = {
       loading: false,
       participants: Array.isArray(payload.participants) ? payload.participants : [],
     };
   } catch {
+    if (version !== authStateVersion) return;
     groupTripContext = { loading: false, participants: [] };
   }
   renderGroupTripShareSurface();
@@ -4214,6 +4424,7 @@ function renderOrganizerGroupMaterials() {
 }
 
 async function loadOrganizerGroupMaterials() {
+  const version = authStateVersion;
   if (!isCurrentGroupTrip() || isReadOnlyMode() || organizerGroupMaterialsState.loading) return;
   if (organizerGroupMaterialsState.loadedTripId === state.trip.id) {
     renderOrganizerGroupMaterials();
@@ -4223,7 +4434,9 @@ async function loadOrganizerGroupMaterials() {
   renderOrganizerGroupMaterials();
   try {
     await ensureSupabaseOwnerSession();
+    if (version !== authStateVersion) return;
     const rows = await getTripItemAttachmentsClientApi().listTripItemAttachments(getSupabaseClient(), getOrganizerMaterialScope());
+    if (version !== authStateVersion) return;
     const sharedIds = new Set(getOrganizerGroupMaterials().map((entry) => entry.id));
     organizerGroupMaterialsState = {
       ...organizerGroupMaterialsState,
@@ -4232,6 +4445,7 @@ async function loadOrganizerGroupMaterials() {
       loading: false,
     };
   } catch (error) {
+    if (version !== authStateVersion) return;
     organizerGroupMaterialsState = {
       ...organizerGroupMaterialsState,
       error: getLocalizedTripItemAttachmentErrorMessage(error, "share.organizer.materials.error.list"),
@@ -4268,16 +4482,19 @@ async function saveOrganizerProgramInfo(event) {
 }
 
 async function uploadOrganizerGroupMaterial(file) {
+  const version = authStateVersion;
   if (!file || organizerGroupMaterialsState.uploading || isReadOnlyMode() || !isCurrentGroupTrip()) return;
   organizerGroupMaterialsState = { ...organizerGroupMaterialsState, error: "", uploading: true };
   renderOrganizerGroupMaterials();
   try {
     await ensureSupabaseOwnerSession();
+    if (version !== authStateVersion) return;
     const attachment = await getTripItemAttachmentsClientApi().uploadTripItemAttachment(
       getSupabaseClient(),
       getOrganizerMaterialScope(),
       file,
     );
+    if (version !== authStateVersion) return;
     const descriptor = getGroupTripCore().normalizeGroupMaterialDescriptor(attachment);
     if (!descriptor) throw new Error("attachment_descriptor_invalid");
     state.trip.groupMaterials = getGroupTripCore().normalizeGroupMaterials([...getOrganizerGroupMaterials(), descriptor]);
@@ -4291,17 +4508,20 @@ async function uploadOrganizerGroupMaterial(file) {
       if (getActiveTripShareMode() === "organizer") await updatePublishedTripShare({ includeBudget: false });
       showToast(window.t("share.organizer.materials.added"));
     } catch {
+      if (version !== authStateVersion) return;
       organizerGroupMaterialsState = {
         ...organizerGroupMaterialsState,
         error: window.t("share.organizer.materials.sync.error"),
       };
     }
   } catch (error) {
+    if (version !== authStateVersion) return;
     organizerGroupMaterialsState = {
       ...organizerGroupMaterialsState,
       error: getLocalizedTripItemAttachmentErrorMessage(error, "share.organizer.materials.error.add"),
     };
   } finally {
+    if (version !== authStateVersion) return;
     organizerGroupMaterialsState = { ...organizerGroupMaterialsState, uploading: false };
     renderOrganizerGroupMaterials();
   }
@@ -4631,15 +4851,18 @@ async function startGroupTripPublish() {
 }
 
 async function activateOrganizerMode({ switchFrom = "" } = {}) {
+  const version = authStateVersion;
   try {
     await ensureSupabaseOwnerSession();
     const user = await refreshRecoverableAuthSession();
+    if (version !== authStateVersion) return;
     const intent = createPendingGroupTripIntent("publish_group", user, { switchFrom });
     if (!getGroupTripCore()?.hasDurableEmailIdentity(user)) {
       openGroupTripIdentitySheet(intent);
       return;
     }
     const profile = await loadMyProfile({ createSession: false });
+    if (version !== authStateVersion) return;
     if (!profile?.displayName) {
       openGroupTripIdentitySheet(intent, { profileRequired: true });
       return;
@@ -4650,11 +4873,13 @@ async function activateOrganizerMode({ switchFrom = "" } = {}) {
       await completeGroupTripPublish(state.trip.id);
     }
   } catch {
+    if (version !== authStateVersion) return;
     showToast(window.t(isSupabaseConfigured() ? "share.group.publish.error" : "share.link.supabase.missing"));
   }
 }
 
 async function resumePendingGroupTripIntent(user = null) {
+  const version = authStateVersion;
   const intent = readPendingGroupTripIntent();
   if (!intent) return { handled: false, status: "no_intent" };
   if (intent.action === "publish_group" && state?.trip?.id !== intent.tripId) {
@@ -4662,6 +4887,7 @@ async function resumePendingGroupTripIntent(user = null) {
     if (pendingTrip) openTrip(intent.tripId, { refreshProposals: false });
   }
   const authUser = user || await refreshRecoverableAuthSession();
+  if (version !== authStateVersion) return { handled: false, status: "signed_out" };
   const decision = getGroupTripCore()?.getPendingGroupTripResumeDecision(intent, authUser);
   if (decision?.status === "uid_mismatch") {
     clearPendingGroupTripIntent();
@@ -4673,6 +4899,7 @@ async function resumePendingGroupTripIntent(user = null) {
     return { handled: true, status: decision?.status || "identity_required" };
   }
   const profile = await loadMyProfile({ createSession: false });
+  if (version !== authStateVersion) return { handled: false, status: "signed_out" };
   if (!profile?.displayName) {
     openGroupTripIdentitySheet(intent, { profileRequired: true });
     return { handled: true, status: "profile_required" };
@@ -4691,9 +4918,11 @@ async function resumePendingGroupTripIntent(user = null) {
 }
 
 async function openReceivedTrip(shareId) {
+  const version = authStateVersion;
   if (!shareId) return;
   try {
     const payload = await callTripShareFunction("read_received", { shareId }, { requireOwner: true });
+    if (version !== authStateVersion) return;
     const nextState = normalizeState(payload.state);
     readOnlyShare = {
       shareId: payload.shareId || shareId,
@@ -4724,6 +4953,7 @@ async function openReceivedTrip(shareId) {
       access_mode: "view",
     });
   } catch (error) {
+    if (version !== authStateVersion) return;
     if (error.status === 410) {
       showToast(window.t("home.received.access.closed"));
       await refreshReceivedTrips();
@@ -4756,9 +4986,12 @@ function getOwnProposalForItem(itemId) {
 }
 
 async function refreshShareProposalContext() {
+  const version = authStateVersion;
   if (!readOnlyShare?.shareId || readOnlyShare.invalid) return null;
   try {
-    shareProposalContext = await callTripShareFunction("get_share_context", { shareId: readOnlyShare.shareId }, { requireOwner: true });
+    const payload = await callTripShareFunction("get_share_context", { shareId: readOnlyShare.shareId }, { requireOwner: true });
+    if (version !== authStateVersion) return null;
+    shareProposalContext = payload;
     readOnlyShare.isOwner = Boolean(shareProposalContext.isOwner ?? readOnlyShare.isOwner);
     readOnlyShare.isAuthor = Boolean(shareProposalContext.isAuthor ?? readOnlyShare.isAuthor);
     readOnlyShare.authorDisplayName = shareProposalContext.authorDisplayName || readOnlyShare.authorDisplayName || "";
@@ -4770,6 +5003,7 @@ async function refreshShareProposalContext() {
     renderShareRoleBanner();
     return shareProposalContext;
   } catch {
+    if (version !== authStateVersion) return null;
     shareProposalContext = null;
     return null;
   }
@@ -5092,9 +5326,11 @@ function resetItemProposalDraft() {
 }
 
 async function refreshItemProposalContext() {
+  const version = authStateVersion;
   if (!readOnlyShare?.shareId || readOnlyShare.invalid || readOnlyShare.isOwner || readOnlyShare.isAuthor) return null;
   try {
     const payload = await callTripShareFunction("get_item_proposal_context", { shareId: readOnlyShare.shareId }, { requireOwner: true });
+    if (version !== authStateVersion) return null;
     readOnlyShare.currentUserDisplayName = payload.currentUserDisplayName || readOnlyShare.currentUserDisplayName || "";
     readOnlyShare.profileRequired = Boolean(payload.profileRequired);
     if (payload.currentUserDisplayName) {
@@ -5288,6 +5524,7 @@ function renderShareRoleBanner() {
 }
 
 async function refreshAuthorExpenseProposals() {
+  const version = authStateVersion;
   if (isReadOnlyMode() || isCurrentGroupTrip() || !state?.trip?.id) {
     authorExpenseProposals = [];
     authorItemProposals = [];
@@ -5298,6 +5535,7 @@ async function refreshAuthorExpenseProposals() {
     callTripShareFunction("list_expense_proposals", { tripId: state.trip.id }, { requireOwner: true }),
     callTripShareFunction("list_item_proposals", { tripId: state.trip.id }, { requireOwner: true }),
   ]);
+  if (version !== authStateVersion) return;
   authorExpenseProposals = expenseResult.status === "fulfilled" ? (expenseResult.value.proposals || []) : [];
   authorItemProposals = itemResult.status === "fulfilled" ? (itemResult.value.proposals || []) : [];
   renderProposalInbox();
@@ -5863,6 +6101,7 @@ function applyInitialDraftToItemForm(initialDraft = {}) {
 }
 
 async function previewLinkIntakeFromForm() {
+  const version = authStateVersion;
   if (linkIntakeState.isLoading || isReadOnlyMode()) return;
   const form = $("#itemForm");
   const url = normalizeExternalUrl(form?.elements.link.value || "");
@@ -5893,6 +6132,7 @@ async function previewLinkIntakeFromForm() {
     };
     renderLinkIntakePanel();
   } catch (error) {
+    if (version !== authStateVersion) return;
     const reason = error.message === "supabase_not_configured"
       ? window.t("item.editor.link.error.unavailable")
       : error.message === "invalid_url"
@@ -6150,6 +6390,7 @@ async function uploadCurrentTripItemAttachment(file) {
 }
 
 async function uploadPendingTripItemAttachments(item) {
+  const version = authStateVersion;
   if (!item?.id || tripItemAttachmentsState.pendingFiles.length === 0) return;
   const pendingFiles = [...tripItemAttachmentsState.pendingFiles];
   tripItemAttachmentsState = {
@@ -6164,6 +6405,7 @@ async function uploadPendingTripItemAttachments(item) {
   renderTripItemAttachments();
   try {
     await ensureSupabaseOwnerSession();
+    if (version !== authStateVersion) return;
     for (const pending of pendingFiles) {
       tripItemAttachmentsState = { ...tripItemAttachmentsState, uploadingName: pending.fileName };
       renderTripItemAttachments();
@@ -6172,6 +6414,7 @@ async function uploadPendingTripItemAttachments(item) {
         { tripId: state.trip.id, tripItemId: item.id },
         pending.file,
       );
+      if (version !== authStateVersion) return;
       tripItemAttachmentsState = {
         ...tripItemAttachmentsState,
         attachments: [...tripItemAttachmentsState.attachments, attachment],
@@ -6179,6 +6422,7 @@ async function uploadPendingTripItemAttachments(item) {
       };
     }
   } catch (error) {
+    if (version !== authStateVersion) return;
     tripItemAttachmentsState = {
       ...tripItemAttachmentsState,
       error: window.t("item.editor.attachments.saved.error", {
@@ -6187,6 +6431,7 @@ async function uploadPendingTripItemAttachments(item) {
     };
     throw error;
   } finally {
+    if (version !== authStateVersion) return;
     tripItemAttachmentsState = { ...tripItemAttachmentsState, uploading: false, uploadingName: "" };
     renderTripItemAttachments();
   }
@@ -9897,6 +10142,7 @@ function startTripDraftDocumentsMode() {
 }
 
 async function parseBookingPackDocuments() {
+  const version = authStateVersion;
   if (tripDraftAiState.isBusy) return;
   const entries = tripDraftAiState.bookingPackFiles.filter((entry) => entry.file);
   if (!entries.length) {
@@ -9918,6 +10164,7 @@ async function parseBookingPackDocuments() {
         dataUrl: await blobToDataUrl(entry.file),
       });
     }
+    if (version !== authStateVersion) return;
     const payload = await callTripDraftAiFunction("parse_documents", {
       files,
       comment,
@@ -9935,6 +10182,7 @@ async function parseBookingPackDocuments() {
     renderTripDraftAiSheet();
     trackEvent("trip_draft_ai_generation_completed", { mode: "documents", result: "success" });
   } catch (error) {
+    if (version !== authStateVersion) return;
     tripDraftAiState = { ...tripDraftAiState, isBusy: false };
     const message = {
       documents_too_large: tripDraftT("documents.error.pack.large"),
@@ -10143,6 +10391,7 @@ function getTripDraftRecordingOptions() {
 }
 
 async function toggleTripDraftRecording() {
+  const version = authStateVersion;
   if (!TRIP_DRAFT_AI_ENABLED) return;
   if (tripDraftAiState.isRecording && tripDraftAiState.mediaRecorder) {
     tripDraftAiState.mediaRecorder.stop();
@@ -10154,19 +10403,25 @@ async function toggleTripDraftRecording() {
   }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (version !== authStateVersion) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
     const recorder = new MediaRecorder(stream, getTripDraftRecordingOptions());
     tripDraftAiState = { ...tripDraftAiState, mediaRecorder: recorder, chunks: [], isRecording: true };
     recorder.addEventListener("dataavailable", (event) => {
-      if (event.data?.size) tripDraftAiState.chunks.push(event.data);
+      if (version === authStateVersion && event.data?.size) tripDraftAiState.chunks.push(event.data);
     });
     recorder.addEventListener("stop", async () => {
       stream.getTracks().forEach((track) => track.stop());
+      if (version !== authStateVersion) return;
       tripDraftAiState = { ...tripDraftAiState, isRecording: false, mediaRecorder: null, isBusy: true };
       renderTripDraftAiSheet();
       setTripDraftAiStatus(tripDraftT("voice.transcribing"));
       try {
         const blob = new Blob(tripDraftAiState.chunks, { type: recorder.mimeType || "audio/webm" });
         const audioDataUrl = await blobToDataUrl(blob);
+        if (version !== authStateVersion) return;
         const payload = await callTripDraftAiFunction("transcribe", { audioDataUrl });
         const input = $("#tripDraftTextInput");
         if (input) input.value = [input.value.trim(), payload.text || ""].filter(Boolean).join(input.value.trim() ? "\n\n" : "");
@@ -10176,12 +10431,14 @@ async function toggleTripDraftRecording() {
         saveTripDraftPending();
         trackEvent("trip_draft_voice_transcribed", { ok: true });
       } catch (error) {
+        if (version !== authStateVersion) return;
         const message = error.message === "invalid_audio"
           ? tripDraftT("voice.invalid")
           : tripDraftT("voice.error");
         setTripDraftAiStatus(message, true);
         trackEvent("trip_draft_voice_transcribed", { ok: false, error_reason_bucket: error.message === "invalid_audio" ? "invalid_audio" : "unknown" });
       } finally {
+        if (version !== authStateVersion) return;
         tripDraftAiState = { ...tripDraftAiState, isBusy: false, chunks: [] };
         renderTripDraftAiSheet();
       }
@@ -10190,6 +10447,7 @@ async function toggleTripDraftRecording() {
     setTripDraftAiStatus(tripDraftT("voice.listening"));
     renderTripDraftAiSheet();
   } catch {
+    if (version !== authStateVersion) return;
     setTripDraftAiStatus(tripDraftT("voice.microphone.error"), true);
   }
 }
@@ -10627,6 +10885,7 @@ function handleTripDraftPreviewAction(event) {
 }
 
 async function parseTripDraftText() {
+  const version = authStateVersion;
   if (!TRIP_DRAFT_AI_ENABLED) return;
   if (tripDraftAiState.isBusy) return;
   const input = $("#tripDraftTextInput");
@@ -10660,6 +10919,7 @@ async function parseTripDraftText() {
     renderTripDraftAiSheet();
     trackEvent("trip_draft_ai_generation_completed", { mode: tripDraftAiState.inputMode === "voice" ? "voice" : "text", result: "success" });
   } catch (error) {
+    if (version !== authStateVersion) return;
     tripDraftAiState = { ...tripDraftAiState, isBusy: false };
     setTripDraftAiStatus(error.message === "supabase_not_configured" ? tripDraftT("input.error.unavailable") : tripDraftT("input.error.parse"), true);
     renderTripDraftAiSheet();

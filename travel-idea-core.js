@@ -73,6 +73,14 @@
     return SUPPORTED_CURRENCIES.includes(normalized) ? normalized : null;
   }
 
+  // A stored idea may carry any ISO-style code the ingestion contract accepts (e.g. GBP
+  // from the Extension). Reading, editing and copying keep it instead of dropping it;
+  // new ideas and trips still choose from SUPPORTED_CURRENCIES.
+  function normalizeTravelIdeaIsoCurrency(value = "") {
+    const normalized = cleanTravelIdeaText(value, 12).toUpperCase();
+    return /^[A-Z]{3}$/.test(normalized) ? normalized : null;
+  }
+
   function normalizeTravelIdeaCollectionId(value = "") {
     const text = cleanTravelIdeaText(value, 80).toLowerCase();
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(text)
@@ -217,7 +225,7 @@
       hasLink: Boolean(normalizeTravelIdeaUrl(row.url)),
       locationText: optionalText(row.location_text ?? row.locationText, 240),
       priceAmount: normalizeTravelIdeaPriceAmount(row.price_amount ?? row.priceAmount),
-      priceCurrency: normalizeTravelIdeaCurrency(row.price_currency ?? row.priceCurrency),
+      priceCurrency: normalizeTravelIdeaIsoCurrency(row.price_currency ?? row.priceCurrency),
       semanticType,
     };
   }
@@ -257,7 +265,7 @@
       notes: optionalText(input.notes, 1000),
       location_text: optionalText(input.locationText ?? input.location_text, 240),
       price_amount: normalizeTravelIdeaPriceAmount(input.priceAmount ?? input.price_amount),
-      price_currency: normalizeTravelIdeaCurrency(input.priceCurrency ?? input.price_currency),
+      price_currency: normalizeTravelIdeaIsoCurrency(input.priceCurrency ?? input.price_currency),
       semantic_type: normalizeTravelIdeaType(input.semanticType ?? input.semantic_type ?? input.type),
     };
   }
@@ -266,7 +274,7 @@
     const title = cleanTravelIdeaText(idea.title, 160);
     const notes = optionalText(idea.notes, 1000) || optionalText(idea.excerpt, 700) || "";
     const priceAmount = normalizeTravelIdeaPriceAmount(idea.price_amount ?? idea.priceAmount);
-    const ideaCurrency = normalizeTravelIdeaCurrency(idea.price_currency ?? idea.priceCurrency);
+    const ideaCurrency = normalizeTravelIdeaIsoCurrency(idea.price_currency ?? idea.priceCurrency);
     const tripCurrency = normalizeTravelIdeaCurrency(targetTripCurrency);
     let price = 0;
     let priceWarning = "";
@@ -309,6 +317,7 @@
     mapTravelCandidateToTravelIdea,
     normalizeTravelIdeaCollectionId,
     normalizeTravelIdeaCurrency,
+    normalizeTravelIdeaIsoCurrency,
     normalizeTravelIdeaPriceAmount,
     normalizeTravelIdeaSource,
     normalizeTravelIdeaSortOrder,
