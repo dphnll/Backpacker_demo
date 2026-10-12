@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "Backpacker",
-  "short_name": "Backpacker",
-  "description": "План самостоятельной поездки: все события, бюджет, ссылки и идеи в одном месте.",
+  "name": "Clavelo",
+  "short_name": "Clavelo",
+  "description": "Clavelo — планы, бронирования, места, документы и расходы для самостоятельных поездок и актуальных программ для групп.",
   "lang": "ru",
   "start_url": "./index.html",
   "scope": "./",
@@ -17,31 +17,37 @@
   ],
   "icons": [
     {
-      "src": "./icons/backpacker-192.png?v=logo-beige-20260808",
+      "src": "./icons/backpacker-192.png?v=clavelo-20261011",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./icons/backpacker-512.png?v=logo-beige-20260808",
+      "src": "./icons/backpacker-512.png?v=clavelo-20261011",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./icons/backpacker-maskable-512.png?v=logo-beige-20260808",
+      "src": "./icons/backpacker-maskable-192.png?v=clavelo-20261011",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "./icons/backpacker-maskable-512.png?v=clavelo-20261011",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "./icons/apple-touch-icon.png?v=logo-beige-20260808",
+      "src": "./icons/apple-touch-icon.png?v=clavelo-20261011",
       "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./icons/backpacker-logo.svg?v=logo-beige-20260808",
+      "src": "./icons/backpacker-logo.svg?v=clavelo-20261011",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"

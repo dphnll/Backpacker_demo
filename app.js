@@ -42,8 +42,8 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.92";
-const APP_RELEASE_SUMMARY = "Backpacker теперь доступен на семи языках интерфейса: русском, английском, французском, грузинском, немецком, армянском и упрощённом китайском.";
+const APP_VERSION = "1.1.2.93";
+const APP_RELEASE_SUMMARY = "Clavelo доступен на семи языках интерфейса: русском, английском, французском, грузинском, немецком, армянском и упрощённом китайском.";
 const CHROME_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/backpacker-travel-capture/okpfmpplfciccfddgibkcoliemfimifc";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
@@ -3950,7 +3950,7 @@ function shouldShowDonationPrompt() {
 }
 
 function getDonationPromptCopy(source = "manual") {
-  return "Если Backpacker уже помогает вам планировать поездки и вы захотите поддержать развитие приложения - будем очень благодарны ❤️";
+  return "Если Clavelo уже помогает вам планировать поездки и вы захотите поддержать развитие приложения - будем очень благодарны ❤️";
 }
 
 function openDonationSheet(source = "manual") {
@@ -5547,6 +5547,7 @@ async function syncCurrentTripShareBeforeAccept() {
   const includeBudget = record?.includeBudget !== false;
   await callTripShareFunction("update", {
     tripId: state.trip.id,
+    token: record?.token || "",
     includeBudget,
     schemaVersion: TRIP_SHARE_SCHEMA_VERSION,
     state: buildPublishedTripState({ includeBudget }),
@@ -8014,6 +8015,7 @@ async function updatePublishedTripShare(options = {}) {
   const includeBudget = isCurrentGroupTrip() ? false : (options.includeBudget ?? (existing.includeBudget !== false));
   const payload = await callTripShareFunction("update", {
     tripId: state.trip.id,
+    token: existing.token,
     includeBudget,
     schemaVersion: TRIP_SHARE_SCHEMA_VERSION,
     state: buildPublishedTripState({ includeBudget }),
@@ -8220,7 +8222,10 @@ async function revokeTripShareLink(profileReady = false) {
     return;
   }
   try {
-    await callTripShareFunction("revoke", { tripId: state.trip.id }, { requireOwner: true });
+    await callTripShareFunction("revoke", {
+      tripId: state.trip.id,
+      token: record.token || "",
+    }, { requireOwner: true });
   } catch {
     showToast(window.t("share.link.revoke.error"));
     return;
@@ -8241,7 +8246,7 @@ async function revokeTripShareLink(profileReady = false) {
 function buildShareText(compact = false) {
   const totals = getTotals();
   const lines = [
-    `Backpacker: ${state.trip.title}`,
+    `Clavelo: ${state.trip.title}`,
     `${formatPlanDate(state.trip.startDate)}–${formatPlanDate(state.trip.endDate)} · ${state.trip.destination}`,
     "",
   ];
@@ -8620,7 +8625,7 @@ function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
 
 async function ensurePdfFontsReady() {
   if (!document.fonts?.load) return;
-  const sample = "Backpacker Русский ქართული Հայերեն 简体中文";
+  const sample = "Clavelo Русский ქართული Հայերեն 简体中文";
   await Promise.all([400, 500, 600, 700, 800, 900].map((weight) => (
     document.fonts.load(`${weight} 16px ${getPdfFontFamily()}`, sample)
   )));
@@ -8890,7 +8895,7 @@ function getTripPdfFileName() {
   const start = state.trip.startDate ? state.trip.startDate.replaceAll("-", "") : "trip";
   const end = state.trip.endDate ? state.trip.endDate.replaceAll("-", "") : "";
   const range = end && end !== start ? `${start}-${end}` : start;
-  return `backpacker-${slugifyFileName(state.trip.title)}-${range}.pdf`;
+  return `clavelo-${slugifyFileName(state.trip.title)}-${range}.pdf`;
 }
 
 function drawPdfWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines = Infinity) {
@@ -8995,7 +9000,7 @@ async function buildTripPdfBlob(options) {
     });
   }
 
-  const logoImage = await loadPdfImage("./icons/backpacker-logo-transparent.png");
+  const logoImage = await loadPdfImage("./icons/clavelo-lockup-ink.svg?v=clavelo-20261011");
   const statusImages = {};
   await Promise.all(["paid", "fixed", "want", "maybe", "backup"].map(async (status) => {
     statusImages[status] = await loadPdfImage(`./assets/status-${status}.png`);
@@ -9065,19 +9070,14 @@ async function buildTripPdfBlob(options) {
     ctx.strokeStyle = "rgba(222, 216, 204, 0.8)";
     ctx.stroke();
 
-    if (logoImage) {
-      ctx.fillStyle = "rgba(255, 255, 255, 0.48)";
-      roundRect(ctx, margin + 10, y + 12, 46, 46, 8);
-      ctx.fill();
-      ctx.drawImage(logoImage, margin + 14, y + 16, 38, 38);
-    }
+    if (logoImage) ctx.drawImage(logoImage, margin + 12, y + 18, 82, 20);
     ctx.fillStyle = "#1f2423";
     ctx.font = `800 22px ${getPdfFontFamily()}`;
-    drawPdfWrappedText(ctx, state.trip.title || exportT("trip.title.fallback"), margin + 66, y + 31, contentWidth - 76, 25, 1);
+    drawPdfWrappedText(ctx, state.trip.title || exportT("trip.title.fallback"), margin + 106, y + 31, contentWidth - 116, 25, 1);
     ctx.font = `700 12px ${getPdfFontFamily()}`;
     ctx.fillStyle = "#66716f";
     const meta = `${state.trip.destination || exportT("trip.destination.missing")} · ${formatExportTripDateRange(state.trip.startDate, state.trip.endDate)} · ${formatExportTripDayCount(state.trip)}`;
-    drawPdfWrappedText(ctx, meta, margin + 66, y + 56, contentWidth - 76, 15, 1);
+    drawPdfWrappedText(ctx, meta, margin + 106, y + 56, contentWidth - 116, 15, 1);
 
     if (options.includeBudget) {
       ctx.fillStyle = "rgba(255, 253, 248, 0.78)";
@@ -9613,7 +9613,7 @@ async function shareTripPdf() {
     if (canShareFiles) {
       const file = new File([result.blob], result.fileName, { type: "application/pdf" });
       await navigator.share({
-        title: `Backpacker: ${state.trip.title}`,
+        title: `Clavelo: ${state.trip.title}`,
         text: window.t("share.pdf.description"),
         files: [file],
       });
@@ -9641,7 +9641,7 @@ async function shareTrip() {
   const text = buildShareText(true);
   const url = getCanonicalPublicAppUrl();
   const shareData = {
-    title: `Backpacker: ${state.trip.title}`,
+    title: `Clavelo: ${state.trip.title}`,
     text,
     url,
   };
@@ -9668,7 +9668,7 @@ async function shareTrip() {
 async function shareApp() {
   const url = getCanonicalAppShareUrl();
   const shareData = {
-    title: "Backpacker",
+    title: "Clavelo",
     text: window.t("share.app.copy"),
     url,
   };

@@ -303,7 +303,7 @@ a {
   display: grid;
   width: min(100%, 390px);
   min-height: 620px;
-  grid-template-rows: 26px 178px 250px 76px;
+  grid-template-rows: 72px 250px 76px;
   align-content: center;
   justify-items: center;
   justify-content: center;
@@ -312,11 +312,12 @@ a {
 }
 
 .intro-logo {
-  width: 178px;
-  height: 178px;
+  width: min(236px, calc(100vw - 72px));
+  height: auto;
+  align-self: center;
   object-fit: contain;
   filter: drop-shadow(5px 5px 0 rgba(18, 54, 61, 0.08));
-  transform: translateY(10px);
+  transform: none;
 }
 
 .intro-card .intro-title-brand {
@@ -6905,9 +6906,7 @@ h4,
   box-shadow: none;
 }
 
-/* Логотип онбординга центрируется между маркой и текстом: строка сетки
-   равна его высоте, поэтому свободное место копилось только снизу —
-   22 сверху против 66 снизу. Сдвиг выравнивает оба зазора. */
+/* Утверждённый горизонтальный lock-up уже содержит знак и wordmark. */
 .intro-logo {
-  transform: translateY(32px);
+  transform: none;
 }

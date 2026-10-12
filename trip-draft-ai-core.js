@@ -112,7 +112,7 @@
   // Russian remains the fallback contract. English is kept beside it and contract-tested
   // for the same safety rules so generated UI content follows the selected product locale.
   const TRIP_DRAFT_RULES = [
-    "Ты превращаешь свободное описание поездки в черновик Backpacker.",
+    "Ты превращаешь свободное описание поездки в черновик Clavelo.",
     "Верни только структурированный JSON по схеме.",
     "Пиши все создаваемые человекочитаемые поля по-русски: название поездки, направление, названия карточек, локации, заметки, preferencesText и вопросы.",
     "Не изменяй исходный текст пользователя. Собственные имена и дословные фрагменты источника сохраняй на исходном языке и не переводи автоматически.",
@@ -172,7 +172,7 @@
   ];
 
   const TRIP_DRAFT_RULES_EN = [
-    "Turn the traveller's free-form trip description into an editable Backpacker draft.",
+    "Turn the traveller's free-form trip description into an editable Clavelo draft.",
     "Return only structured JSON that matches the schema.",
     "Write all generated human-readable fields in English: trip title, destination, item titles, locations, notes, preferencesText, and questions.",
     "Do not alter the traveller's original source text. Preserve proper names and verbatim source excerpts in their original language; do not translate them automatically.",

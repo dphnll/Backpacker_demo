@@ -7,18 +7,27 @@
     <meta name="theme-color" content="#2f5d55" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="Backpacker" />
+    <meta name="apple-mobile-web-app-title" content="Clavelo" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="format-detection" content="telephone=no" />
-    <title>Backpacker</title>
+    <title>Clavelo</title>
+    <meta name="description" content="Plans, bookings, places, files and costs for independent trips and current group programs." />
+    <meta property="og:title" content="Clavelo — Every trip detail in place" />
+    <meta property="og:description" content="Plans, bookings, places, files and costs for independent trips and current group programs." />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Clavelo — Every trip detail in place" />
+    <meta name="twitter:description" content="Plans, bookings, places, files and costs for independent trips and current group programs." />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="icon" href="./icons/backpacker-192.png?v=logo-beige-20260808" type="image/png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png?v=logo-beige-20260808" />
+    <link rel="icon" href="./icons/clavelo-mark-simple.svg?v=clavelo-20261011" type="image/svg+xml" />
+    <link rel="icon" href="./icons/favicon-48.png?v=clavelo-20261011" sizes="48x48" type="image/png" />
+    <link rel="icon" href="./icons/favicon-32.png?v=clavelo-20261011" sizes="32x32" type="image/png" />
+    <link rel="icon" href="./icons/favicon-16.png?v=clavelo-20261011" sizes="16x16" type="image/png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png?v=clavelo-20261011" />
     <link rel="stylesheet" href="./styles.css?v=organizer-mode-20260904" />
     <script src="./analytics-config.js?v=2"></script>
   </head>
   <body>
-    <section class="app-splash" id="appSplash" aria-label="Backpacker загружается" data-i18n-aria-label="app.loading.aria">
+    <section class="app-splash" id="appSplash" aria-label="Clavelo загружается" data-i18n-aria-label="app.loading.aria">
       <div class="app-splash-tiles" aria-hidden="true">
         <span class="splash-tile splash-ticket">
           <svg viewBox="0 0 24 24"><path d="M3 12h18M4 12l6-6M4 12l6 6M14 6l6 6-6 6"></path></svg>
@@ -37,13 +46,13 @@
         </span>
       </div>
       <div class="app-splash-card">
-        <h1>HEY, BACKPACKER!</h1>
-        <img src="./icons/backpacker-logo-transparent.png" alt="" aria-hidden="true" />
-        <p id="appSplashStatus" data-i18n="app.loading.status">Собираем рюкзак...</p>
+        <h1>Clavelo</h1>
+        <img src="./icons/clavelo-mark.svg?v=clavelo-20261011" alt="" aria-hidden="true" />
+        <p id="appSplashStatus" data-i18n="app.loading.status">Загружаем Clavelo…</p>
       </div>
     </section>
 
-    <section class="intro-screen" id="introScreen" aria-label="Добро пожаловать в Backpacker" data-i18n-aria-label="intro.screen.aria">
+    <section class="intro-screen" id="introScreen" aria-label="Добро пожаловать в Clavelo" data-i18n-aria-label="intro.screen.aria">
       <div class="intro-floaters" aria-hidden="true">
         <span class="intro-floater floater-ticket">
           <svg viewBox="0 0 24 24"><path d="M3 12h18M4 12l6-6M4 12l6 6M14 6l6 6-6 6"></path></svg>
@@ -71,12 +80,12 @@
         </span>
       </div>
       <div class="intro-card" data-intro-slide="0">
-        <h1 class="intro-title-brand">HEY, BACKPACKER!</h1>
-        <img class="intro-logo" src="./icons/backpacker-logo-transparent.png" alt="" aria-hidden="true" />
+        <h1 class="intro-title-brand visually-hidden">Clavelo</h1>
+        <img class="intro-logo" src="./icons/clavelo-lockup.svg?v=clavelo-20261011" alt="" aria-hidden="true" />
         <p>
-          <span data-i18n="intro.slide1.line1">Билеты, жилье, заметки,</span>
-          <span data-i18n="intro.slide1.line2">ссылки и бюджет -</span>
-          <span data-i18n="intro.slide1.line3">в персональном "рюкзаке"!</span>
+          <span data-i18n="intro.slide1.line1">Билеты, брони и идеи,</span>
+          <span data-i18n="intro.slide1.line2">ссылки, заметки и расходы —</span>
+          <span data-i18n="intro.slide1.line3">всё в одном месте.</span>
           <span class="intro-copy-break" data-i18n="intro.slide1.line4">Добавляйте варианты,</span>
           <span data-i18n="intro.slide1.line5">двигайте карточки по дням,</span>
           <span data-i18n="intro.slide1.line6">вбрасывайте новые идеи.</span>
@@ -85,8 +94,8 @@
       </div>
 
       <div class="intro-card hidden" data-intro-slide="1">
-        <h1 class="intro-title-brand">HEY, BACKPACKER!</h1>
-        <img class="intro-logo" src="./icons/backpacker-logo-transparent.png" alt="" aria-hidden="true" />
+        <h1 class="intro-title-brand visually-hidden">Clavelo</h1>
+        <img class="intro-logo" src="./icons/clavelo-lockup.svg?v=clavelo-20261011" alt="" aria-hidden="true" />
         <p>
           <span data-i18n="intro.slide2.line1">Тренажер - готовый пример,</span>
           <span data-i18n="intro.slide2.line2">который пояснит, что к чему.</span>
@@ -97,8 +106,8 @@
       </div>
 
       <div class="intro-card intro-card-wide hidden" data-intro-slide="2">
-        <h1 class="intro-title-brand">HEY, BACKPACKER!</h1>
-        <img class="intro-logo" src="./icons/backpacker-logo-transparent.png" alt="" aria-hidden="true" />
+        <h1 class="intro-title-brand visually-hidden">Clavelo</h1>
+        <img class="intro-logo" src="./icons/clavelo-lockup.svg?v=clavelo-20261011" alt="" aria-hidden="true" />
         <p>
           <span data-i18n="intro.slide3.line1">Настройте даты, валюту, бюджет,</span>
           <span data-i18n="intro.slide3.line2">добавляйте в карточки</span>
@@ -113,15 +122,15 @@
     <section class="home-screen hidden" id="homeScreen" aria-label="Мои поездки" data-i18n-aria-label="home.screen.aria">
       <header class="home-header">
         <div class="home-brand">
-          <img src="./icons/backpacker-logo-transparent.png" alt="" aria-hidden="true" />
+          <img src="./icons/clavelo-mark.svg?v=clavelo-20261011" alt="" aria-hidden="true" />
           <div>
-            <h1>BACKPACKER</h1>
+            <h1>Clavelo</h1>
             <button class="home-profile-card hidden" id="homeProfileButton" type="button">
               <strong id="homeProfileName" data-i18n="home.profile.add">Добавьте имя или ник</strong>
             </button>
           </div>
         </div>
-        <button class="icon-button share-icon-button home-share-button" id="homeShareButton" type="button" title="Поделиться Backpacker" aria-label="Поделиться Backpacker" data-i18n-title="home.share.action" data-i18n-aria-label="home.share.action">
+        <button class="icon-button share-icon-button home-share-button" id="homeShareButton" type="button" title="Поделиться Clavelo" aria-label="Поделиться Clavelo" data-i18n-title="home.share.action" data-i18n-aria-label="home.share.action">
           <svg aria-hidden="true" viewBox="0 0 24 24">
             <path d="M8.4 10.4 15.6 6.5" />
             <path d="M8.4 13.6 15.6 17.5" />
@@ -152,7 +161,7 @@
           <h2 id="syncConflictTitle" data-i18n="home.sync.title.single">Две версии одной поездки</h2>
           <p id="syncConflictSummary"></p>
           <ul class="sync-conflict-list" id="syncConflictList"></ul>
-          <p class="sync-conflict-hint" data-i18n="home.sync.hint">Сравните версии, перенесите нужное в одну поездку и удалите лишнюю. Backpacker не выбирает сам, чтобы ничего не пропало.</p>
+          <p class="sync-conflict-hint" data-i18n="home.sync.hint">Сравните версии, перенесите нужное в одну поездку и удалите лишнюю. Clavelo не выбирает сам, чтобы ничего не пропало.</p>
         </section>
 
         <section class="home-trainer-shell" id="homeTrainerShell">
@@ -248,7 +257,7 @@
 
               <section class="trip-draft-documents hidden" id="tripDraftDocumentsStep" aria-label="Документы поездки" data-i18n-aria-label="ai.draft.documents.aria">
                 <p class="trip-draft-copy">
-                  <strong data-i18n="ai.draft.documents.copy.title">Загрузите билеты, брони и ваучеры — Backpacker соберёт из них черновик поездки.</strong>
+                  <strong data-i18n="ai.draft.documents.copy.title">Загрузите билеты, брони и ваучеры — Clavelo соберёт из них черновик поездки.</strong>
                   <span data-i18n="ai.draft.documents.copy.body">Данные берутся только из ваших документов. Коды броней, номера билетов и паспортные данные не извлекаются: они остаются внутри самого файла.</span>
                 </p>
                 <input
@@ -299,12 +308,12 @@
           <div class="trip-list received-trip-list" id="receivedTripList"></div>
         </section>
 
-        <section class="ios-install-card hidden" id="iosInstallCard" aria-label="Установить Backpacker" data-i18n-aria-label="home.ios.install.title">
+        <section class="ios-install-card hidden" id="iosInstallCard" aria-label="Установить Clavelo" data-i18n-aria-label="home.ios.install.title">
           <button class="ios-install-close" id="iosInstallCloseButton" type="button" aria-label="Скрыть" data-i18n-aria-label="home.ios.install.dismiss">×</button>
-          <h2 data-i18n="home.ios.install.title">Установить Backpacker</h2>
+          <h2 data-i18n="home.ios.install.title">Установить Clavelo</h2>
           <p data-i18n="home.ios.install.copy">На iPhone версия с домашнего экрана хранит данные отдельно от Safari. Сохранённый доступ по email перенесёт ваши поездки в установленное приложение.</p>
           <ol>
-            <li data-i18n="home.ios.install.open.safari">Откройте Backpacker в Safari.</li>
+            <li data-i18n="home.ios.install.open.safari">Откройте Clavelo в Safari.</li>
             <li data-i18n="home.ios.install.share">Нажмите «Поделиться».</li>
             <li data-i18n="home.ios.install.add.home">Выберите «На экран Домой».</li>
             <li data-i18n="home.ios.install.open.as.app">Включите «Открывать как веб-приложение» и нажмите «Добавить».</li>
@@ -312,7 +321,7 @@
         </section>
 
         <section class="home-support" aria-label="Информация и помощь" data-i18n-aria-label="home.support.aria">
-          <div class="home-support-menu" role="group" aria-label="Меню Backpacker" data-i18n-aria-label="home.support.menu.aria">
+          <div class="home-support-menu" role="group" aria-label="Меню Clavelo" data-i18n-aria-label="home.support.menu.aria">
             <button class="home-support-button" type="button" data-home-panel="product" aria-label="О продукте" data-i18n-aria-label="home.support.product">
               <span aria-hidden="true">i</span>
             </button>
@@ -896,10 +905,10 @@
           <button class="icon-button" data-close="productInfo" type="button" aria-label="Закрыть" data-i18n-aria-label="home.support.close">×</button>
         </header>
         <div class="home-support-sheet-body">
-          <p data-i18n="home.support.product.body.origin">BACKPACKER вырос из живого планирования поездок: когда хочется собрать поездку из событий, мест для посещения, броней и идей в одном месте, а не метаться по разным источникам в поисках ссылок на сайты, заметок и таблиц.</p>
-          <p data-i18n="home.support.product.body.planning">BACKPACKER поможет быстро набросать план путешествия, разложить карточки событий и мест по дням, наглядно увидеть бюджет, не потерять идеи и спокойно возвращаться к редактированию поездки с телефона.</p>
+          <p data-i18n="home.support.product.body.origin">Clavelo помогает держать все детали поездки в одном месте: бронирования, места, документы, ссылки, расходы и план по дням.</p>
+          <p data-i18n="home.support.product.body.planning">Путешественники ведут собственные поездки. Организаторы публикуют актуальную программу для группы, сохраняя внутреннюю смету закрытой.</p>
           <p data-i18n="home.support.product.body.ideas">Идеи и хотелки можно собирать заранее, ещё до того как появится поездка. К карточкам прикладываются билеты и брони. Планом и сметой можно поделиться с попутчиками по ссылке.</p>
-          <p data-i18n="home.support.product.body.extension">Идеи можно добавлять вручную или собирать прямо из браузера с помощью расширения Backpacker для Chrome.</p>
+          <p data-i18n="home.support.product.body.extension">Идеи можно добавлять вручную или собирать прямо из браузера с помощью расширения Chrome, которое пока опубликовано как Backpacker Travel Capture.</p>
           <p data-i18n="home.support.product.body.sync">Сохраните доступ по email — и поездки, идеи и вложения будут одинаковыми на телефоне и ноутбуке.</p>
           <p id="productVersionInfo"></p>
         </div>
@@ -918,7 +927,7 @@
             <summary data-i18n="home.support.howto.devices.title">Как работать с нескольких устройств</summary>
             <p data-i18n="home.support.howto.devices.body1">Сохраните доступ по email в профиле — и личные поездки начнут синхронизироваться между устройствами. Ноутбук, мобильный браузер и установленное приложение увидят один и тот же список поездок.</p>
             <p data-i18n="home.support.howto.devices.body2">Первый вход на новом устройстве объединяет поездки, а не заменяет их: то, что было создано на этом устройстве раньше, складывается с тем, что уже в облаке. Ничего не теряется.</p>
-            <p data-i18n="home.support.howto.devices.body3">Если одну и ту же поездку успели изменить на двух устройствах по-разному — например, пока телефон был без интернета, — Backpacker сохранит обе версии. Рядом появится поездка с пометкой «копия с этого устройства», а на главной — плашка с объяснением.</p>
+            <p data-i18n="home.support.howto.devices.body3">Если одну и ту же поездку успели изменить на двух устройствах по-разному — например, пока телефон был без интернета, — Clavelo сохранит обе версии. Рядом появится поездка с пометкой «копия с этого устройства», а на главной — плашка с объяснением.</p>
             <p data-i18n="home.support.howto.devices.body4">Приложение намеренно не выбирает победителя: иначе чьи-то правки пришлось бы стереть. Сравните версии, перенесите нужное в одну поездку и удалите лишнюю. Плашка закрывается крестиком.</p>
             <p data-i18n="home.support.howto.devices.body5">Без сохранённого email приложение работает как раньше: поездки остаются только в этом браузере и никуда не отправляются.</p>
             <p data-i18n="home.support.howto.devices.body6">Тренажёр и поездки из «Со мной поделились» не синхронизируются: это демо и чужие поездки.</p>
@@ -941,11 +950,11 @@
           </details>
           <details>
             <summary data-i18n="home.support.howto.extension.title">Как собирать идеи из браузера</summary>
-            <p data-i18n="home.support.howto.extension.body">У Backpacker есть расширение для Chrome на компьютере. Оно помогает сохранять находки во время поиска поездки, не копируя ссылки и данные вручную.</p>
+            <p data-i18n="home.support.howto.extension.body">Для Clavelo есть расширение Chrome для компьютера, пока опубликованное как Backpacker Travel Capture. Оно помогает сохранять находки во время поиска поездки, не копируя ссылки и данные вручную.</p>
             <ol>
               <li data-i18n="home.support.howto.extension.step1">Установите Backpacker Travel Capture из Chrome Web Store.</li>
-              <li data-i18n="home.support.howto.extension.step2">Подключите расширение к своему Backpacker.</li>
-              <li data-i18n="home.support.howto.extension.step3">На интересной странице откройте расширение, проверьте собранную карточку и отправьте её в Backpacker.</li>
+              <li data-i18n="home.support.howto.extension.step2">Подключите расширение к своему Clavelo.</li>
+              <li data-i18n="home.support.howto.extension.step3">На интересной странице откройте расширение, проверьте собранную карточку и отправьте её в Clavelo.</li>
               <li data-i18n="home.support.howto.extension.step4">Находка появится в разделе «Идеи», откуда её потом можно добавить в нужную поездку.</li>
             </ol>
             <p data-i18n="home.support.howto.extension.note">Расширение сохраняет только то, что вы явно решили сохранить. Найденные на странице ссылка, название, изображение и цена могут быть перенесены в карточку и остаются редактируемыми.</p>
@@ -993,7 +1002,7 @@
           </details>
           <details>
             <summary data-i18n="home.support.howto.iphone.title">Как установить на iPhone</summary>
-            <p data-i18n="home.support.howto.iphone.body1">Откройте Backpacker в Safari, нажмите системную кнопку «Поделиться», выберите «На экран Домой», включите «Открывать как веб-приложение» и нажмите «Добавить».</p>
+            <p data-i18n="home.support.howto.iphone.body1">Откройте Clavelo в Safari, нажмите системную кнопку «Поделиться», выберите «На экран Домой», включите «Открывать как веб-приложение» и нажмите «Добавить».</p>
             <p data-i18n="home.support.howto.iphone.body2">Приложение с домашнего экрана хранит данные отдельно от Safari. Если вы уже создавали поездки в Safari, сохраните доступ по email в обоих местах — поездки подтянутся в установленное приложение сами.</p>
           </details>
         </div>
@@ -1004,13 +1013,13 @@
       <div class="sheet-backdrop" data-close="homeShare"></div>
       <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="homeShareSheetTitle">
         <header class="sheet-header">
-          <h2 id="homeShareSheetTitle" data-i18n="share.app.title">Поделиться Backpacker</h2>
+          <h2 id="homeShareSheetTitle" data-i18n="share.app.title">Поделиться Clavelo</h2>
           <button class="icon-button" data-close="homeShare" type="button" aria-label="Закрыть" data-i18n-aria-label="share.close">×</button>
         </header>
         <div class="share-actions">
-          <button class="ghost-button" id="homeInstallAppButton" type="button" data-i18n="share.app.install">Установить Backpacker</button>
-          <button class="ghost-button" id="showAppQrButton" type="button" data-i18n="share.app.qr.action">Показать QR-код Backpacker</button>
-          <button class="primary-button" id="shareAppButton" type="button" data-i18n="share.app.action">Поделиться Backpacker</button>
+          <button class="ghost-button" id="homeInstallAppButton" type="button" data-i18n="share.app.install">Установить Clavelo</button>
+          <button class="ghost-button" id="showAppQrButton" type="button" data-i18n="share.app.qr.action">Показать QR-код Clavelo</button>
+          <button class="primary-button" id="shareAppButton" type="button" data-i18n="share.app.action">Поделиться Clavelo</button>
         </div>
         <p class="home-share-hint">
           <span data-i18n="share.app.install.hint">💡Скачайте мини-приложение - с мобильного будет удобнее пользоваться</span>
@@ -1023,13 +1032,13 @@
       <div class="sheet-backdrop" data-close="appQr"></div>
       <section class="sheet-panel app-qr-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="appQrSheetTitle">
         <header class="sheet-header">
-          <h2 id="appQrSheetTitle" data-i18n="share.app.qr.title">QR-код Backpacker</h2>
+          <h2 id="appQrSheetTitle" data-i18n="share.app.qr.title">QR-код Clavelo</h2>
           <button class="icon-button" data-close="appQr" type="button" aria-label="Закрыть" data-i18n-aria-label="share.close">×</button>
         </header>
         <div class="app-qr-body">
-          <div class="app-qr-code" id="appQrCode" role="img" aria-label="QR-код для открытия Backpacker" data-i18n-aria-label="share.app.qr.image.aria"></div>
-          <strong class="app-qr-name">Backpacker</strong>
-          <p class="app-qr-copy" data-i18n="share.app.qr.scan">Отсканируйте, чтобы открыть Backpacker</p>
+          <div class="app-qr-code" id="appQrCode" role="img" aria-label="QR-код для открытия Clavelo" data-i18n-aria-label="share.app.qr.image.aria"></div>
+          <strong class="app-qr-name">Clavelo</strong>
+          <p class="app-qr-copy" data-i18n="share.app.qr.scan">Отсканируйте, чтобы открыть Clavelo</p>
           <p class="app-qr-url">app.backpackerapp.cc</p>
         </div>
       </section>
@@ -1040,7 +1049,7 @@
       <section class="sheet-panel donation-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="donationSheetTitle" data-donation-panel>
         <div class="donation-sheet-handle" aria-hidden="true"></div>
         <header class="sheet-header">
-          <h2 id="donationSheetTitle">Копилка Backpacker</h2>
+          <h2 id="donationSheetTitle">Копилка Clavelo</h2>
           <button class="icon-button" data-donation-dismiss="not_now" type="button" aria-label="Закрыть">×</button>
         </header>
         <p class="donation-sheet-copy" id="donationPromptText"></p>
@@ -1184,14 +1193,14 @@
       <div class="sheet-backdrop" data-close="profile"></div>
       <section class="sheet-panel profile-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="profileSheetTitle">
         <header class="sheet-header">
-          <h2 id="profileSheetTitle" data-i18n="share.profile.title">Как вас показывать в Backpacker?</h2>
+          <h2 id="profileSheetTitle" data-i18n="share.profile.title">Как вас показывать в Clavelo?</h2>
           <button class="icon-button" data-close="profile" type="button" aria-label="Закрыть" data-i18n-aria-label="share.close">×</button>
         </header>
         <form class="sheet-form profile-form" id="profileForm">
           <p class="profile-copy" data-i18n="share.profile.copy">Это имя увидят авторы поездок и другие участники. Можно указать имя или ник.</p>
           <label class="field wide">
             <span data-i18n="share.profile.name">Имя или ник</span>
-            <input id="profileDisplayNameInput" name="displayName" maxlength="40" autocomplete="nickname" placeholder="Например, Ирина или backpacker_ira" data-i18n-placeholder="share.profile.name.placeholder" />
+            <input id="profileDisplayNameInput" name="displayName" maxlength="40" autocomplete="nickname" placeholder="Например, Ирина или clavelo_ira" data-i18n-placeholder="share.profile.name.placeholder" />
           </label>
           <p class="profile-error" id="profileError" aria-live="polite"></p>
           <button class="primary-button" id="profileSaveButton" type="submit" data-i18n="share.profile.save.continue">Сохранить и продолжить</button>
@@ -1200,7 +1209,7 @@
         <section class="recoverable-auth-card" id="recoverableAuthCard">
           <div class="recoverable-auth-heading">
             <h3 data-i18n="share.profile.email.title">Сохранить доступ по email</h3>
-            <p id="recoverableAuthSummary" data-i18n="share.profile.email.summary">Email связывает Backpacker на телефоне и ноутбуке: Cloud Ideas и идеи из расширения будут видны в одном месте.</p>
+            <p id="recoverableAuthSummary" data-i18n="share.profile.email.summary">Email связывает Clavelo на телефоне и ноутбуке: Cloud Ideas и идеи из расширения будут видны в одном месте.</p>
           </div>
           <p class="recoverable-auth-status" id="recoverableAuthStatus" aria-live="polite"></p>
           <form class="recoverable-auth-form" id="recoverableAuthUpgradeForm">

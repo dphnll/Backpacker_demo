@@ -1,4 +1,4 @@
-const CACHE_NAME = "backpacker-pwa-v140";
+const CACHE_NAME = "backpacker-pwa-v141";
 const APP_SHELL = [
   "./",
   "./styles.css?v=organizer-mode-20260904",
@@ -39,10 +39,18 @@ const APP_SHELL = [
   "./assets/status-maybe.png",
   "./assets/status-paid.png",
   "./assets/status-want.png",
-  "./icons/backpacker-192.png?v=logo-beige-20260808",
-  "./icons/backpacker-512.png?v=logo-beige-20260808",
-  "./icons/backpacker-maskable-512.png?v=logo-beige-20260808",
-  "./icons/apple-touch-icon.png?v=logo-beige-20260808",
+  "./icons/backpacker-192.png?v=clavelo-20261011",
+  "./icons/backpacker-512.png?v=clavelo-20261011",
+  "./icons/backpacker-maskable-192.png?v=clavelo-20261011",
+  "./icons/backpacker-maskable-512.png?v=clavelo-20261011",
+  "./icons/apple-touch-icon.png?v=clavelo-20261011",
+  "./icons/clavelo-mark.svg?v=clavelo-20261011",
+  "./icons/clavelo-mark-simple.svg?v=clavelo-20261011",
+  "./icons/clavelo-lockup.svg?v=clavelo-20261011",
+  "./icons/clavelo-lockup-ink.svg?v=clavelo-20261011",
+  "./icons/favicon-16.png?v=clavelo-20261011",
+  "./icons/favicon-32.png?v=clavelo-20261011",
+  "./icons/favicon-48.png?v=clavelo-20261011",
   "./icons/card-copy.png",
   "./icons/piggy-bank.png",
   "./fonts/inter-cyrillic.woff2",
@@ -52,7 +60,7 @@ const APP_SHELL = [
   "./fonts/LICENSE-NOTO.txt",
   "./assets/map-home.jpg",
   "./icons/backpacker-logo-transparent.png",
-  "./icons/backpacker-logo.svg?v=logo-beige-20260808"
+  "./icons/backpacker-logo.svg?v=clavelo-20261011"
 ];
 
 const STATIC_URLS = new Set(APP_SHELL.map((path) => new URL(path, self.registration.scope).href));
