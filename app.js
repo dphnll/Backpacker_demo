@@ -42,7 +42,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.93";
+const APP_VERSION = "1.1.2.94";
 const APP_RELEASE_SUMMARY = "Clavelo доступен на семи языках интерфейса: русском, английском, французском, грузинском, немецком, армянском и упрощённом китайском.";
 const CHROME_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/backpacker-travel-capture/okpfmpplfciccfddgibkcoliemfimifc";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
@@ -797,6 +797,31 @@ function getCanonicalPublicAppUrl() {
   return new URL(window.BACKPACKER_PUBLIC_URLS?.canonical || getSupabaseConfig().authRedirectUrl).toString();
 }
 
+function getPreviousPublicAppUrl() {
+  const config = getSupabaseConfig();
+  const value = window.BACKPACKER_PUBLIC_URLS?.previous || config.previousAuthRedirectUrl || "";
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
+function shouldShowAppOriginRecovery(href = window.location.href) {
+  const previousUrl = getPreviousPublicAppUrl();
+  if (!previousUrl) return false;
+  try {
+    const current = new URL(href);
+    const canonical = new URL(getCanonicalPublicAppUrl());
+    const previous = new URL(previousUrl);
+    return current.origin === canonical.origin && canonical.origin !== previous.origin;
+  } catch {
+    return false;
+  }
+}
+
 function getTripShareFunctionUrl() {
   const config = getSupabaseConfig();
   if (config.tripShareFunctionUrl) return config.tripShareFunctionUrl;
@@ -870,6 +895,7 @@ function getRecoverableAuthRedirectUrl() {
     return core.resolveRecoverableAuthRedirectUrl({
       href: window.location.href,
       configuredUrl: window.BACKPACKER_PUBLIC_URLS?.canonical || config.authRedirectUrl,
+      preservedUrls: [window.BACKPACKER_PUBLIC_URLS?.previous || config.previousAuthRedirectUrl],
       legacyUrl: window.BACKPACKER_PUBLIC_URLS?.legacy || config.legacyAuthRedirectUrl,
     });
   }
@@ -4067,12 +4093,26 @@ function renderHome() {
     .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
 
   if (!trips.length) {
+    const recovery = shouldShowAppOriginRecovery()
+      ? `
+        <aside class="app-origin-recovery" aria-labelledby="appOriginRecoveryTitle">
+          <h2 id="appOriginRecoveryTitle">${escapeHtml(window.t("home.origin.recovery.title"))}</h2>
+          <p>${escapeHtml(window.t("home.origin.recovery.body"))}</p>
+          <div class="app-origin-recovery-actions">
+            <button class="ghost-button" id="appOriginRecoveryProfileButton" type="button">${escapeHtml(window.t("home.origin.recovery.email"))}</button>
+            <a class="ghost-button" href="${escapeAttr(getPreviousPublicAppUrl())}">${escapeHtml(window.t("home.origin.recovery.previous"))}</a>
+          </div>
+        </aside>
+      `
+      : "";
     list.innerHTML = `
       <p class="empty-trips">
         <span>${escapeHtml(window.t("home.empty.primary"))}</span>
         <span>${escapeHtml(window.t("home.empty.secondary"))}</span>
       </p>
+      ${recovery}
     `;
+    $("#appOriginRecoveryProfileButton")?.addEventListener("click", () => openProfileSheet(null));
     return;
   }
 

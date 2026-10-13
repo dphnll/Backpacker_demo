@@ -61,23 +61,34 @@
   }
 
   function isSameAppBaseUrl(current, expected) {
-    return Boolean(expected && current.origin === expected.origin && current.pathname === expected.pathname);
+    if (!expected || current.origin !== expected.origin) return false;
+    const currentPathname = current.pathname.endsWith("/index.html")
+      ? current.pathname.slice(0, -"index.html".length)
+      : current.pathname;
+    return currentPathname === expected.pathname;
   }
 
   function resolveRecoverableAuthRedirectUrl({
     href = "",
     configuredUrl = "",
+    preservedUrls = [],
     legacyUrl = "",
   } = {}) {
     const configured = normalizeRedirectBaseUrl(configuredUrl);
     const legacy = normalizeRedirectBaseUrl(legacyUrl);
+    const preserved = Array.isArray(preservedUrls)
+      ? preservedUrls.map(normalizeRedirectBaseUrl).filter(Boolean)
+      : [];
     const current = new URL(href || configured || legacy || "http://localhost/");
     current.search = "";
     current.hash = "";
     if (isLocalAppUrl(current)) return current.toString();
 
-    const legacyParsed = legacy ? new URL(legacy) : null;
-    if (isSameAppBaseUrl(current, legacyParsed)) return current.toString();
+    const recognizedBases = [configured, ...preserved, legacy]
+      .filter(Boolean)
+      .map((value) => new URL(value));
+    const recognizedBase = recognizedBases.find((base) => isSameAppBaseUrl(current, base));
+    if (recognizedBase) return recognizedBase.toString();
 
     if (configured && !isLocalAppUrl(new URL(configured))) return configured;
     if (current.protocol === "http:" || current.protocol === "https:") return current.toString();

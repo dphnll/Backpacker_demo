@@ -2476,6 +2476,47 @@ h3 {
   line-height: 1.45;
 }
 
+.app-origin-recovery {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid rgba(18, 54, 61, 0.18);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.app-origin-recovery h2,
+.app-origin-recovery p {
+  margin: 0;
+}
+
+.app-origin-recovery h2 {
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.app-origin-recovery p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.app-origin-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.app-origin-recovery-actions .ghost-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  text-decoration: none;
+}
+
 .item-card {
   --item-card-bg: #ffefcf;
   --item-card-accent: #d88d22;
