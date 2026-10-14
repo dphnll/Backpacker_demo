@@ -2022,6 +2022,19 @@ button[aria-disabled="true"] .home-support-icon {
   min-width: 0;
 }
 
+.recoverable-auth-code-form input,
+#extensionConnectCodeInput {
+  letter-spacing: 0.3em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.recoverable-auth-code-actions {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+
 .recoverable-auth-form .field,
 .recoverable-auth-form .field.wide {
   grid-column: 1 / -1;

@@ -42,7 +42,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.94";
+const APP_VERSION = "1.1.2.95";
 const APP_RELEASE_SUMMARY = "Clavelo доступен на семи языках интерфейса: русском, английском, французском, грузинском, немецком, армянском и упрощённом китайском.";
 const CHROME_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/backpacker-travel-capture/okpfmpplfciccfddgibkcoliemfimifc";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
@@ -111,12 +111,20 @@ let authorExpenseProposals = [];
 let authorItemProposals = [];
 let userProfile = { loaded: false, loading: false, displayName: "", error: "" };
 let recoverableAuthState = {
+  codeFlow: "",
+  codeSource: "profile",
+  codeVerifying: false,
   error: "",
+  expectedUserId: "",
   loginSending: false,
+  pendingEmail: "",
+  resendAvailableAt: 0,
+  resendSending: false,
   status: "",
   upgradeSending: false,
   user: null,
 };
+let recoverableAuthCooldownTimer = null;
 let authStateVersion = 0;
 let extensionConnectState = {
   request: null,
@@ -876,6 +884,75 @@ function getRecoverableAuthCore() {
   return window.BackpackerRecoverableAuth;
 }
 
+function getRecoverableAuthRetrySeconds(now = Date.now()) {
+  return Math.max(0, Math.ceil((Number(recoverableAuthState.resendAvailableAt || 0) - now) / 1000));
+}
+
+function stopRecoverableAuthCooldownTimer() {
+  if (recoverableAuthCooldownTimer !== null) window.clearTimeout(recoverableAuthCooldownTimer);
+  recoverableAuthCooldownTimer = null;
+}
+
+function scheduleRecoverableAuthCooldownTick() {
+  stopRecoverableAuthCooldownTimer();
+  if (!getRecoverableAuthRetrySeconds()) return;
+  recoverableAuthCooldownTimer = window.setTimeout(() => {
+    recoverableAuthCooldownTimer = null;
+    renderProfileSheet();
+    renderExtensionConnectCard();
+    scheduleRecoverableAuthCooldownTick();
+  }, 1000);
+}
+
+function startRecoverableAuthCooldown(seconds = 60) {
+  const safeSeconds = Math.max(1, Math.ceil(Number(seconds) || 60));
+  recoverableAuthState.resendAvailableAt = Date.now() + (safeSeconds * 1000);
+  scheduleRecoverableAuthCooldownTick();
+}
+
+function setRecoverableAuthChallenge({ email, expectedUserId = "", flow, source = "profile" }) {
+  recoverableAuthState.codeFlow = flow;
+  recoverableAuthState.codeSource = source;
+  recoverableAuthState.expectedUserId = expectedUserId;
+  recoverableAuthState.pendingEmail = email;
+  recoverableAuthState.error = "";
+  recoverableAuthState.status = window.t("share.profile.email.code.sent", { email });
+  startRecoverableAuthCooldown(getRecoverableAuthCore()?.EMAIL_OTP_RESEND_COOLDOWN_SECONDS || 60);
+}
+
+function clearRecoverableAuthChallenge({ keepStatus = false, preserveCooldown = false } = {}) {
+  if (!preserveCooldown) stopRecoverableAuthCooldownTimer();
+  recoverableAuthState.codeFlow = "";
+  recoverableAuthState.codeSource = "profile";
+  recoverableAuthState.codeVerifying = false;
+  recoverableAuthState.expectedUserId = "";
+  recoverableAuthState.pendingEmail = "";
+  if (!preserveCooldown) recoverableAuthState.resendAvailableAt = 0;
+  recoverableAuthState.resendSending = false;
+  recoverableAuthState.error = "";
+  if (!keepStatus) recoverableAuthState.status = "";
+  for (const id of ["recoverableAuthCodeInput", "extensionConnectCodeInput"]) {
+    const input = $(`#${id}`);
+    if (input) input.value = "";
+  }
+}
+
+function applyRecoverableAuthRateLimit(error) {
+  const core = getRecoverableAuthCore();
+  if (core?.getEmailOtpErrorCode?.(error) !== "rate_limit") return false;
+  startRecoverableAuthCooldown(core.getEmailOtpRetryAfterSeconds?.(error) || 60);
+  return true;
+}
+
+function normalizeRecoverableAuthCodeInput(event) {
+  const input = event?.currentTarget;
+  if (!input) return;
+  const core = getRecoverableAuthCore();
+  input.value = core?.normalizeEmailOtp
+    ? core.normalizeEmailOtp(input.value)
+    : String(input.value || "").replace(/\D/g, "").slice(0, 6);
+}
+
 function getExtensionConnectUiCore() {
   return window.BackpackerExtensionConnectUI;
 }
@@ -1036,6 +1113,7 @@ function clearSignedOutAccountState() {
   window.clearTimeout(tripDraftPendingSaveTimer);
   window.clearTimeout(privateTripSyncState.timer);
   window.clearTimeout(tripShareSyncTimer);
+  stopRecoverableAuthCooldownTimer();
   tripDraftPendingSaveTimer = null;
   tripShareSyncTimer = null;
   tripShareSyncReported = "";
@@ -1051,7 +1129,20 @@ function clearSignedOutAccountState() {
   tripDraftAiState = createEmptyTripDraftAiState();
   bookingPackFailedUploads = [];
   userProfile = { loaded: false, loading: false, displayName: "", error: "" };
-  recoverableAuthState = { error: "", loginSending: false, status: "", upgradeSending: false, user: null };
+  recoverableAuthState = {
+    codeFlow: "",
+    codeSource: "profile",
+    codeVerifying: false,
+    error: "",
+    expectedUserId: "",
+    loginSending: false,
+    pendingEmail: "",
+    resendAvailableAt: 0,
+    resendSending: false,
+    status: "",
+    upgradeSending: false,
+    user: null,
+  };
   pendingProfileAction = null;
   profileSaving = false;
   extensionConnectState = { request: null, status: "idle", error: "" };
@@ -1088,7 +1179,7 @@ function clearSignedOutAccountState() {
   if (editingCloudIdea) $("#itemForm")?.reset();
   const collectionSelect = $("#ideaForm")?.elements?.collectionKey;
   if (collectionSelect) collectionSelect.innerHTML = "";
-  for (const id of ["profileDisplayNameInput", "recoverableAuthEmailInput", "recoverableLoginEmailInput", "tripDraftTextInput", "tripDraftDocumentsInput", "tripDraftDocumentsComment"]) {
+  for (const id of ["profileDisplayNameInput", "recoverableAuthEmailInput", "recoverableLoginEmailInput", "recoverableAuthCodeInput", "extensionConnectEmailInput", "extensionConnectCodeInput", "tripDraftTextInput", "tripDraftDocumentsInput", "tripDraftDocumentsComment"]) {
     const input = $(`#${id}`);
     if (input) input.value = "";
   }
@@ -1126,6 +1217,10 @@ function subscribeRecoverableAuthChanges() {
       clearSignedOutAccountState();
       return;
     }
+    // verifyOtp can emit SIGNED_IN/USER_UPDATED before its promise resolves.
+    // Keep account-owned loading paused until the OTP result and, for an
+    // anonymous upgrade, the same-UID invariant have both been verified.
+    if (recoverableAuthState.codeVerifying && ["SIGNED_IN", "USER_UPDATED"].includes(event)) return;
     recoverableAuthState.user = session?.user ? getRecoverableAuthUserSummary(session.user) : null;
     renderProfileSheet();
     renderHomeProfile();
@@ -1848,6 +1943,18 @@ function ensureExtensionConnectCard() {
         </label>
         <button class="primary-button" id="extensionConnectEmailButton" type="submit"></button>
       </form>
+      <form class="recoverable-auth-form" id="extensionConnectCodeForm" aria-labelledby="extensionConnectCodeLabel" hidden>
+        <p class="field-hint" id="extensionConnectCodeHint"></p>
+        <label class="field wide">
+          <span id="extensionConnectCodeLabel"></span>
+          <input id="extensionConnectCodeInput" name="extensionConnectCode" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" />
+        </label>
+        <div class="recoverable-auth-code-actions">
+          <button class="primary-button" id="extensionConnectCodeButton" type="submit"></button>
+          <button class="ghost-button" id="extensionConnectResendButton" type="button"></button>
+          <button class="ghost-button" id="extensionConnectCodeBackButton" type="button"></button>
+        </div>
+      </form>
       <div class="extension-connect-card__actions" style="display:flex;gap:10px;flex-wrap:wrap;">
         <button class="primary-button" id="extensionConnectConfirmButton" type="button"></button>
         <button class="ghost-button" id="extensionConnectDismissButton" type="button"></button>
@@ -1858,6 +1965,10 @@ function ensureExtensionConnectCard() {
   $("#extensionConnectConfirmButton")?.addEventListener("click", connectBackpackerExtension);
   $("#extensionConnectDismissButton")?.addEventListener("click", dismissExtensionConnectCard);
   $("#extensionConnectIdentityForm")?.addEventListener("submit", submitExtensionConnectIdentityForm);
+  $("#extensionConnectCodeForm")?.addEventListener("submit", (event) => submitRecoverableAuthCodeForm(event, "extension"));
+  $("#extensionConnectResendButton")?.addEventListener("click", (event) => resendRecoverableAuthCode(event, "extension"));
+  $("#extensionConnectCodeBackButton")?.addEventListener("click", (event) => cancelRecoverableAuthCodeEntry(event, "extension"));
+  $("#extensionConnectCodeInput")?.addEventListener("input", normalizeRecoverableAuthCodeInput);
   $("#extensionConnectTitle")?.focus();
   return card;
 }
@@ -1887,12 +1998,24 @@ function renderExtensionConnectCard() {
   const identityForm = $("#extensionConnectIdentityForm");
   const identityEmailLabel = $("#extensionConnectIdentityEmailLabel");
   const emailButton = $("#extensionConnectEmailButton");
+  const codeForm = $("#extensionConnectCodeForm");
+  const codeHint = $("#extensionConnectCodeHint");
+  const codeLabel = $("#extensionConnectCodeLabel");
+  const codeButton = $("#extensionConnectCodeButton");
+  const resendButton = $("#extensionConnectResendButton");
+  const codeBackButton = $("#extensionConnectCodeBackButton");
   const connected = extensionConnectState.status === "connected";
   const connecting = extensionConnectState.status === "connecting";
   const identityRequired = extensionConnectState.status === "identity_required";
+  const codeRequired = identityRequired
+    && recoverableAuthState.codeFlow === "upgrade"
+    && recoverableAuthState.codeSource === "extension"
+    && Boolean(recoverableAuthState.pendingEmail);
+  const retrySeconds = getRecoverableAuthRetrySeconds();
   const linkState = ["link_invalid", "link_untrusted", "link_expired"].includes(extensionConnectState.status);
+  const identityError = identityRequired ? recoverableAuthState.error : "";
   card.hidden = false;
-  card.classList.toggle("extension-connect-card--error", Boolean(extensionConnectState.error));
+  card.classList.toggle("extension-connect-card--error", Boolean(extensionConnectState.error || identityError));
   card.classList.toggle("extension-connect-card--connected", connected);
   const authUser = getCurrentRecoverableAuthUser();
   const connectedEmail = authUser?.hasEmailIdentity ? authUser.email : "";
@@ -1918,8 +2041,9 @@ function renderExtensionConnectCard() {
       : window.t("extension.connect.summary.default");
   }
   if (status) {
-    status.setAttribute("role", extensionConnectState.error ? "alert" : "status");
+    status.setAttribute("role", extensionConnectState.error || identityError ? "alert" : "status");
     status.textContent = extensionConnectState.error
+      || identityError
       || (connected
         ? (connectedEmail
           ? window.t("extension.connect.status.connected.account", { email: connectedEmail })
@@ -1929,17 +2053,41 @@ function renderExtensionConnectCard() {
           : window.t("extension.connect.status.default")));
   }
   if (identityForm) {
-    identityForm.hidden = !identityRequired;
+    identityForm.hidden = !identityRequired || codeRequired;
+  }
+  if (codeForm) {
+    codeForm.hidden = !codeRequired;
   }
   if (identityEmailLabel) {
     identityEmailLabel.textContent = window.t("extension.connect.identity.email.label");
   }
   if (emailButton) {
-    emailButton.disabled = recoverableAuthState.upgradeSending;
+    emailButton.disabled = recoverableAuthState.upgradeSending || retrySeconds > 0;
     emailButton.textContent = window.t(recoverableAuthState.upgradeSending
       ? "extension.connect.action.email.sending"
-      : "extension.connect.action.email.send");
+      : retrySeconds > 0
+      ? "share.profile.email.retry.wait"
+      : "extension.connect.action.email.send", { seconds: retrySeconds });
   }
+  if (codeHint) {
+    codeHint.textContent = window.t("share.profile.email.code.hint", { email: recoverableAuthState.pendingEmail });
+  }
+  if (codeLabel) codeLabel.textContent = window.t("share.profile.email.code.label");
+  if (codeButton) {
+    codeButton.disabled = recoverableAuthState.codeVerifying;
+    codeButton.textContent = window.t(recoverableAuthState.codeVerifying
+      ? "share.profile.email.code.verifying"
+      : "share.profile.email.code.verify");
+  }
+  if (resendButton) {
+    resendButton.disabled = recoverableAuthState.resendSending || retrySeconds > 0;
+    resendButton.textContent = window.t(recoverableAuthState.resendSending
+      ? "share.profile.email.sending"
+      : retrySeconds > 0
+      ? "share.profile.email.resend.wait"
+      : "share.profile.email.resend", { seconds: retrySeconds });
+  }
+  if (codeBackButton) codeBackButton.textContent = window.t("share.profile.email.code.back");
   if (button) {
     button.hidden = identityRequired || linkState;
     button.disabled = connecting || connected;
@@ -1962,6 +2110,7 @@ function renderExtensionConnectCard() {
 }
 
 function dismissExtensionConnectCard() {
+  if (recoverableAuthState.codeSource === "extension") clearRecoverableAuthChallenge({ preserveCooldown: true });
   extensionConnectState = { ...extensionConnectState, request: null, error: "" };
   const core = getExtensionConnectUiCore();
   if (core?.stripExtensionConnectParams && window.history?.replaceState) {
@@ -2008,7 +2157,7 @@ async function submitExtensionConnectIdentityForm(event) {
   const version = authStateVersion;
   event.preventDefault();
   const request = extensionConnectState.request;
-  if (!request || recoverableAuthState.upgradeSending) return;
+  if (!request || recoverableAuthState.upgradeSending || getRecoverableAuthRetrySeconds() > 0) return;
   const { email, error: emailError } = getRecoverableAuthEmailFromInput("#extensionConnectEmailInput");
   if (emailError) {
     extensionConnectState = {
@@ -2032,21 +2181,27 @@ async function submitExtensionConnectIdentityForm(event) {
     return;
   }
   recoverableAuthState.upgradeSending = true;
+  recoverableAuthState.error = "";
+  recoverableAuthState.status = "";
   extensionConnectState = { ...extensionConnectState, status: "identity_required", error: "" };
   renderExtensionConnectCard();
   renderProfileSheet();
   try {
     await ensureSupabaseOwnerSession();
     if (version !== authStateVersion) return;
-    storePendingExtensionConnectIntent(request);
-    const result = await client.auth.updateUser({ email }, { emailRedirectTo: getRecoverableAuthRedirectUrl() });
+    const currentUser = await refreshRecoverableAuthSession();
     if (version !== authStateVersion) return;
-    if (result.error) throw result.error;
-    recoverableAuthState.status = window.t("share.profile.email.sent");
-    showToast(window.t("share.profile.email.sent.toast"));
-    await refreshRecoverableAuthSession();
+    if (!currentUser?.id) throw new Error("anonymous_auth_failed");
+    storePendingExtensionConnectIntent(request);
+    const core = getRecoverableAuthCore();
+    if (!core?.beginEmailOtpUpgrade) throw new Error("otp_unavailable");
+    await core.beginEmailOtpUpgrade(client.auth, { email, redirectTo: getRecoverableAuthRedirectUrl() });
+    if (version !== authStateVersion) return;
+    setRecoverableAuthChallenge({ email, expectedUserId: currentUser.id, flow: "upgrade", source: "extension" });
+    showToast(window.t("share.profile.email.code.sent.toast"));
   } catch (error) {
     if (version !== authStateVersion) return;
+    applyRecoverableAuthRateLimit(error);
     extensionConnectState = {
       ...extensionConnectState,
       status: "identity_required",
@@ -2634,6 +2789,12 @@ function renderProfileSheet() {
   const authStatus = $("#recoverableAuthStatus");
   const upgradeForm = $("#recoverableAuthUpgradeForm");
   const loginForm = $("#recoverableAuthLoginForm");
+  const codeForm = $("#recoverableAuthCodeForm");
+  const codeHint = $("#recoverableAuthCodeHint");
+  const codeInput = $("#recoverableAuthCodeInput");
+  const codeButton = $("#recoverableAuthCodeButton");
+  const resendButton = $("#recoverableAuthResendButton");
+  const codeBackButton = $("#recoverableAuthCodeBackButton");
   const sendButton = $("#recoverableAuthSendButton");
   const loginButton = $("#recoverableAuthLoginButton");
   if (input && document.activeElement !== input) input.value = userProfile.displayName || input.value || "";
@@ -2649,6 +2810,9 @@ function renderProfileSheet() {
   authCard.hidden = !isSupabaseConfigured();
   const isLinked = Boolean(authUser?.hasEmailIdentity && authUser.email);
   const isAnonymous = authUser?.isAnonymous === true;
+  const codeRequired = recoverableAuthState.codeSource === "profile"
+    && Boolean(recoverableAuthState.codeFlow && recoverableAuthState.pendingEmail);
+  const retrySeconds = getRecoverableAuthRetrySeconds();
   if (authSummary) {
     authSummary.textContent = isLinked
       ? window.t("share.profile.email.summary.linked", { email: authUser.email })
@@ -2660,15 +2824,41 @@ function renderProfileSheet() {
       || recoverableAuthState.status
       || (isLinked ? window.t("share.profile.email.saved", { email: authUser.email }) : "");
   }
-  if (upgradeForm) upgradeForm.hidden = !isAnonymous || isLinked;
-  if (loginForm) loginForm.hidden = isLinked;
+  if (upgradeForm) upgradeForm.hidden = codeRequired || !isAnonymous || isLinked;
+  if (loginForm) loginForm.hidden = codeRequired || isLinked;
+  if (codeForm) codeForm.hidden = !codeRequired;
+  if (codeHint) codeHint.textContent = window.t("share.profile.email.code.hint", { email: recoverableAuthState.pendingEmail });
+  if (codeInput) codeInput.disabled = recoverableAuthState.codeVerifying;
+  if (codeButton) {
+    codeButton.disabled = recoverableAuthState.codeVerifying;
+    codeButton.textContent = window.t(recoverableAuthState.codeVerifying
+      ? "share.profile.email.code.verifying"
+      : "share.profile.email.code.verify");
+  }
+  if (resendButton) {
+    resendButton.disabled = recoverableAuthState.resendSending || retrySeconds > 0;
+    resendButton.textContent = window.t(recoverableAuthState.resendSending
+      ? "share.profile.email.sending"
+      : retrySeconds > 0
+      ? "share.profile.email.resend.wait"
+      : "share.profile.email.resend", { seconds: retrySeconds });
+  }
+  if (codeBackButton) codeBackButton.disabled = recoverableAuthState.codeVerifying || recoverableAuthState.resendSending;
   if (sendButton) {
-    sendButton.disabled = recoverableAuthState.upgradeSending;
-    sendButton.textContent = window.t(recoverableAuthState.upgradeSending ? "share.profile.email.sending" : "share.profile.email.send");
+    sendButton.disabled = recoverableAuthState.upgradeSending || retrySeconds > 0;
+    sendButton.textContent = window.t(recoverableAuthState.upgradeSending
+      ? "share.profile.email.sending"
+      : retrySeconds > 0
+      ? "share.profile.email.retry.wait"
+      : "share.profile.email.send", { seconds: retrySeconds });
   }
   if (loginButton) {
-    loginButton.disabled = recoverableAuthState.loginSending;
-    loginButton.textContent = window.t(recoverableAuthState.loginSending ? "share.profile.email.sending" : "share.profile.email.login");
+    loginButton.disabled = recoverableAuthState.loginSending || retrySeconds > 0;
+    loginButton.textContent = window.t(recoverableAuthState.loginSending
+      ? "share.profile.email.sending"
+      : retrySeconds > 0
+      ? "share.profile.email.retry.wait"
+      : "share.profile.email.login", { seconds: retrySeconds });
   }
 }
 
@@ -2705,7 +2895,7 @@ function getRecoverableAuthSendErrorMessage(error, { login = false } = {}) {
 async function submitRecoverableAuthUpgradeForm(event) {
   const version = authStateVersion;
   event.preventDefault();
-  if (recoverableAuthState.upgradeSending) return;
+  if (recoverableAuthState.upgradeSending || getRecoverableAuthRetrySeconds() > 0) return;
   const { email, error } = getRecoverableAuthEmailFromInput("#recoverableAuthEmailInput");
   if (error) {
     recoverableAuthState.error = error;
@@ -2735,14 +2925,16 @@ async function submitRecoverableAuthUpgradeForm(event) {
       showToast(recoverableAuthState.error);
       return;
     }
-    const result = await client.auth.updateUser({ email }, { emailRedirectTo: getRecoverableAuthRedirectUrl() });
+    if (!currentUser?.id) throw new Error("anonymous_auth_failed");
+    const core = getRecoverableAuthCore();
+    if (!core?.beginEmailOtpUpgrade) throw new Error("otp_unavailable");
+    await core.beginEmailOtpUpgrade(client.auth, { email, redirectTo: getRecoverableAuthRedirectUrl() });
     if (version !== authStateVersion) return;
-    if (result.error) throw result.error;
-    recoverableAuthState.status = window.t("share.profile.email.sent");
-    showToast(window.t("share.profile.email.sent.toast"));
-    await refreshRecoverableAuthSession();
+    setRecoverableAuthChallenge({ email, expectedUserId: currentUser.id, flow: "upgrade", source: "profile" });
+    showToast(window.t("share.profile.email.code.sent.toast"));
   } catch (error) {
     if (version !== authStateVersion) return;
+    applyRecoverableAuthRateLimit(error);
     recoverableAuthState.error = getRecoverableAuthSendErrorMessage(error);
   } finally {
     if (version !== authStateVersion) return;
@@ -2754,7 +2946,7 @@ async function submitRecoverableAuthUpgradeForm(event) {
 async function submitRecoverableAuthLoginForm(event) {
   const version = authStateVersion;
   event.preventDefault();
-  if (recoverableAuthState.loginSending) return;
+  if (recoverableAuthState.loginSending || getRecoverableAuthRetrySeconds() > 0) return;
   const { email, error } = getRecoverableAuthEmailFromInput("#recoverableLoginEmailInput");
   if (error) {
     recoverableAuthState.error = error;
@@ -2775,25 +2967,153 @@ async function submitRecoverableAuthLoginForm(event) {
   renderProfileSheet();
   try {
     if (readPendingGroupTripIntent()) updatePendingGroupTripAuthFlow("login");
-    const result = await client.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: getRecoverableAuthRedirectUrl(),
-        shouldCreateUser: false,
-      },
-    });
+    const core = getRecoverableAuthCore();
+    if (!core?.beginEmailOtpLogin) throw new Error("otp_unavailable");
+    await core.beginEmailOtpLogin(client.auth, { email, redirectTo: getRecoverableAuthRedirectUrl() });
     if (version !== authStateVersion) return;
-    if (result.error) throw result.error;
-    recoverableAuthState.status = window.t("share.profile.email.sent");
-    showToast(window.t("share.profile.email.sent.toast"));
+    setRecoverableAuthChallenge({ email, flow: "login", source: "profile" });
+    showToast(window.t("share.profile.email.code.sent.toast"));
   } catch (error) {
     if (version !== authStateVersion) return;
+    applyRecoverableAuthRateLimit(error);
     recoverableAuthState.error = getRecoverableAuthSendErrorMessage(error, { login: true });
   } finally {
     if (version !== authStateVersion) return;
     recoverableAuthState.loginSending = false;
     renderProfileSheet();
   }
+}
+
+function getRecoverableAuthCodeErrorMessage(error) {
+  const code = getRecoverableAuthCore()?.getEmailOtpErrorCode?.(error) || "unknown";
+  if (code === "rate_limit") return window.t("share.profile.email.rate.limit");
+  if (code === "expired") return window.t("share.profile.email.code.expired");
+  if (code === "invalid") return window.t("share.profile.email.code.invalid");
+  if (code === "identity_changed") return window.t("share.profile.email.code.identity.mismatch");
+  return window.t("share.profile.email.code.error");
+}
+
+function getRecoverableAuthCodeInput(source = "profile") {
+  return $(source === "extension" ? "#extensionConnectCodeInput" : "#recoverableAuthCodeInput");
+}
+
+async function submitRecoverableAuthCodeForm(event, source = "profile") {
+  const version = authStateVersion;
+  event.preventDefault();
+  const { codeFlow: flow, codeSource, expectedUserId, pendingEmail: email } = recoverableAuthState;
+  if (!flow || !email || codeSource !== source || recoverableAuthState.codeVerifying) return;
+  const core = getRecoverableAuthCore();
+  const input = getRecoverableAuthCodeInput(source);
+  const token = core?.normalizeEmailOtp ? core.normalizeEmailOtp(input?.value || "") : String(input?.value || "").replace(/\D/g, "").slice(0, 6);
+  if (input) input.value = token;
+  if (!token) {
+    recoverableAuthState.error = window.t("share.profile.email.code.required");
+    recoverableAuthState.status = "";
+    renderProfileSheet();
+    renderExtensionConnectCard();
+    return;
+  }
+  if (!core?.isCompleteEmailOtp?.(token)) {
+    recoverableAuthState.error = window.t("share.profile.email.code.incomplete");
+    recoverableAuthState.status = "";
+    renderProfileSheet();
+    renderExtensionConnectCard();
+    return;
+  }
+  const client = getSupabaseClient();
+  if (!client || !core?.verifyEmailOtp) {
+    recoverableAuthState.error = window.t("share.profile.email.login.unavailable");
+    renderProfileSheet();
+    renderExtensionConnectCard();
+    return;
+  }
+  recoverableAuthState.codeVerifying = true;
+  recoverableAuthState.error = "";
+  recoverableAuthState.status = "";
+  renderProfileSheet();
+  renderExtensionConnectCard();
+  try {
+    const verified = await core.verifyEmailOtp(client.auth, { email, expectedUserId, flow, token });
+    assertCurrentAuthState(version);
+    recoverableAuthState.user = verified;
+    const currentUser = await refreshRecoverableAuthSession({ refreshProfile: true });
+    assertCurrentAuthState(version);
+    if (!currentUser?.hasEmailIdentity || (flow === "upgrade" && currentUser.id !== expectedUserId)) {
+      const mismatch = new Error("identity_changed");
+      mismatch.code = "identity_changed";
+      throw mismatch;
+    }
+    privateTripSyncState.ready = true;
+    saveTripDraftPending();
+    await syncPrivateTripsWithCloud({ silent: true }).catch(() => null);
+    assertCurrentAuthState(version);
+    clearRecoverableAuthChallenge({ keepStatus: true });
+    recoverableAuthState.status = window.t(flow === "upgrade"
+      ? "share.profile.email.code.saved"
+      : "share.profile.email.code.signed.in");
+    showToast(recoverableAuthState.status);
+    renderProfileSheet();
+    renderExtensionConnectCard();
+    closeRecoverableAuthSheetAfterSuccess(currentUser);
+    await resumePendingExtensionConnectAfterRecoverableAuth(currentUser);
+    assertCurrentAuthState(version);
+    await resumePendingGroupTripIntent(currentUser);
+  } catch (error) {
+    if (version !== authStateVersion) return;
+    applyRecoverableAuthRateLimit(error);
+    recoverableAuthState.error = getRecoverableAuthCodeErrorMessage(error);
+    recoverableAuthState.status = "";
+  } finally {
+    if (version !== authStateVersion) return;
+    recoverableAuthState.codeVerifying = false;
+    renderProfileSheet();
+    renderExtensionConnectCard();
+  }
+}
+
+async function resendRecoverableAuthCode(event, source = "profile") {
+  const version = authStateVersion;
+  event.preventDefault();
+  const { codeFlow: flow, codeSource, pendingEmail: email } = recoverableAuthState;
+  if (!flow || !email || codeSource !== source || recoverableAuthState.resendSending || getRecoverableAuthRetrySeconds() > 0) return;
+  const client = getSupabaseClient();
+  const core = getRecoverableAuthCore();
+  if (!client || !core?.resendEmailOtp) {
+    recoverableAuthState.error = window.t("share.profile.email.login.unavailable");
+    renderProfileSheet();
+    renderExtensionConnectCard();
+    return;
+  }
+  recoverableAuthState.resendSending = true;
+  recoverableAuthState.error = "";
+  recoverableAuthState.status = "";
+  renderProfileSheet();
+  renderExtensionConnectCard();
+  try {
+    await core.resendEmailOtp(client.auth, { email, flow, redirectTo: getRecoverableAuthRedirectUrl() });
+    assertCurrentAuthState(version);
+    recoverableAuthState.status = window.t("share.profile.email.code.resent");
+    startRecoverableAuthCooldown(core.EMAIL_OTP_RESEND_COOLDOWN_SECONDS || 60);
+    showToast(window.t("share.profile.email.code.sent.toast"));
+  } catch (error) {
+    if (version !== authStateVersion) return;
+    applyRecoverableAuthRateLimit(error);
+    recoverableAuthState.error = getRecoverableAuthSendErrorMessage(error, { login: flow === "login" });
+  } finally {
+    if (version !== authStateVersion) return;
+    recoverableAuthState.resendSending = false;
+    renderProfileSheet();
+    renderExtensionConnectCard();
+  }
+}
+
+function cancelRecoverableAuthCodeEntry(event, source = "profile") {
+  event.preventDefault();
+  if (recoverableAuthState.codeSource !== source) return;
+  clearRecoverableAuthChallenge({ preserveCooldown: true });
+  if (source === "extension") extensionConnectState = { ...extensionConnectState, status: "identity_required", error: "" };
+  renderProfileSheet();
+  renderExtensionConnectCard();
 }
 
 async function requireProfileForSharedAction(entryPoint, action) {
@@ -12133,6 +12453,10 @@ function bindEvents() {
   $("#profileForm")?.addEventListener("submit", submitProfileForm);
   $("#recoverableAuthUpgradeForm")?.addEventListener("submit", submitRecoverableAuthUpgradeForm);
   $("#recoverableAuthLoginForm")?.addEventListener("submit", submitRecoverableAuthLoginForm);
+  $("#recoverableAuthCodeForm")?.addEventListener("submit", (event) => submitRecoverableAuthCodeForm(event, "profile"));
+  $("#recoverableAuthResendButton")?.addEventListener("click", (event) => resendRecoverableAuthCode(event, "profile"));
+  $("#recoverableAuthCodeBackButton")?.addEventListener("click", (event) => cancelRecoverableAuthCodeEntry(event, "profile"));
+  $("#recoverableAuthCodeInput")?.addEventListener("input", normalizeRecoverableAuthCodeInput);
   $("#homeInstallAppButton").addEventListener("click", installPwa);
   $("#iosInstallCloseButton")?.addEventListener("click", dismissIosInstallOnboarding);
   $("#saveReceivedTripButton")?.addEventListener("click", saveReceivedTrip);

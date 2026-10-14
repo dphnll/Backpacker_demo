@@ -2,6 +2,8 @@
   "use strict";
 
   const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const EMAIL_OTP_LENGTH = 6;
+  const EMAIL_OTP_RESEND_COOLDOWN_SECONDS = 60;
   const AUTH_QUERY_PARAMS = new Set(["code", "error", "error_code", "error_description", "error_uri", "type"]);
 
   function normalizeEmail(value = "") {
@@ -13,6 +15,119 @@
     if (!email) return "Введите email";
     if (!EMAIL_PATTERN.test(email)) return "Введите корректный email";
     return "";
+  }
+
+  function normalizeEmailOtp(value = "") {
+    return String(value || "").replace(/\D/g, "").slice(0, EMAIL_OTP_LENGTH);
+  }
+
+  function isCompleteEmailOtp(value = "") {
+    return new RegExp(`^\\d{${EMAIL_OTP_LENGTH}}$`).test(normalizeEmailOtp(value));
+  }
+
+  function getEmailOtpErrorCode(error) {
+    const code = String(error?.code || error?.error_code || "").toLowerCase();
+    const message = String(error?.message || "").toLowerCase();
+    const status = Number(error?.status || 0);
+    if (status === 429 || code.includes("rate_limit") || message.includes("rate limit") || message.includes("too many")) {
+      return "rate_limit";
+    }
+    if (code === "otp_expired" || message.includes("expired")) return "expired";
+    if (["otp_disabled", "invalid_credentials", "validation_failed"].includes(code)
+      || message.includes("invalid token")
+      || message.includes("invalid otp")
+      || message.includes("one-time token not found")) {
+      return "invalid";
+    }
+    if (code === "identity_changed" || message.includes("identity_changed")) return "identity_changed";
+    return "unknown";
+  }
+
+  function getEmailOtpRetryAfterSeconds(error, fallback = EMAIL_OTP_RESEND_COOLDOWN_SECONDS) {
+    const explicit = [error?.retry_after, error?.retryAfter, error?.retry_after_seconds]
+      .map(Number)
+      .find((value) => Number.isFinite(value) && value > 0);
+    const message = String(error?.message || "");
+    const parsed = Number(message.match(/(\d+)\s*(?:seconds?|secs?|s)\b/i)?.[1] || 0);
+    const seconds = explicit || parsed || Number(fallback) || EMAIL_OTP_RESEND_COOLDOWN_SECONDS;
+    return Math.min(600, Math.max(1, Math.ceil(seconds)));
+  }
+
+  function createRecoverableAuthError(code, cause = null) {
+    const error = new Error(code);
+    error.code = code;
+    if (cause) error.cause = cause;
+    return error;
+  }
+
+  function requireAuthResult(result) {
+    if (result?.error) throw result.error;
+    return result?.data || {};
+  }
+
+  async function beginEmailOtpUpgrade(auth, { email, redirectTo = "" } = {}) {
+    if (!auth?.updateUser) throw createRecoverableAuthError("auth_unavailable");
+    return requireAuthResult(await auth.updateUser(
+      { email: normalizeEmail(email) },
+      redirectTo ? { emailRedirectTo: redirectTo } : undefined,
+    ));
+  }
+
+  async function beginEmailOtpLogin(auth, { email, redirectTo = "" } = {}) {
+    if (!auth?.signInWithOtp) throw createRecoverableAuthError("auth_unavailable");
+    return requireAuthResult(await auth.signInWithOtp({
+      email: normalizeEmail(email),
+      options: {
+        ...(redirectTo ? { emailRedirectTo: redirectTo } : {}),
+        shouldCreateUser: false,
+      },
+    }));
+  }
+
+  async function resendEmailOtp(auth, { email, flow, redirectTo = "" } = {}) {
+    if (flow === "upgrade") {
+      if (!auth?.resend) throw createRecoverableAuthError("auth_unavailable");
+      return requireAuthResult(await auth.resend({
+        type: "email_change",
+        email: normalizeEmail(email),
+        ...(redirectTo ? { options: { emailRedirectTo: redirectTo } } : {}),
+      }));
+    }
+    if (flow === "login") return beginEmailOtpLogin(auth, { email, redirectTo });
+    throw createRecoverableAuthError("invalid_otp_flow");
+  }
+
+  function summarizeVerifiedOtpUser(data) {
+    return summarizeAuthUser(data?.user || data?.session?.user || null);
+  }
+
+  function requireDurableOtpUser(data) {
+    const user = summarizeVerifiedOtpUser(data);
+    if (!user.id || user.isAnonymous || !user.hasEmailIdentity) {
+      throw createRecoverableAuthError("otp_verification_failed");
+    }
+    return user;
+  }
+
+  async function verifyEmailOtp(auth, { email, expectedUserId = "", flow, token } = {}) {
+    if (!auth?.verifyOtp) throw createRecoverableAuthError("auth_unavailable");
+    const type = flow === "upgrade" ? "email_change" : flow === "login" ? "email" : "";
+    if (!type) throw createRecoverableAuthError("invalid_otp_flow");
+    const data = requireAuthResult(await auth.verifyOtp({
+      email: normalizeEmail(email),
+      token: normalizeEmailOtp(token),
+      type,
+    }));
+    const verified = requireDurableOtpUser(data);
+    if (flow === "login") return verified;
+    if (!expectedUserId || verified.id !== expectedUserId) {
+      throw createRecoverableAuthError("identity_changed");
+    }
+    if (!auth?.refreshSession) throw createRecoverableAuthError("otp_verification_failed");
+    const refreshed = requireAuthResult(await auth.refreshSession());
+    const durable = requireDurableOtpUser(refreshed);
+    if (durable.id !== expectedUserId) throw createRecoverableAuthError("identity_changed");
+    return durable;
   }
 
   function getAuthCallbackInfo(href = "") {
@@ -110,12 +225,22 @@
   }
 
   const api = {
+    EMAIL_OTP_LENGTH,
+    EMAIL_OTP_RESEND_COOLDOWN_SECONDS,
+    beginEmailOtpLogin,
+    beginEmailOtpUpgrade,
     getAuthCallbackInfo,
     getCleanAuthCallbackUrl,
     getEmailError,
+    getEmailOtpErrorCode,
+    getEmailOtpRetryAfterSeconds,
+    isCompleteEmailOtp,
     normalizeEmail,
+    normalizeEmailOtp,
+    resendEmailOtp,
     resolveRecoverableAuthRedirectUrl,
     summarizeAuthUser,
+    verifyEmailOtp,
   };
 
   if (typeof module !== "undefined" && module.exports) {

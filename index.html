@@ -1217,7 +1217,7 @@
               <span data-i18n="share.profile.email.label">Email для доступа</span>
               <input id="recoverableAuthEmailInput" name="recoverableEmail" type="email" autocomplete="email" placeholder="you@example.com" />
             </label>
-            <button class="primary-button" id="recoverableAuthSendButton" type="submit" data-i18n="share.profile.email.send">Отправить ссылку</button>
+            <button class="primary-button" id="recoverableAuthSendButton" type="submit" data-i18n="share.profile.email.send">Получить код</button>
           </form>
           <form class="recoverable-auth-form recoverable-auth-login-form" id="recoverableAuthLoginForm">
             <p class="field-hint" data-i18n="share.profile.email.login.hint">Уже сохраняли доступ? Войдите по email, чтобы открыть те же Cloud Ideas на этом устройстве.</p>
@@ -1225,7 +1225,19 @@
               <span>Email</span>
               <input id="recoverableLoginEmailInput" name="recoverableLoginEmail" type="email" autocomplete="email" placeholder="you@example.com" />
             </label>
-            <button class="ghost-button" id="recoverableAuthLoginButton" type="submit" data-i18n="share.profile.email.login">Войти по email</button>
+            <button class="ghost-button" id="recoverableAuthLoginButton" type="submit" data-i18n="share.profile.email.login">Получить код для входа</button>
+          </form>
+          <form class="recoverable-auth-form recoverable-auth-code-form" id="recoverableAuthCodeForm" hidden>
+            <p class="field-hint" id="recoverableAuthCodeHint" data-i18n="share.profile.email.code.hint">Введите шестизначный код из письма.</p>
+            <label class="field wide">
+              <span data-i18n="share.profile.email.code.label">Код из письма</span>
+              <input id="recoverableAuthCodeInput" name="recoverableAuthCode" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" />
+            </label>
+            <div class="recoverable-auth-code-actions">
+              <button class="primary-button" id="recoverableAuthCodeButton" type="submit" data-i18n="share.profile.email.code.verify">Подтвердить</button>
+              <button class="ghost-button" id="recoverableAuthResendButton" type="button" data-i18n="share.profile.email.resend">Отправить код ещё раз</button>
+              <button class="ghost-button" id="recoverableAuthCodeBackButton" type="button" data-i18n="share.profile.email.code.back">Изменить email</button>
+            </div>
           </form>
         </section>
       </section>
