@@ -193,7 +193,7 @@
   "home.support.howto.iphone.body1": "在 Safari 中打开 Clavelo，轻点系统“分享”按钮，选择“添加到主屏幕”，开启“作为 Web App 打开”，然后轻点“添加”。",
   "home.support.howto.iphone.body2": "从主屏幕启动的应用与 Safari 分开存储数据。如果你已在 Safari 中创建行程，请在两处都通过邮箱保存访问权限，行程会自动出现在已安装的应用中。",
   "home.support.donation": "Clavelo 存钱罐",
-  "home.support.telegram": "通过 Telegram 联系我们",
+  "home.support.telegram": "通过电子邮件联系我们",
   "trip.setup.create.title": "创建行程",
   "trip.setup.create.close": "关闭",
   "trip.setup.create.method.aria": "选择创建行程的方式",

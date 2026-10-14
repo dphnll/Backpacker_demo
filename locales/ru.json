@@ -193,7 +193,7 @@
   "home.support.howto.iphone.body1": "Откройте Clavelo в Safari, нажмите системную кнопку «Поделиться», выберите «На экран Домой», включите «Открывать как веб-приложение» и нажмите «Добавить».",
   "home.support.howto.iphone.body2": "Приложение с домашнего экрана хранит данные отдельно от Safari. Если вы уже создавали поездки в Safari, сохраните доступ по email в обоих местах — поездки подтянутся в установленное приложение сами.",
   "home.support.donation": "Свинья-копилка",
-  "home.support.telegram": "Написать в ТГ",
+  "home.support.telegram": "Написать по email",
   "trip.setup.create.title": "Создать поездку",
   "trip.setup.create.close": "Закрыть",
   "trip.setup.create.method.aria": "Способ создания поездки",

@@ -193,7 +193,7 @@
     "home.support.howto.iphone.body1": "Open Clavelo in Safari, tap the system Share button, choose “Add to Home Screen”, turn on “Open as Web App”, and tap “Add”.",
     "home.support.howto.iphone.body2": "The app launched from the Home Screen stores data separately from Safari. If you already created trips in Safari, save access with your email in both places, and the trips will appear in the installed app automatically.",
     "home.support.donation": "Clavelo piggy bank",
-  "home.support.telegram": "Message us on Telegram",
+  "home.support.telegram": "Email us",
   "trip.setup.create.title": "Create trip",
   "trip.setup.create.close": "Close",
   "trip.setup.create.method.aria": "Choose how to create your trip",
