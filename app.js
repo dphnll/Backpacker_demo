@@ -42,9 +42,9 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.96";
+const APP_VERSION = "1.1.2.97";
 const APP_RELEASE_SUMMARY = "Clavelo доступен на семи языках интерфейса: русском, английском, французском, грузинском, немецком, армянском и упрощённом китайском.";
-const CHROME_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/backpacker-travel-capture/okpfmpplfciccfddgibkcoliemfimifc";
+const CHROME_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/clavelo-travel-capture/okpfmpplfciccfddgibkcoliemfimifc";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
 const TRIP_SHARE_SCHEMA_VERSION = "trip_share.v1";
 const TRIP_SHARE_SYNC_DEBOUNCE_MS = 1200;
@@ -1932,7 +1932,7 @@ function ensureExtensionConnectCard() {
   card.setAttribute("aria-describedby", "extensionConnectSummary extensionConnectStatus");
   card.innerHTML = `
     <div class="extension-connect-card__body" style="width:100%;min-width:0;max-width:420px;max-height:calc(100dvh - 32px);overflow:auto;padding:18px;border-radius:18px;background:#fffdf8;box-shadow:0 22px 60px rgba(18,54,61,.22);color:#12363d;">
-      <p class="home-card-kicker">Backpacker Travel Capture</p>
+      <p class="home-card-kicker">Clavelo Travel Capture</p>
       <h2 id="extensionConnectTitle" tabindex="-1"></h2>
       <p id="extensionConnectSummary"></p>
       <p class="extension-connect-card__status" id="extensionConnectStatus" role="status" aria-live="polite" aria-atomic="true" style="overflow-wrap:anywhere;"></p>
