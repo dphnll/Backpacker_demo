@@ -1,4 +1,4 @@
-const CACHE_NAME = "backpacker-pwa-v145";
+const CACHE_NAME = "backpacker-pwa-v146";
 const APP_SHELL = [
   "./",
   "./styles.css?v=organizer-mode-20260904",
