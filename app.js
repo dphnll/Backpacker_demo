@@ -11615,8 +11615,8 @@ function switchView(view, navigationSource = "other") {
 }
 
 function openHomeCurrencyCalculator() {
-  switchView("currency", "home_support");
   showTripScreen({ refreshProposals: false });
+  switchView("currency", "home_support");
 }
 
 function getDropZoneFromPoint(x, y, fallbackTarget = null) {
