@@ -28,7 +28,7 @@ const APP_SHELL = [
   "./locales/de.json",
   "./locales/hy.json",
   "./locales/zh.json",
-  "./app.js?v=organizer-mode-20260904",
+  "./app.js?v=organizer-mode-20260904&fix=home-currency-20261111",
   "./analytics-config.js?v=2",
   "./supabase-config.public.js?v=1",
   "./vendor/pdf-lib.min.js",
