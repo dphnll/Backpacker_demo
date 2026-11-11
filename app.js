@@ -42,7 +42,7 @@ const ANALYTICS_DEFINITION_VERSION = "2026-06-25.1";
 const ONBOARDING_VERSION = "2026-06-25.1";
 const ONBOARDING_PREVIEW_PARAM = "onboarding";
 const TRAINER_VERSION = "2026-06-25.1";
-const APP_VERSION = "1.1.2.97";
+const APP_VERSION = "1.1.2.98";
 const APP_RELEASE_SUMMARY = "Clavelo доступен на семи языках интерфейса: русском, английском, французском, грузинском, немецком, армянском и упрощённом китайском.";
 const CHROME_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/clavelo-travel-capture/okpfmpplfciccfddgibkcoliemfimifc";
 const IOS_INSTALL_DISMISS_KEY = `backpacker.iosInstall.dismissed.${APP_VERSION}`;
@@ -11614,6 +11614,11 @@ function switchView(view, navigationSource = "other") {
   }
 }
 
+function openHomeCurrencyCalculator() {
+  switchView("currency", "home_support");
+  showTripScreen({ refreshProposals: false });
+}
+
 function getDropZoneFromPoint(x, y, fallbackTarget = null) {
   const target = document.elementFromPoint(x, y) || fallbackTarget;
   const directZone = target?.closest?.("[data-drop-date]");
@@ -12036,19 +12041,22 @@ function handleNativeDateTimeClear(event) {
 }
 
 function bindLanguageSelector() {
-  const select = document.querySelector("[data-language-preference-select]");
+  const selects = [...document.querySelectorAll("[data-language-preference-select]")];
   const i18n = window.BackpackerI18n;
-  if (!select || !i18n) return;
+  if (!selects.length || !i18n) return;
 
-  select.value = i18n.getPreference();
-  select.addEventListener("change", () => {
-    const nextPreference = select.value;
-    if (nextPreference === i18n.getPreference()) return;
-    if (!i18n.setLocalePreference(nextPreference)) {
-      select.value = i18n.getPreference();
-      return;
-    }
-    window.location.reload();
+  const savedPreference = i18n.getPreference();
+  selects.forEach((select) => {
+    select.value = savedPreference;
+    select.addEventListener("change", () => {
+      const nextPreference = select.value;
+      if (nextPreference === i18n.getPreference()) return;
+      if (!i18n.setLocalePreference(nextPreference)) {
+        selects.forEach((control) => { control.value = i18n.getPreference(); });
+        return;
+      }
+      window.location.reload();
+    });
   });
 }
 
@@ -12463,6 +12471,7 @@ function bindEvents() {
   $("#joinGroupTripButton")?.addEventListener("click", startGroupTripJoin);
   $("#showAppQrButton")?.addEventListener("click", openAppQrSheet);
   $("#shareAppButton").addEventListener("click", shareApp);
+  $("#homeCurrencyButton")?.addEventListener("click", openHomeCurrencyCalculator);
   $("#donationPigButton")?.addEventListener("click", () => {
     if (!DONATION_FLOW_ENABLED) return;
     trackEvent("donation_pig_opened_manually", {
