@@ -328,8 +328,10 @@
             <button class="home-support-button" type="button" data-home-panel="howto" aria-label="How-to" data-i18n-aria-label="home.support.howto">
               <span aria-hidden="true">?</span>
             </button>
-            <button class="home-support-button" id="donationPigButton" type="button" disabled aria-disabled="true" aria-label="Свинья-копилка" data-i18n-aria-label="home.support.donation">
-              <img class="home-support-icon" src="./icons/piggy-bank.png" alt="" aria-hidden="true" />
+            <button class="home-support-button" id="homeCurrencyButton" type="button" aria-label="Курс валют" data-i18n-aria-label="plan.navigation.currency">
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M7 7h10M14 4l3 3-3 3M17 17H7M10 14l-3 3 3 3"></path>
+              </svg>
             </button>
             <a class="home-support-button" id="homeTelegramButton" href="mailto:hello@clavelo.cc" aria-label="Написать по email" data-i18n-aria-label="home.support.telegram">
               <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -376,6 +378,19 @@
             </div>
           </div>
           <div class="header-actions">
+            <label class="trip-language-switch">
+              <span class="visually-hidden" data-i18n="language.label">Язык интерфейса</span>
+              <select id="tripLanguagePreferenceSelect" class="home-language-select trip-language-select" data-language-preference-select aria-label="Язык интерфейса" data-i18n-aria-label="language.label">
+                <option value="auto" data-i18n="language.auto">Автоматически</option>
+                <option value="ru" data-i18n="language.ru">Русский</option>
+                <option value="en" data-i18n="language.en">English</option>
+                <option value="fr" data-i18n="language.fr">Français</option>
+                <option value="ka" data-i18n="language.ka">ქართული</option>
+                <option value="de" data-i18n="language.de">Deutsch</option>
+                <option value="hy" data-i18n="language.hy">Հայերեն</option>
+                <option value="zh" data-i18n="language.zh">简体中文</option>
+              </select>
+            </label>
             <button class="icon-button" id="editTripButton" type="button" title="Настройки поездки" aria-label="Настройки поездки" data-i18n-title="plan.shell.settings" data-i18n-aria-label="plan.shell.settings">⚙</button>
             <button class="icon-button share-icon-button" id="shareButton" type="button" title="Поделиться поездкой" aria-label="Поделиться поездкой" data-i18n-title="plan.shell.share" data-i18n-aria-label="plan.shell.share">
               <svg aria-hidden="true" viewBox="0 0 24 24">

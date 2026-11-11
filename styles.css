@@ -2286,9 +2286,19 @@ h3 {
 
 .header-actions {
   display: flex;
+  align-items: center;
   justify-self: end;
   flex-shrink: 0;
   gap: 8px;
+}
+
+.trip-language-switch {
+  display: flex;
+  width: 156px;
+}
+
+.trip-language-select {
+  min-height: 36px;
 }
 
 .budget-strip {
@@ -5344,6 +5354,15 @@ textarea:focus {
     gap: 6px;
   }
 
+  .trip-language-switch {
+    width: 92px;
+  }
+
+  .trip-language-select {
+    padding: 6px 22px 6px 8px;
+    font-size: 12px;
+  }
+
   h1 {
     font-size: 21px;
   }
@@ -5645,33 +5664,6 @@ h4,
 .home-screen > * {
   position: relative;
   z-index: 1;
-}
-
-/* Неактивные кнопки: контур иконки мятный. У свечных SVG это уже даёт
-   --nav-icon, а «свинка» — растровая картинка с фильтром invert, из-за
-   которого она выходила белой. Красим её маской: цвет получается точный,
-   а не подобранной цепочкой фильтров. */
-/* Только копилка: класс .home-support-button носят все четыре кнопки ряда,
-   и по классу маска ложилась поверх «i», «?» и самолётика. */
-#donationPigButton {
-  position: relative;
-}
-
-#donationPigButton img {
-  visibility: hidden;
-}
-
-#donationPigButton::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  width: 30px;
-  height: 30px;
-  margin: auto;
-  pointer-events: none;
-  background-color: #5f9d8a;
-  -webkit-mask: url("./icons/piggy-bank.png") center / contain no-repeat;
-  mask: url("./icons/piggy-bank.png") center / contain no-repeat;
 }
 
 /* --- Цвета типов события: приглушённые тона вместо семи насыщенных --- */
@@ -6165,12 +6157,6 @@ h4,
   fill: currentColor;
   stroke: currentColor;
   stroke-width: 0.9;
-}
-
-/* Копилка — единственная неактивная кнопка в ряду, и по цвету она должна
-   это показывать: контур светлее остальных иконок, но темнее бумаги. */
-.home-screen #donationPigButton::after {
-  background-color: #c2b6a0;
 }
 
 /* Единая оболочка вспомогательных иконок: круг без тени. */
